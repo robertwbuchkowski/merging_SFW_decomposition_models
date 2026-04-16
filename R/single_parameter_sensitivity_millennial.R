@@ -2,7 +2,8 @@ single_parameter_sensitivity_millennial <- function(
     param_name,
     multipliers = c(0.5, 0.75, 1, 1.25, 1.5),
     y0 = init_millennial_state(),
-    plot_results = TRUE) {
+    plot_results = TRUE,
+    habitat_type = "forest") {
   
   # ---------------------------------------------------
   # Load required packages
@@ -43,7 +44,7 @@ single_parameter_sensitivity_millennial <- function(
   results <- data.frame(
     multiplier = multipliers,
     parameter_value = NA_real_,
-    SOC_equilibrium = NA_real_,
+    Total = NA_real_,
     matrix(NA_real_,
            nrow = length(multipliers),
            ncol = length(state_names),
@@ -63,11 +64,25 @@ single_parameter_sensitivity_millennial <- function(
     # Modify one parameter
     parms_test[[param_name]] <- baseline_value * multipliers[i]
     
+    if(param_name == "a_root"){
+      flo = 1- parms_test$a_root
+      
+      lprop = parms_test$a_leaf/(parms_test$a_leaf + parms_test$a_wood)
+      
+      parms_test$a_leaf = flo*lprop
+      parms_test$a_wood = flo*(1-lprop)
+      
+    }
+    
     # Recompute derived parameters
     parms_test <- derive_millennial_parms(parms_test)
     
     # Build equilibrium forcing
-    parms_test$tree_forcing <- make_tree_forcing_equilibrium(parms_test)
+    if(habitat_type == "forest"){
+      parms_test$tree_forcing <- make_tree_forcing_equilibrium(parms_test)
+    }else{
+      parms_test$tree_forcing <- make_herb_forcing_equilibrium(parms_test)
+    }
     
     # Solve equilibrium
     eq <- rootSolve::stode(
@@ -81,6 +96,9 @@ single_parameter_sensitivity_millennial <- function(
     
     # Store individual state variables
     results[i, state_names] <- eq$y[state_names]
+    
+    # Store the total C
+    results[i, "Total"] <- sum(eq$y)
     
     cat(
       "  ×", multipliers[i], "\n"

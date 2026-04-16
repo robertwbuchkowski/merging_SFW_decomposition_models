@@ -27,6 +27,7 @@ tree_forcing_monomolecular <- function(time, parms) {
   
   # Annual-mean litterfall rate (1/yr): controls annual total
   k_litterfall_ann <- parms$k_litterfall_ann
+  k_litterfall_herb_ann <- parms$k_litterfall_herb_ann
   
   k_mort_leaf    <- parms$k_mort_leaf
   k_mort_wood    <- parms$k_mort_wood
@@ -100,7 +101,7 @@ tree_forcing_monomolecular <- function(time, parms) {
   # ---- Fluxes ----
   litterfall     <- k_litterfall_ann * prob_vals[doy] * B_leaf + 
     # Herbaceous plants are 100% lost:
-    1 * prob_vals[doy] * B_herb
+    k_litterfall_herb_ann * prob_vals[doy] * B_herb
   
   leaf_mortality <- k_mort_leaf * B_leaf
   wood_mortality <- k_mort_wood * B_wood

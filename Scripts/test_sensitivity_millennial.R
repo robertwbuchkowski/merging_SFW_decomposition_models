@@ -14,6 +14,7 @@ library(tidyverse)
 
 # ---- Load models ----
 source("R/tree_monomolecular.R")
+source("R/herb_forcing_monomolecular.R")
 source("R/millennial_model.R")
 
 # ---- Load config utilities ----
@@ -59,6 +60,8 @@ parms  <- load_config("tree_monomolecular")
 parms  <- modifyList(parms, yaml::read_yaml("config/millennial.yml"))
 
 # ---- Look at different parameters -----
+
+source("R/single_parameter_sensitivity_millennial.R")
 
 single_parameter_sensitivity_millennial(
   param_name = "p_a"

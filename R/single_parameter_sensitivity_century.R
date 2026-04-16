@@ -45,7 +45,7 @@ single_parameter_sensitivity_century <- function(
   results <- data.frame(
     multiplier = multipliers,
     parameter_value = NA_real_,
-    SOC_equilibrium = NA_real_,
+    Total = NA_real_,
     matrix(
       NA_real_,
       nrow = length(multipliers),
@@ -74,7 +74,7 @@ single_parameter_sensitivity_century <- function(
     )
     
     results$parameter_value[i] <- parms_test[[param_name]]
-    results$SOC_equilibrium[i] <- sum(eq$y)
+    results$Total[i] <- sum(eq$y)
     results[i, state_names] <- eq$y[state_names]
     
     cat("  ×", multipliers[i], "completed\n")
@@ -105,7 +105,7 @@ single_parameter_sensitivity_century <- function(
         labs(
           x = paste(param_name, "value"),
           y = "Equilibrium pool size (g C m⁻²)",
-          title = "CENTURY single‑parameter sensitivity (equilibrium)"
+          title = "CENTURY single-parameter sensitivity (equilibrium)"
         ) +
         theme_minimal()
     )

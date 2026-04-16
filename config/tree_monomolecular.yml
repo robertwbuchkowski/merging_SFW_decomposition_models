@@ -9,6 +9,7 @@ t0: 0           # Stand initiation offset (yr)
 # ---- Growth parameters ----
 TBTmax: 10000     # Maximum total tree biomass
 k_monomol: 0.014 # Monomolecular growth rate (1/yr)
+TBHmax: 1000
 
 # ---- Biomass allocation (must sum to 1) ----
 a_leaf: 0.075
@@ -20,6 +21,7 @@ a_root_herb: 0.5
 
 # ---- Turnover and flux rates ----
 k_litterfall_ann: 0.35
+k_litterfall_herb_ann: 1
 
 k_mort_leaf: 0.00005479    # 0.02/365
 k_mort_wood: 0.00006849    # 0.025/365
