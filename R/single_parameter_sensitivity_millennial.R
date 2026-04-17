@@ -41,16 +41,43 @@ single_parameter_sensitivity_millennial <- function(
   
   state_names <- names(init_millennial_state())
   
-  results <- data.frame(
-    multiplier = multipliers,
-    parameter_value = NA_real_,
-    Total = NA_real_,
-    matrix(NA_real_,
-           nrow = length(multipliers),
-           ncol = length(state_names),
-           dimnames = list(NULL, state_names)),
-    stringsAsFactors = FALSE
-  )
+  if(habitat_type == "forest"){
+    results <- data.frame(
+      multiplier = multipliers,
+      parameter_value = NA_real_,
+      Total = NA_real_,
+      matrix(NA_real_,
+             nrow = length(multipliers),
+             ncol = length(state_names),
+             dimnames = list(NULL, state_names)),
+      matrix(NA_real_,
+             nrow = length(multipliers),
+             ncol = length(make_tree_forcing_equilibrium(parms)(1)),
+             dimnames = list(NULL, names(make_tree_forcing_equilibrium(parms)(1)))),
+      stringsAsFactors = FALSE
+    )
+    forcenames <- names(make_tree_forcing_equilibrium(parms)(1))
+    
+  }else{
+    results <- data.frame(
+      multiplier = multipliers,
+      parameter_value = NA_real_,
+      Total = NA_real_,
+      matrix(NA_real_,
+             nrow = length(multipliers),
+             ncol = length(state_names),
+             dimnames = list(NULL, state_names)),
+      matrix(NA_real_,
+             nrow = length(multipliers),
+             ncol = length(make_herb_forcing_equilibrium(parms)(1)),
+             dimnames = list(NULL, names(make_herb_forcing_equilibrium(parms)(1)))),
+      stringsAsFactors = FALSE
+    )
+    
+    forcenames <- names(make_herb_forcing_equilibrium(parms)(1))
+  }
+  
+  
   
   cat("Running sensitivity for parameter:", param_name, "\n")
   
@@ -96,6 +123,7 @@ single_parameter_sensitivity_millennial <- function(
     
     # Store individual state variables
     results[i, state_names] <- eq$y[state_names]
+    results[i, forcenames] <- make_herb_forcing_equilibrium(parms)(1)[forcenames]
     
     # Store the total C
     results[i, "Total"] <- sum(eq$y)
