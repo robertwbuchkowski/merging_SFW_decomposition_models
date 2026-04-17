@@ -14,7 +14,7 @@
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-millennial_model <- function(time, state, parms){
+millennial_model_detritivory <- function(time, state, parms){
   
   with(c(state, parms), {
     # ----------------------------
@@ -34,7 +34,7 @@ millennial_model <- function(time, state, parms){
     # ----------------------------
     T_t              <- forcing["Temp"] # °C
     theta_t          <- forcing["theta"] # m^3 m^-3
-  
+    
     # Other optional external biological fluxes used later
     detritivory_litter  <- if (exists("detritivory_litter"))  detritivory_litter  else 0
     detritivory_CWD     <- if (exists("detritivory_CWD"))     detritivory_CWD     else 0
@@ -44,6 +44,18 @@ millennial_model <- function(time, state, parms){
     carcass <- if (exists("carcass")) carcass else 0
     
     extra_mineral_input_test <- if (exists("extra_mineral_input_test")) extra_mineral_input_test else 0
+    
+    # ----------------------------
+    # Detritiviory rates
+    # ----------------------------
+    
+    Fed_mic_det = c_detritivores*MIC*Detritivore
+    
+    Fed_om_det = c_detritivores*Organic*Detritivore
+    
+    Fed_lit_det = c_detritivores*Litter*Detritivore
+    
+    faeces_det = (1-a_detritivores)*(Fed_mic_det + Fed_om_det + Fed_lit_det)
     
     # ----------------------------
     # Fragmentation and physical transfer to organic and mineral soil
@@ -166,16 +178,18 @@ millennial_model <- function(time, state, parms){
     net_det_inputs <- litterfall + leaf_mortality + wood_mortality + root_mortality + exudates
     
     # Detritus pools
-    dLitter  <- litterfall + leaf_mortality - F_Litter_DOM - fragmentation_litter - detritivory_litter
+    dLitter  <- litterfall + leaf_mortality - F_Litter_DOM - fragmentation_litter - Fed_lit_det
+    
     dCWD     <- wood_mortality - F_CWD_DOM - fragmentation_CWD - detritivory_CWD
     dOrganic <- fragmentation_litter + fragmentation_CWD +
       root_to_organic * root_mortality +
       faeces_to_organic * faeces +
       carcass_to_organic * carcass -
-      F_Organic_DOM - fragmentation_organic - detritivory_organic
+      F_Organic_DOM - fragmentation_organic - Fed_om_det + faeces_det
     
     dDOM <- F_Litter_DOM + F_CWD_DOM + F_Organic_DOM + F_MIC_mortality - F_DOM_MIC - F_l_organic
-    dMIC <- F_DOM_MIC - F_MIC_mortality - F_MIC_respiration
+    
+    dMIC <- F_DOM_MIC - F_MIC_mortality - F_MIC_respiration - Fed_mic_det
     
     # Transfer to mineral:
     Fi_t_part <- (1 - root_to_organic) * root_mortality +
@@ -210,44 +224,13 @@ millennial_model <- function(time, state, parms){
     # Eq. 20
     dB <- F_lb - F_bm - F_mr
     
-    # ---------------------------
-    # Check system mass-balance (for modeled pools only)
-    # ---------------------------
-    dState <- dLitter + dCWD + dOrganic + dDOM + dMIC + dP + dL + dA + dM + dB
-    
-    # Inputs to modeled system: vegetation detritus fluxes + any explicit extra mineral input
-    Inputs <- net_det_inputs + extra_mineral_input_test
-    
-    # Outputs from modeled system: respiratory CO2 + leaching losses + any explicit herbivory/harvest terms (if you want them counted)
-    Outputs <- F_mr + F_MIC_respiration + F_l +
-      leaf_harvest + wood_harvest + root_harvest +
-      herbivory_leaf + herbivory_wood + herbivory_root
+    dDetritivore <- p_detritivores*a_detritivores*(Fed_mic_det + Fed_om_det + Fed_lit_det) - d_detritivores*Detritivore - E_detritivores*Detritivore
     
     # ---------------------------
     # Return list for deSolve
     # ---------------------------
     list(
-      c(dLitter, dCWD, dOrganic, dDOM, dMIC, dP, dL, dA, dM, dB),
-      c(
-        # core diagnostics you already output
-        F_pl=F_pl, F_lb=F_lb, F_pa=F_pa, F_a=F_a, F_ma=F_ma,
-        F_lm=F_lm, F_ld=F_ld, F_l=F_l, F_bm=F_bm, F_bg=F_bg, F_mr=F_mr,
-        Qmax=Qmax, K_lm=K_lm, S_wD=S_wD, S_wB=S_wB, CUE=CUE, T=T_t, theta=theta_t,
-        Fi=Fi_t, p_i=p_i,
-        
-        # organic horizon diagnostics
-        F_MIC_respiration=F_MIC_respiration,
-        F_MIC_mortality=F_MIC_mortality,
-        F_l_organic=F_l_organic,
-        
-        # new tree forcing diagnostics
-        B_tree = TotalBiomassTree,
-        net_det_inputs = net_det_inputs,
-        
-        # balance diagnostics
-        dCO2 = F_mr + F_MIC_respiration,
-        dState = dState, Inputs = Inputs, Outputs = Outputs
-      )
+      c(dLitter, dCWD, dOrganic, dDOM, dMIC, dP, dL, dA, dM, dB, dDetritivore)
     )
   })
 }

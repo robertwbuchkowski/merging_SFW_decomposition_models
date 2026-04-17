@@ -66,3 +66,10 @@ k_l: 0.0015
 # ---- Input partitioning ----
 p_a: 0.33
 p_b: 0.50
+
+# ---- Detritivory parameters ----
+d_detritivores: 0.01
+a_detritivores: 0.5
+p_detritivores: 0.4
+E_detritivores: 0
+c_detritivores: 0.1
