@@ -96,8 +96,7 @@ In the Millennial Model, the aggregation rate is controlled by the parameter `k_
 ## Testing the lever
 ```{r pressure}
 
-source("Scripts/01a_Millennial_ode.R")
-source("Scripts/01b_Millennial_parameters.R")
+source("R/millenial_model.R")
 ## - Units: All fluxes in g C m^-2 d^-1; states in g C m^-2; moisture in m^3 m^-3; temperature in °C.
 
 y0       <- c(Litter  = 200, 
