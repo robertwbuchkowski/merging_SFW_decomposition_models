@@ -14,7 +14,7 @@
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-millennial_model_detritivory <- function(time, state, parms){
+millennial_model_earthworm <- function(time, state, parms){
   
   with(c(state, parms), {
     # ----------------------------
@@ -46,23 +46,11 @@ millennial_model_detritivory <- function(time, state, parms){
     extra_mineral_input_test <- if (exists("extra_mineral_input_test")) extra_mineral_input_test else 0
     
     # ----------------------------
-    # Detritiviory rates
-    # ----------------------------
-    
-    Fed_mic_det = c_detritivores*MIC*Detritivore
-    
-    Fed_om_det = c_detritivores*Organic*Detritivore
-    
-    Fed_lit_det = c_detritivores*Litter*Detritivore
-    
-    faeces_det = (1-a_detritivores)*(Fed_mic_det + Fed_om_det + Fed_lit_det)
-    
-    # ----------------------------
     # Fragmentation and physical transfer to organic and mineral soil
     # ----------------------------
-    fragmentation_litter   <- (intercept_det_k_frag_litter + slope_det_k_frag_litter*Detritivore)  * Litter   # -> Organic
+    fragmentation_litter   <- k_frag_litter  * Litter   # -> Organic
     fragmentation_CWD      <- k_frag_CWD     * CWD      # -> Organic
-    fragmentation_organic  <- (intercept_det_k_frag_organic + slope_det_k_frag_organic*Detritivore) * Organic  # -> POM
+    fragmentation_organic  <- k_frag_organic * Organic  # -> POM
     
     # ----------------------------
     # Sorption capacity Qmax (Eq. 11)
@@ -178,18 +166,16 @@ millennial_model_detritivory <- function(time, state, parms){
     net_det_inputs <- litterfall + leaf_mortality + wood_mortality + root_mortality + exudates
     
     # Detritus pools
-    dLitter  <- litterfall + leaf_mortality - F_Litter_DOM - fragmentation_litter - Fed_lit_det
-    
+    dLitter  <- litterfall + leaf_mortality - F_Litter_DOM - fragmentation_litter - detritivory_litter
     dCWD     <- wood_mortality - F_CWD_DOM - fragmentation_CWD - detritivory_CWD
     dOrganic <- fragmentation_litter + fragmentation_CWD +
       root_to_organic * root_mortality +
       faeces_to_organic * faeces +
       carcass_to_organic * carcass -
-      F_Organic_DOM - fragmentation_organic - Fed_om_det + faeces_det + d_detritivores*Detritivore 
+      F_Organic_DOM - fragmentation_organic - detritivory_organic
     
     dDOM <- F_Litter_DOM + F_CWD_DOM + F_Organic_DOM + F_MIC_mortality - F_DOM_MIC - F_l_organic
-    
-    dMIC <- F_DOM_MIC - F_MIC_mortality - F_MIC_respiration - Fed_mic_det
+    dMIC <- F_DOM_MIC - F_MIC_mortality - F_MIC_respiration
     
     # Transfer to mineral:
     Fi_t_part <- (1 - root_to_organic) * root_mortality +
@@ -210,13 +196,13 @@ millennial_model_detritivory <- function(time, state, parms){
     # -------------------------
     
     # Eq. 1
-    dP <- p_i * Fi_t + p_a * F_a - F_pa - F_pl
+    dP <- p_i * Fi_t + p_a * F_a - F_pa - F_pl + d_earthworm*Earthworm
     
     # Eq. 7
-    dL <- Fi_t * (1 - p_i) - F_l + F_pl - F_lm - F_lb + (1 - p_b) * F_bm + F_ld
+    dL <- Fi_t * (1 - p_i) - F_l + F_pl - F_lm - F_lb + (1 - p_b) * F_bm + F_ld + prop_feaces_earthworm_LMWC*((1-a_earthworm)*(Fed_earthworm_litter + Fed_earthworm_om) + (1-a_earthworm_soil)*Fed_earthworm_soil)
     
     # Eq. 17
-    dA <- F_ma + F_pa - F_a
+    dA <- F_ma + F_pa - F_a + (1-prop_feaces_earthworm_LMWC)*((1-a_earthworm)*(Fed_earthworm_litter + Fed_earthworm_om) + (1-a_earthworm_soil)*Fed_earthworm_soil)
     
     # Eq. 19
     dM <- F_lm - F_ld + p_b * F_bm - F_ma + F_a * (1 - p_a)
@@ -224,13 +210,17 @@ millennial_model_detritivory <- function(time, state, parms){
     # Eq. 20
     dB <- F_lb - F_bm - F_mr
     
-    dDetritivore <- p_detritivores*a_detritivores*(Fed_mic_det + Fed_om_det + Fed_lit_det) - d_detritivores*Detritivore - E_detritivores*Detritivore
+    # Earthworms:
+    dEarthworm <- 
+      p_earthworm*(a_earthworm*(Fed_earthworm_litter + Fed_earthworm_om) + a_earthworm_soil*Fed_earthworm_soil) - 
+      d_earthworm*Earthworm - 
+      E_earthworm*Earthworm
     
     # ---------------------------
     # Return list for deSolve
     # ---------------------------
     list(
-      c(dLitter, dCWD, dOrganic, dDOM, dMIC, dP, dL, dA, dM, dB, dDetritivore)
+      c(dLitter, dCWD, dOrganic, dDOM, dMIC, dP, dL, dA, dM, dB, dEarthworm)
     )
   })
 }

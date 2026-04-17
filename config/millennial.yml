@@ -77,3 +77,15 @@ a_detritivores: 0.5
 p_detritivores: 0.4
 E_detritivores: 0
 c_detritivores: 0.1
+
+# ---- Earthworm parameters ----
+d_earthworm: 0.01
+a_earthworm: 0.5
+a_earthworm_soil: 0.02
+p_earthworm: 0.4
+E_earthworm: 0
+c_earthworm_litter: 0.1
+c_earthworm_soil: 0.1
+c_earthworm_om: 0.1
+prop_feaces_earthworm_LMWC: 0.01
+
