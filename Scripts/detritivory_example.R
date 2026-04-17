@@ -10,13 +10,12 @@ source("R/millennial_model_detritivory.R")
 source("R/millennial_model.R")
 
 # ---- Load config utilities ----
-source("R/load_config.R")
 source("R/make_tree_forcing.R")
 source("R/derive_millennial_parms.R")
 source("R/init_millennial_state.R")
 source("R/plot_ode_out.R")
 
-parms  <- yaml::read_yaml("config/common_detritivore.yml")
+parms  <- yaml::read_yaml("config/common.yml")
 parms  <- modifyList(parms, yaml::read_yaml("config/tree_monomolecular.yml"))
 parms  <- modifyList(parms, yaml::read_yaml("config/millennial.yml"))
 parms  <- derive_millennial_parms(parms)
