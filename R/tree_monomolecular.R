@@ -24,6 +24,7 @@ tree_forcing_monomolecular <- function(time, parms) {
   a_wood         <- parms$a_wood
   a_root         <- parms$a_root
   a_root_herb    <- parms$a_root_herb
+  addherb        <- parms$addherb
   
   # Annual-mean litterfall rate (1/yr): controls annual total
   k_litterfall_ann <- parms$k_litterfall_ann

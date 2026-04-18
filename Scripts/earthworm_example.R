@@ -22,6 +22,22 @@ parms  <- derive_millennial_parms(parms)
 
 parms$tree_forcing <- make_tree_forcing_equilibrium(parms)
 
+# Consumption calculation:
+# AE is the chosen site
+# 2.38 gdwt/g_earthworm
+# 2.06 g/m2 # Fresh biomass per area of earthworms
+# cast rate: 4.9028 gdwt/m2
+# 3.5% carbon in the soil
+# 4.9028*0.0132*1.1 = 0.07118866 gC/m2
+# Earthworms assimilate 9%: 0.1887578/(1-0.09)
+# Earthworms consume: 0.2074262 gC/m2
+# Mineral soil C: 2284 gC/m2
+# Earthworm biomass: 0.48 gC/m2
+# c = F/(Earthworm*SoilC)
+# c = 0.2074262/(2284*0.48) = 0.0001892022
+
+# Water stable aggregate improvement: based on reference Erin found, 20-35% more stable
+
 # With detritivores:
 millennial_eqm_det = rootSolve::stode(
   y     = init_millennial_state(Earthworm = T),
@@ -29,7 +45,7 @@ millennial_eqm_det = rootSolve::stode(
   parms = parms
 )
 
-millennial_eqm_det$y
+
 
 # Without detritivores:
 millennial_eqm = rootSolve::stode(
@@ -38,4 +54,40 @@ millennial_eqm = rootSolve::stode(
   parms = parms
 )
 
-millennial_eqm$y
+(temp_file = cbind(EW = millennial_eqm_det$y,CT = c(millennial_eqm$y, Earthworm = 0)) %>% 
+  data.frame() %>%
+  rownames_to_column(var = "Pool") %>%
+  tibble() %>%
+  mutate(Diff = 100*(EW-CT)/CT))
+
+temp_file %>%
+  filter(Pool %in% c("P", "L", "A", "M","B")) %>%
+  pivot_longer(!Pool) %>%
+  filter(name != "Diff") %>%
+  group_by(name) %>%
+  summarize(value = sum(value)) %>%
+  pivot_wider() %>%
+  mutate(Diff = 100*(EW-CT)/CT)
+
+
+parms$B0 = parms$TBTmax
+
+parms$tree_forcing <- make_tree_forcing(parms)
+
+millennial_out_det_longrun = ode(
+  times = seq(1, 365*3, by = 1),
+  y     = millennial_eqm_det$y,
+  func  = millennial_model_earthworm,
+  parms = parms
+)
+
+
+millennial_out_det = ode(
+  times = seq(1, 365*3, by = 1),
+  y     = millennial_eqm_det$y,
+  func  = millennial_model_earthworm,
+  parms = parms
+)
+
+plot_ode_output(millennial_out_det,
+                variable_cols = names(millennial_eqm_det$y))
