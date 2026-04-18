@@ -46,14 +46,29 @@ millennial_model_herbnem <- function(time, state, parms){
     # Continuous plant losses
     # --------------------------------------------------
     leaf_mortality <- k_mort_leaf * C_shoot
-    root_mortality <- k_mort_root * C_root
-    exudates       <- k_exudate   * C_root
+    
+    if(Temp < root_dormancy_temp){
+      root_mortality <- k_mort_root * C_root*winter_root_act_prop
+      exudates       <- (k_exudate_intercept + RootHerb*k_exudate_slope) * C_root*winter_root_act_prop
+    }else{
+      root_mortality <- k_mort_root * C_root
+      exudates       <- (k_exudate_intercept + RootHerb*k_exudate_slope) * C_root
+    }
+    
+    
+    
+    # --------------------------------------------------
+    # Root herbivores
+    # --------------------------------------------------
+    ConsumpRootHerb = c_rootherb*C_root*RootHerb
+    DeathRootHerb = d_rootherb*RootHerb^2
+    FaecesRootHerb = (1-a_rootherb)*c_rootherb*C_root*RootHerb
     
     # --------------------------------------------------
     # Herbaceous pool ODEs
     # --------------------------------------------------
     dC_shoot <- shoot_growth - litterfall - leaf_mortality
-    dC_root  <- root_growth  - root_mortality - exudates
+    dC_root  <- root_growth  - root_mortality - exudates - ConsumpRootHerb
     
     # ==================================================
     # ========== ORIGINAL MILLENNIAL CORE ===============
@@ -220,6 +235,9 @@ millennial_model_herbnem <- function(time, state, parms){
     # Eq. 20
     dB <- F_lb - F_bm - F_mr
     
+    # Root herbivores:
+    dRootHerb <- p_rootherb*a_rootherb*ConsumpRootHerb - DeathRootHerb
+      
     # --------------------------------------------------
     # Return ODEs + diagnostics
     # --------------------------------------------------
@@ -227,7 +245,8 @@ millennial_model_herbnem <- function(time, state, parms){
       c(
         dC_shoot, dC_root,
         dLitter, dCWD, dOrganic, dDOM, dMIC,
-        dP, dL, dA, dM, dB
+        dP, dL, dA, dM, dB,
+        dRootHerb
       )
     )
   })

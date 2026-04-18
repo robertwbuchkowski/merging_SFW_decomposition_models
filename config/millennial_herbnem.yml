@@ -21,6 +21,8 @@ k_mort_leaf: 0.00005479    # 0.02/365
 k_mort_wood: 0.00006849    # 0.025/365
 k_mort_root: 0.00021918   # 0.08/365
 k_exudate: 0.00002740     # 0.01/365
+winter_root_act_prop: 0.01
+root_dormancy_temp: 5
 
 # ---- Optional removals (set to zero if unused) ----
 leaf_harvest: 0
@@ -30,3 +32,13 @@ root_harvest: 0
 herbivory_leaf: 0
 herbivory_wood: 0
 herbivory_root: 0
+
+
+# ------- Root herbivory ---------
+c_rootherb: 0.001
+d_rootherb: 0.1
+a_rootherb: 0.4
+p_rootherb: 1
+E_root_herb: 0.1
+k_exudate_intercept: 0.00002740
+k_exudate_slope: 0
