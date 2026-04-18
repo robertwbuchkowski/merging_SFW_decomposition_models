@@ -10,6 +10,7 @@ t0: 0           # Stand initiation offset (yr)
 TBTmax: 10000     # Maximum total tree biomass
 k_monomol: 0.014 # Monomolecular growth rate (1/yr)
 TBHmax: 1000
+addherb: 0
 
 # ---- Biomass allocation (must sum to 1) ----
 a_leaf: 0.075

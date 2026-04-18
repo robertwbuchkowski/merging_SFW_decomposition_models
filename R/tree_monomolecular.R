@@ -84,10 +84,14 @@ tree_forcing_monomolecular <- function(time, parms) {
   # assuming a linear decline in proportion herb based on their data.
   # This is aboveground biomass
   
-  B_herb = ifelse(tau == 0,
-                  0,
-                  (0.67*exp(-0.2*tau))*B_tree/(1 - (0.67*exp(-0.2*tau)))
-  )
+  if(addherb == 1){
+    B_herb = ifelse(tau == 0,
+                    0,
+                    (0.67*exp(-0.2*tau))*B_tree/(1 - (0.67*exp(-0.2*tau)))
+    )
+  }else{
+    B_herb = 0
+  }
   
   # ---- Seasonal litterfall weighting (mean ~ 1 over year) ----
   wrapped_pdf <- function(t, mu, sigma, Lfss = 365, K = 1) {
