@@ -1,4 +1,29 @@
 # ------------------------------------------------------------
+# make_climate_forcing.R
+# Construct a vegetation forcing function from tree model
+# ------------------------------------------------------------
+
+make_climate_forcing <- function(parms) {
+  
+  # Return a function of time
+  function(time) {
+    
+    forcing <- climate_forcing_function(
+      time  = time,
+      parms = parms
+    )
+    
+    # Defensive checks (optional but recommended)
+    stopifnot(
+      is.numeric(forcing),
+      !any(is.na(forcing))
+    )
+    
+    forcing
+  }
+}
+
+# ------------------------------------------------------------
 # make_tree_forcing.R
 # Construct a vegetation forcing function from tree model
 # ------------------------------------------------------------

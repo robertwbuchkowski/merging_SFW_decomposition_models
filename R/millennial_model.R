@@ -1,6 +1,6 @@
-# ------------------------------------------------------------
-# Updated Millennial v2 ODE (no Leaf/Wood/Root plant states)
-# ------------------------------------------------------------
+# -------------------------------------------------------
+# Updated Millennial v2 ODE
+# --------------------------------------------------------
 
 # Original Millennial model license:
 # MIT License
@@ -14,36 +14,71 @@
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-millennial_model <- function(time, state, parms){
+millennial_model_wplant <- function(time, state, parms){
   
   with(c(state, parms), {
     # ----------------------------
-    # ---- Get vegetation + climate forcing ----
+    # ---- Get climate forcing ----
     # ----------------------------
-    forcing <- tree_forcing(time)
-    
-    # Extract required drivers
-    TotalBiomassTree <- forcing["B_tree"]
-    litterfall       <- forcing["litterfall_f"]
-    leaf_mortality   <- forcing["leaf_mort"]
-    wood_mortality   <- forcing["wood_mort"]
-    root_mortality   <- forcing["root_mort"]
-    exudates         <- forcing["exudates_f"]
-    # ----------------------------
-    # Forcing at current time (Fi, T, theta)
-    # ----------------------------
-    T_t              <- forcing["Temp"] # °C
+    forcing <- climate_forcing(time)
+    T_t              <- forcing["Temp"] # °C 
     theta_t          <- forcing["theta"] # m^3 m^-3
-  
-    # Other optional external biological fluxes used later
-    detritivory_litter  <- if (exists("detritivory_litter"))  detritivory_litter  else 0
-    detritivory_CWD     <- if (exists("detritivory_CWD"))     detritivory_CWD     else 0
-    detritivory_organic <- if (exists("detritivory_organic")) detritivory_organic else 0
+    litterfall_prob_val        <- forcing["litterfall_prob_val"] # probability of litterfall
     
-    faeces  <- if (exists("faeces"))  faeces  else 0
-    carcass <- if (exists("carcass")) carcass else 0
+    # --------------------------------------------------
+    # Climate scalars for plant productivity
+    # --------------------------------------------------
+    f_T     <- Q10 ^ ((Temp - Tref) / 10)
+    f_theta <- pmin(1, theta / theta_opt)
     
-    extra_mineral_input_test <- if (exists("extra_mineral_input_test")) extra_mineral_input_test else 0
+    # --------------------------------------------------
+    # Herbaceous plant carbon fluxes
+    # --------------------------------------------------
+    GPP_herb <- GPPmax_herb * f_T * f_theta
+    
+    Ra_herb <- maint_resp * (C_shoot + C_root) +
+      growth_resp * GPP_herb
+    
+    NPP_herb <- pmax(0, GPP_herb - Ra_herb)
+    
+    shoot_growth_herb <- (1 - a_root_herb) * NPP_herb
+    root_growth_herb  <- a_root_herb * NPP_herb
+    
+    # --------------------------------------------------
+    # Tree plant carbon fluxes
+    # --------------------------------------------------
+    GPP_tree <- GPPmax_tree * f_T * f_theta
+    
+    Ra_tree <- maint_resp * (C_shoot + C_root) +
+      growth_resp * GPP_tree
+    
+    NPP_tree <- pmax(0, GPP_tree - Ra_tree)
+    
+    shoot_growth_tree <- a_leaf_tree * NPP_tree
+    wood_growth_tree <- a_wood_tree * NPP_tree
+    root_growth_tree  <- a_root_tree * NPP_tree
+    
+    # --------------------------------------------------
+    # Continuous plant losses
+    # --------------------------------------------------
+    litterfall_tree <- k_litterfall_ann * litterfall_prob_val * C_shoot
+    litterfall_herb <- k_litterfall_herb_ann * litterfall_prob_val * C_shoot
+    
+    leaf_mortality <- k_mort_leaf * C_shoot
+    wood_mortality <- k_mort_wood * C_wood
+    
+    root_mortality <- k_mort_root * C_root
+    exudates       <- k_exudate* C_root
+    
+    dC_shoot,
+    dC_leaf,
+    dC_wood,
+    dC_troot,
+    dC_hroot,
+    
+    dC_shoot <- shoot_growth - litterfall - leaf_mortality
+    dC_wood <- wood_growth - wood_mortality
+    dC_root  <- root_growth  - root_mortality - exudates
     
     # ----------------------------
     # Fragmentation and physical transfer to organic and mineral soil
@@ -162,30 +197,23 @@ millennial_model <- function(time, state, parms){
     # Above-mineral pools (no plant pools)
     # -------------------------------
     
-    # Save net detritus inputs from vegetation (to modeled detritus/soil system)
-    net_det_inputs <- litterfall + leaf_mortality + wood_mortality + root_mortality + exudates
-    
     # Detritus pools
-    dLitter  <- litterfall + leaf_mortality - F_Litter_DOM - fragmentation_litter - detritivory_litter
+    dLitter  <- litterfall + leaf_mortality - F_Litter_DOM - fragmentation_litter
     dCWD     <- wood_mortality - F_CWD_DOM - fragmentation_CWD - detritivory_CWD
     dOrganic <- fragmentation_litter + fragmentation_CWD +
       root_to_organic * root_mortality +
-      faeces_to_organic * faeces +
-      carcass_to_organic * carcass -
-      F_Organic_DOM - fragmentation_organic - detritivory_organic
+      F_Organic_DOM - fragmentation_organic
     
     dDOM <- F_Litter_DOM + F_CWD_DOM + F_Organic_DOM + F_MIC_mortality - F_DOM_MIC - F_l_organic
     dMIC <- F_DOM_MIC - F_MIC_mortality - F_MIC_respiration
     
     # Transfer to mineral:
     Fi_t_part <- (1 - root_to_organic) * root_mortality +
-      (1 - faeces_to_organic) * faeces +
-      (1 - carcass_to_organic) * carcass +
       fragmentation_organic
     
     Fi_t_dissolved <- F_l_organic + exudates
     
-    Fi_t <- Fi_t_part + Fi_t_dissolved + extra_mineral_input_test
+    Fi_t <- Fi_t_part + Fi_t_dissolved
     
     # Guard against Fi_t = 0
     Fi_safe <- max(Fi_t, .Machine$double.eps)
@@ -211,43 +239,30 @@ millennial_model <- function(time, state, parms){
     dB <- F_lb - F_bm - F_mr
     
     # ---------------------------
-    # Check system mass-balance (for modeled pools only)
-    # ---------------------------
-    dState <- dLitter + dCWD + dOrganic + dDOM + dMIC + dP + dL + dA + dM + dB
-    
-    # Inputs to modeled system: vegetation detritus fluxes + any explicit extra mineral input
-    Inputs <- net_det_inputs + extra_mineral_input_test
-    
-    # Outputs from modeled system: respiratory CO2 + leaching losses + any explicit herbivory/harvest terms (if you want them counted)
-    Outputs <- F_mr + F_MIC_respiration + F_l +
-      leaf_harvest + wood_harvest + root_harvest +
-      herbivory_leaf + herbivory_wood + herbivory_root
-    
-    # ---------------------------
     # Return list for deSolve
     # ---------------------------
     list(
-      c(dLitter, dCWD, dOrganic, dDOM, dMIC, dP, dL, dA, dM, dB),
       c(
-        # core diagnostics you already output
-        F_pl=F_pl, F_lb=F_lb, F_pa=F_pa, F_a=F_a, F_ma=F_ma,
-        F_lm=F_lm, F_ld=F_ld, F_l=F_l, F_bm=F_bm, F_bg=F_bg, F_mr=F_mr,
-        Qmax=Qmax, K_lm=K_lm, S_wD=S_wD, S_wB=S_wB, CUE=CUE, T=T_t, theta=theta_t,
-        Fi=Fi_t, p_i=p_i,
+        # Plant pools:
+        dC_shoot,
+        dC_leaf,
+        dC_wood,
+        dC_troot,
+        dC_hroot,
         
-        # organic horizon diagnostics
-        F_MIC_respiration=F_MIC_respiration,
-        F_MIC_mortality=F_MIC_mortality,
-        F_l_organic=F_l_organic,
+        # Organic horizons:
+        dLitter, 
+        dCWD, 
+        dOrganic, 
+        dDOM, 
+        dMIC, 
         
-        # new tree forcing diagnostics
-        B_tree = TotalBiomassTree,
-        net_det_inputs = net_det_inputs,
-        
-        # balance diagnostics
-        dCO2 = F_mr + F_MIC_respiration,
-        dState = dState, Inputs = Inputs, Outputs = Outputs
-      )
+        # Mineral horizons:
+        dP, 
+        dL, 
+        dA, 
+        dM, 
+        dB)
     )
   })
 }
