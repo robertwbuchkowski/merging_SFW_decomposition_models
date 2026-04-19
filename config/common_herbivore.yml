@@ -1,0 +1,34 @@
+# ------------------------------------------------------------
+# Common forcing and environmental parameters - For Herbivore Model
+# ------------------------------------------------------------
+
+# Climate forcing
+MAT: 10
+T_amp: 26
+MAtheta: 0.30
+theta_amp: 0.15
+
+# Texture / site
+pct_claysilt: 70
+fCLAY: 40           # clay fraction (0–1) (MIMICS)
+
+# Lignin fraction
+LigFrac: 0.2 # MIMICS and Century
+
+# Calendar
+year_length_d: 365
+litter_peak_doy: 288
+litter_width_d: 30
+
+# ---- Mortality partitioning ----
+root_to_organic: 0.7
+faeces_to_organic: 0.5
+carcass_to_organic: 0.5
+
+detritivory_litter: 0
+detritivory_CWD: 0
+detritivory_organic: 0
+
+faeces: 0
+carcass: 0
+extra_mineral_input_test: 0
