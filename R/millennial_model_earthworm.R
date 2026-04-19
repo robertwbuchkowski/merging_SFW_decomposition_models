@@ -141,8 +141,15 @@ millennial_model_earthworm <- function(time, state, parms){
     # ----------------------------
     # Aggregation fluxes
     # ----------------------------
+    
+    k_b_cur = ifelse(
+      (k_b_intercept + Earthworm*k_b_slope) >0,
+      (k_b_intercept + Earthworm*k_b_slope),
+      0.001
+    )
+    
     F_pa <- k_pa * S_wD * P   # Eq. 5
-    F_a  <- k_b  * S_wD * A   # Eq. 6
+    F_a  <- k_b_cur  * S_wD * A   # Eq. 6
     F_ma <- k_ma * S_wD * M   # Eq. 18
     
     # ----------------------------

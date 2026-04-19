@@ -5,7 +5,7 @@
 # ---- Fragmentation (donor-controlled) ----
 k_frag_litter: 0.0021918     # 0.8/365
 k_frag_CWD: 0.00013699      # 0.05/365
-k_frag_organic: 0.00021918  # 0.08/365
+k_frag_organic: 0.0021918 # Higher for tropics #0.00021918  # 0.08/365
 slope_det_k_frag_litter: 0
 intercept_det_k_frag_litter: 0.0021918
 slope_det_k_frag_organic: 0
@@ -79,13 +79,14 @@ E_detritivores: 0
 c_detritivores: 0.1
 
 # ---- Earthworm parameters ----
-d_earthworm: 0.01
+d_earthworm: 0.01764422 #0.0084692232/0.48
 a_earthworm: 0.5
-a_earthworm_soil: 0.02
-p_earthworm: 0.4
+a_earthworm_soil: 0.09
+p_earthworm: 0.053 #0.35 #0.053
 E_earthworm: 0
-c_earthworm_litter: 0.00001
-c_earthworm_soil: 0.00001
-c_earthworm_om: 0.00001
-prop_feaces_earthworm_LMWC: 0.01
-
+c_earthworm_litter: 0
+c_earthworm_soil: 0.0001892022
+c_earthworm_om: 0
+prop_feaces_earthworm_LMWC: 0
+k_b_intercept: 0.02
+k_b_slope: -0.02 # Reduction in aggregate loss with earthworm biomass
