@@ -38,6 +38,16 @@ parms$tree_forcing <- make_tree_forcing_equilibrium(parms)
 
 # Water stable aggregate improvement: based on reference Erin found, 20-35% more stable
 
+# POM is 3x more with earthworms
+# MAOM is 68% more with earthworms
+
+parms$BD = 1390 # From AE Itatinga work
+parms$MAT = 20 # From field station website
+parms$pH = 4 # Calcium chloride
+parms$pct_claysilt = (100-83.8) # From George itatinga
+parms$fCLAY = 11.6 # From George Itatinga
+parms$phi_por = 0.35 # Guess, fix later
+
 # With detritivores:
 millennial_eqm_det = rootSolve::stode(
   y     = init_millennial_state(Earthworm = T),
