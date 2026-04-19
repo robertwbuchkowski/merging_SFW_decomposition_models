@@ -4,9 +4,9 @@
 
 GPPmax_herb: 4.0         # Maximum daily GPP (g C m-2 d-1)
 Q10: 2.0                 # Temperature sensitivity of photosynthesis
-Tref: 10.0               # Reference temperature (°C)
+Tref: 20.0               # Reference temperature (°C)
 
-theta_opt: 0.30          # Optimal soil moisture for plant productivity
+theta_opt: 0.3          # Optimal soil moisture for plant productivity
 
 maint_resp: 0.002        # Maintenance respiration (g C g C-1 d-1)
 growth_resp: 0.25        # Fraction of GPP lost to growth respiration
@@ -35,10 +35,10 @@ herbivory_root: 0
 
 
 # ------- Root herbivory ---------
-c_rootherb: 0.001
-d_rootherb: 0.1
+c_rootherb: 0.05
+d_rootherb: 4
 a_rootherb: 0.4
-p_rootherb: 1
-E_root_herb: 0.1
+p_rootherb: 0.37 # default of 1
+E_root_herb: 0 # default of 0
 k_exudate_intercept: 0.00002740
 k_exudate_slope: 0
