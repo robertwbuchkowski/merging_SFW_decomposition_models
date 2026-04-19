@@ -18,9 +18,6 @@ source("R/plot_ode_out.R")
 parms  <- yaml::read_yaml("config/common.yml")
 parms  <- modifyList(parms, yaml::read_yaml("config/tree_monomolecular.yml"))
 parms  <- modifyList(parms, yaml::read_yaml("config/millennial.yml"))
-parms  <- derive_millennial_parms(parms)
-
-parms$tree_forcing <- make_tree_forcing_equilibrium(parms)
 
 # Consumption calculation:
 # AE is the chosen site
@@ -40,13 +37,21 @@ parms$tree_forcing <- make_tree_forcing_equilibrium(parms)
 
 # POM is 3x more with earthworms
 # MAOM is 68% more with earthworms
+# 1350mm for precipitation
 
 parms$BD = 1390 # From AE Itatinga work
 parms$MAT = 20 # From field station website
+parms$T_amp = 15 # From field station website
 parms$pH = 4 # Calcium chloride
 parms$pct_claysilt = (100-83.8) # From George itatinga
 parms$fCLAY = 11.6 # From George Itatinga
-parms$phi_por = 0.35 # Guess, fix later
+# parms$phi_por = 0.35 # Guess, fix later
+parms$TBTmax = 8790*0.5*2 # Based on the Voit...
+
+parms  <- derive_millennial_parms(parms)
+
+parms$tree_forcing <- make_tree_forcing_equilibrium(parms)
+
 
 # With detritivores:
 millennial_eqm_det = rootSolve::stode(
@@ -54,8 +59,6 @@ millennial_eqm_det = rootSolve::stode(
   func  = millennial_model_earthworm,
   parms = parms
 )
-
-
 
 # Without detritivores:
 millennial_eqm = rootSolve::stode(
@@ -79,25 +82,118 @@ temp_file %>%
   pivot_wider() %>%
   mutate(Diff = 100*(EW-CT)/CT)
 
+# 3450 soil carbon from Voit.
+# 780 litter layer from Voit.
 
 parms$B0 = parms$TBTmax
+parms$addherb
 
 parms$tree_forcing <- make_tree_forcing(parms)
 
+
+View(t(sapply(1:365, parms$tree_forcing)))
+
+
 millennial_out_det_longrun = ode(
-  times = seq(1, 365*3, by = 1),
+  times = seq(1, 365*500, by = 1),
   y     = millennial_eqm_det$y,
   func  = millennial_model_earthworm,
   parms = parms
 )
 
 
-millennial_out_det = ode(
-  times = seq(1, 365*3, by = 1),
-  y     = millennial_eqm_det$y,
+millennial_out_det_longrun = ode(
+  times = seq(1, 365*500, by = 1),
+  y     = millennial_out_det_longrun[365*500,-1],
   func  = millennial_model_earthworm,
-  parms = parms
-)
+  parms = parms)
 
-plot_ode_output(millennial_out_det,
+write_rds(millennial_out_det_longrun,"Data/millennial_out_ew_longrun.rds")
+
+plot_ode_output(millennial_out_det_longrun,
                 variable_cols = names(millennial_eqm_det$y))
+
+
+millennial_out_det_longrun %>%
+  data.frame() %>%
+  tibble() %>%
+  filter(time %in% c(
+    365*500-185,
+    365*500-185 - 365
+  ))  %>%
+  mutate(Time = c("A", "B")) %>%
+  select(-time) %>%
+  pivot_longer(!Time) %>%
+  pivot_wider(names_from = Time) %>%
+  mutate(diff = A-B) %>%
+  pull(diff) %>% abs() %>% max()
+
+
+write_rds(millennial_out_det_longrun[365*500,-1],"Data/millennial_out_ew_longrun.rds")
+
+
+stable_state = read_rds("Data/millennial_out_ew_longrun.rds")
+
+millennial_out_wew = ode(
+  times = seq(1, 365*10, by = 1),
+  y     = stable_state,
+  func  = millennial_model_earthworm,
+  parms = parms
+)
+
+stable_state["Earthworm"] = 0
+
+millennial_out_noew = ode(
+  times = seq(1, 365*10, by = 1),
+  y     = stable_state,
+  func  = millennial_model_earthworm,
+  parms = parms
+)
+
+millennial_out_wew %>%
+  data.frame() %>%
+  tibble() %>%
+  mutate(Treatment = "Earthworm") %>%
+  bind_rows(
+    millennial_out_noew %>%
+      data.frame() %>%
+      tibble() %>%
+      mutate(Treatment = "No earthworm")
+  ) %>%
+  pivot_longer(!time & !Treatment) %>%
+  ggplot(aes(x = time, y = value, color = Treatment)) + geom_line() + facet_wrap(.~name, scales = "free_y")
+
+
+millennial_out_wew %>%
+  data.frame() %>%
+  tibble() %>%
+  mutate(Treatment = "Earthworm") %>%
+  bind_rows(
+    millennial_out_noew %>%
+      data.frame() %>%
+      tibble() %>%
+      mutate(Treatment = "No earthworm")
+  ) %>%
+  pivot_longer(!time & !Treatment) %>%
+  filter(time > (365*10 - 365)) %>%
+  group_by(Treatment, name) %>%
+  summarize(value = mean(value)) %>%
+  ggplot(aes(x = Treatment, y = value, fill = Treatment)) + geom_col() + facet_wrap(.~name, scales = "free_y")
+
+millennial_out_wew %>%
+  data.frame() %>%
+  tibble() %>%
+  mutate(Treatment = "Earthworm") %>%
+  bind_rows(
+    millennial_out_noew %>%
+      data.frame() %>%
+      tibble() %>%
+      mutate(Treatment = "No earthworm")
+  ) %>%
+  pivot_longer(!time & !Treatment) %>%
+  filter(time > (365*10 - 365)) %>%
+  pivot_wider(names_from = Treatment) %>%
+  mutate(Diff = Earthworm - `No earthworm`) %>%
+  group_by(name) %>%
+  summarize(Diff = mean(Diff)) %>%
+  ggplot(aes(x = name, y = Diff)) + geom_col() + facet_wrap(.~name, scales = "free_y")
