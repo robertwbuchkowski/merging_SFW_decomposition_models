@@ -70,23 +70,3 @@ k_l: 0.0015
 # ---- Input partitioning ----
 p_a: 0.33
 p_b: 0.50
-
-# ---- Detritivory parameters ----
-d_detritivores: 0.01
-a_detritivores: 0.5
-p_detritivores: 0.4
-E_detritivores: 0
-c_detritivores: 0.1
-
-# ---- Earthworm parameters ----
-d_earthworm: 0.01764422 #0.0084692232/0.48
-a_earthworm: 0.5
-a_earthworm_soil: 0.09
-p_earthworm: 0.053 #0.35 #0.053
-E_earthworm: 0
-c_earthworm_litter: 0
-c_earthworm_soil: 0.0001892022
-c_earthworm_om: 0
-prop_feaces_earthworm_LMWC: 0
-k_b_intercept: 0.02
-k_b_slope: -0.02 # Reduction in aggregate loss with earthworm biomass

@@ -47,6 +47,12 @@ init_millennial_state <- function(Detritivore = F, Earthworm = F, HerbNem = F) {
         )
       }else{
         c(
+          C_leaf_herb = 200,
+          C_root_herb = 200,
+          C_leaf_tree = 750,
+          C_wood_tree = 6750,
+          C_root_tree = 2500,
+          
           Litter  = 200,
           CWD     = 1000,
           Organic = 2000,

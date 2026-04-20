@@ -1,6 +1,6 @@
 plot_ode_output <- function(
     ode_out,
-    variable_cols,
+    variable_cols = NULL,
     time_col = 1,
     start_time = NULL
 ) {
@@ -24,7 +24,13 @@ plot_ode_output <- function(
   # --------------------------------------------------
   # Identify state variables
   # --------------------------------------------------
-  state_names <- variable_cols
+  if(is.null(variable_cols)){
+    state_names <- names(df)[-time_col]
+  }else{
+    state_names <- variable_cols
+  }
+  
+  
   
   # --------------------------------------------------
   # Get starting values

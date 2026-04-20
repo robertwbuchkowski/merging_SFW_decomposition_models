@@ -20,15 +20,73 @@ year_length_d: 365
 litter_peak_doy: 288
 litter_width_d: 30
 
+# Plant growth ------
+GPPmax_herb: 4.0         # Maximum daily GPP (g C m-2 d-1)
+GPPmax_tree: 4.0         # Maximum daily GPP (g C m-2 d-1)
+
+Q10: 2.0                 # Temperature sensitivity of photosynthesis
+Tref: 20.0               # Reference temperature (°C)
+
+theta_opt: 0.3          # Optimal soil moisture for plant productivity
+
+maint_resp: 0.002        # Maintenance respiration (g C g C-1 d-1)
+growth_resp: 0.25        # Fraction of GPP lost to growth respiration
+
+# ---- Biomass allocation (must sum to 1) ----
+a_leaf_tree: 0.075
+a_wood_tree: 0.675
+a_root_tree: 0.25
+
+# Herbaceous root fraction
+a_root_herb: 0.5
+
+# ---- Turnover and flux rates ----
+k_litterfall_ann: 0.35
+k_litterfall_herb_ann: 1
+
+k_mort_leaf_tree: 0.00005479    # 0.02/365
+k_mort_leaf_herb: 0.00005479    # 0.02/365
+
+k_mort_wood_tree: 0.00006849    # 0.025/365
+
+k_mort_root_tree: 0.00021918   # 0.08/365
+k_mort_root_herb: 0.00021918   # 0.08/365
+
+k_exudate_tree: 0.00002740     # 0.01/365
+k_exudate_herb: 0.00002740     # 0.01/365
+
 # ---- Mortality partitioning ----
 root_to_organic: 0.7
-faeces_to_organic: 0.5
-carcass_to_organic: 0.5
+winter_root_act_prop: 0.01
+root_dormancy_temp: 5
 
-detritivory_litter: 0
-detritivory_CWD: 0
-detritivory_organic: 0
+# ---- Detritivory parameters ----
+d_detritivores: 0.01
+a_detritivores: 0.5
+p_detritivores: 0.4
+E_detritivores: 0
+c_detritivores: 0.1
 
-faeces: 0
-carcass: 0
-extra_mineral_input_test: 0
+# ---- Earthworm parameters ----
+d_earthworm: 0.01764422 #0.0084692232/0.48
+a_earthworm: 0.5
+a_earthworm_soil: 0.09
+p_earthworm: 0.053 #0.35 #0.053
+E_earthworm: 0
+c_earthworm_litter: 0
+c_earthworm_soil: 0.0001892022
+c_earthworm_om: 0
+prop_feaces_earthworm_LMWC: 0
+k_b_intercept: 0.02
+k_b_slope: -0.02 # Reduction in aggregate loss with earthworm biomass
+
+# ------- Root herbivory ---------
+c_rootherb: 0.05
+d_rootherb: 4
+a_rootherb: 0.4
+p_rootherb: 0.37 # default of 1
+E_root_herb: 0 # default of 0
+k_exudate_intercept: 0.00002740
+k_exudate_slope: 0
+
+
