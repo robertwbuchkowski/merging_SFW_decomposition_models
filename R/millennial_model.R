@@ -89,12 +89,59 @@ millennial_model_wplant <- function(time, state, parms){
       exudates_tree       <- k_exudate_tree* C_root_tree*winter_root_act_prop
     }
     
+    
+    # ----------------------------
+    # Earthworm rates
+    # ----------------------------
+    
+    Fed_earthworm_litter = c_earthworm_litter*Litter*Earthworm
+    
+    Fed_earthworm_om = c_earthworm_om*Organic*Earthworm
+    
+    Fed_earthworm_M = c_earthworm_soil*Earthworm*M
+    
+    Fed_earthworm_P = c_earthworm_soil*Earthworm*P
+    
+    Fed_earthworm_L = c_earthworm_soil*Earthworm*L
+    
+    Fed_earthworm_A = c_earthworm_soil*Earthworm*A
+    
+    
+    Waste_earthworm_L = prop_feaces_earthworm_LMWC*((1-a_earthworm)*(Fed_earthworm_litter + Fed_earthworm_om) + (1-a_earthworm_soil)*(Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A))
+    
+    Carcass_earthworm_P = d_earthworm*Earthworm^2
+    
+    Waste_earthworm_A = (1-prop_feaces_earthworm_LMWC)*((1-a_earthworm)*(Fed_earthworm_litter + Fed_earthworm_om) + (1-a_earthworm_soil)*(Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A))
+    
+    # ----------------------------
+    # Detritiviory rates
+    # ----------------------------
+    
+    Fed_det_mic = c_detritivores*MIC*Detritivore
+    
+    Fed_det_om = c_detritivores*Organic*Detritivore
+    
+    Fed_det_lit = c_detritivores*Litter*Detritivore
+    
+    Carcass_det_om = d_detritivores*Detritivore^2
+    
+    Waste_det_om = (1-a_detritivores)*(Fed_det_mic + Fed_det_om + Fed_det_lit)
+    
+    
+    # --------------------------------------------------
+    # Root herbivores
+    # --------------------------------------------------
+    ConsumpRootHerb = c_rootherb*C_root_herb*RootHerb
+    DeathRootHerb = d_rootherb*RootHerb^2
+    FaecesRootHerb = (1-a_rootherb)*c_rootherb*C_root_herb*RootHerb
+    
+    
     # ----------------------------
     # Fragmentation and physical transfer to organic and mineral soil
     # ----------------------------
-    fragmentation_litter   <- k_frag_litter  * Litter   # -> Organic
+    fragmentation_litter   <- (intercept_det_k_frag_litter + slope_det_k_frag_litter*Detritivore)  * Litter   # -> Organic
     fragmentation_CWD      <- k_frag_CWD     * CWD      # -> Organic
-    fragmentation_organic  <- k_frag_organic * Organic  # -> POM
+    fragmentation_organic  <- (intercept_det_k_frag_organic + slope_det_k_frag_organic*Detritivore) * Organic  # -> POM
     
     # ----------------------------
     # Sorption capacity Qmax (Eq. 11)
@@ -174,8 +221,15 @@ millennial_model_wplant <- function(time, state, parms){
     # ----------------------------
     # Aggregation fluxes
     # ----------------------------
+    
+    k_b_cur = ifelse(
+      (k_b_intercept + Earthworm*k_b_slope) >0,
+      (k_b_intercept + Earthworm*k_b_slope),
+      0.001
+    )
+    
     F_pa <- k_pa * S_wD * P   # Eq. 5
-    F_a  <- k_b  * S_wD * A   # Eq. 6
+    F_a  <- k_b_cur  * S_wD * A   # Eq. 6
     F_ma <- k_ma * S_wD * M   # Eq. 18
     
     # ----------------------------
@@ -207,29 +261,46 @@ millennial_model_wplant <- function(time, state, parms){
     # --------------------------------------------------
     
     dC_leaf_herb <- leaf_growth_herb - litterfall_herb - leaf_mortality_herb
-    dC_root_herb <- root_growth_herb - root_mortality_herb - exudates_herb
+    dC_root_herb <- root_growth_herb - root_mortality_herb - exudates_herb - ConsumpRootHerb
     
     dC_leaf_tree <- leaf_growth_tree - litterfall_tree - leaf_mortality_tree
     dC_wood_tree <- wood_growth_tree - wood_mortality_tree
     dC_root_tree <- root_growth_tree - root_mortality_tree - exudates_tree
     
+    # --------------------------------------------------
+    # Animal differential equations:
+    # --------------------------------------------------
+    
+    # Earthworms:
+    dEarthworm <- 
+      p_earthworm*(
+        a_earthworm*(Fed_earthworm_litter + Fed_earthworm_om) + 
+          a_earthworm_soil*(Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A)) - 
+      d_earthworm*Earthworm^2 - 
+      E_earthworm*Earthworm
+    
+    
+    dDetritivore <- p_detritivores*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit) - Carcass_det_om - E_detritivores*Detritivore
+    
+    # Root herbivores:
+    dRootHerb <- p_rootherb*a_rootherb*ConsumpRootHerb - DeathRootHerb
     
     # -------------------------------
     # Organic horizon pools
     # -------------------------------
     
     # Detritus pools
-    dLitter  <- litterfall_herb + leaf_mortality_herb + litterfall_tree + leaf_mortality_tree - F_Litter_DOM - fragmentation_litter
+    dLitter  <- litterfall_herb + leaf_mortality_herb + litterfall_tree + leaf_mortality_tree - F_Litter_DOM - fragmentation_litter - Fed_earthworm_litter - Fed_det_lit
     
     dCWD     <- wood_mortality_tree - F_CWD_DOM - fragmentation_CWD
     
     dOrganic <- fragmentation_litter + fragmentation_CWD +
       root_to_organic * (root_mortality_tree + root_mortality_herb) +
-      F_Organic_DOM - fragmentation_organic
+      F_Organic_DOM - fragmentation_organic - Fed_earthworm_om - Fed_det_om + Carcass_det_om + Waste_det_om
     
     dDOM <- F_Litter_DOM + F_CWD_DOM + F_Organic_DOM + F_MIC_mortality - F_DOM_MIC - F_l_organic
     
-    dMIC <- F_DOM_MIC - F_MIC_mortality - F_MIC_respiration
+    dMIC <- F_DOM_MIC - F_MIC_mortality - F_MIC_respiration - Fed_det_mic
     
     # Transfer to mineral:
     Fi_t_part <- (1 - root_to_organic) * (root_mortality_tree + root_mortality_herb) +
@@ -248,16 +319,16 @@ millennial_model_wplant <- function(time, state, parms){
     # -------------------------
     
     # Eq. 1
-    dP <- p_i * Fi_t + p_a * F_a - F_pa - F_pl
+    dP <- p_i * Fi_t + p_a * F_a - F_pa - F_pl - Fed_earthworm_P + Carcass_earthworm_P + DeathRootHerb + FaecesRootHerb
     
     # Eq. 7
-    dL <- Fi_t * (1 - p_i) - F_l + F_pl - F_lm - F_lb + (1 - p_b) * F_bm + F_ld
+    dL <- Fi_t * (1 - p_i) - F_l + F_pl - F_lm - F_lb + (1 - p_b) * F_bm + F_ld - Fed_earthworm_L + Waste_earthworm_L
     
     # Eq. 17
-    dA <- F_ma + F_pa - F_a
+    dA <- F_ma + F_pa - F_a - Fed_earthworm_A + Waste_earthworm_A
     
     # Eq. 19
-    dM <- F_lm - F_ld + p_b * F_bm - F_ma + F_a * (1 - p_a)
+    dM <- F_lm - F_ld + p_b * F_bm - F_ma + F_a * (1 - p_a) - Fed_earthworm_M
     
     # Eq. 20
     dB <- F_lb - F_bm - F_mr
@@ -273,6 +344,11 @@ millennial_model_wplant <- function(time, state, parms){
         dC_leaf_tree,
         dC_wood_tree,
         dC_root_tree,
+        
+        # Animal pools:
+        dEarthworm,
+        dDetritivore,
+        dRootHerb,
         
         # Organic horizons:
         dLitter, 

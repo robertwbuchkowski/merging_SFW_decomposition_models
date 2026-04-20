@@ -30,9 +30,13 @@ if(verbose){
 
 #Run the model:
 
+y0 = init_millennial_state()
+# y0["Detritivore"] = 0
+# y0["Earthworm"] = 0
+
 millennial_out = ode(
-  times = seq(1, 365*100, by = 1),
-  y     = init_millennial_state(),
+  times = seq(1, 365*1, by = 1),
+  y     = y0,
   func  = millennial_model_wplant,
   parms = parms
 )
