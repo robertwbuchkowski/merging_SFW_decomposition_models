@@ -13,7 +13,7 @@ source("R/millennial_model.R")
 source("R/make_tree_forcing.R")
 source("R/derive_millennial_parms.R")
 source("R/init_millennial_state.R")
-source("R/plot_ode_out.R")
+source("R/plot_ode_output.R")
 
 parms  <- yaml::read_yaml("config/common.yml")
 parms  <- modifyList(parms, yaml::read_yaml("config/tree_monomolecular.yml"))
@@ -25,7 +25,7 @@ parms$tree_forcing <- make_tree_forcing_equilibrium(parms)
 # With detritivores:
 millennial_eqm_det = rootSolve::stode(
   y     = init_millennial_state(T),
-  func  = millennial_model_detritivory,
+  func  = millennial_model,
   parms = parms
 )
 

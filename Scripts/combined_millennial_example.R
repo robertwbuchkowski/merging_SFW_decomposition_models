@@ -31,8 +31,14 @@ if(verbose){
 #Run the model:
 
 y0 = init_millennial_state()
-# y0["Detritivore"] = 0
-# y0["Earthworm"] = 0
+y0["RootHerb"] = 0
+y0["Earthworm"] = 0
+y0["C_leaf_herb"] = 0
+y0["C_root_herb"] = 0
+
+parms["GPPmax_herb"] = 0
+
+parms["GPPmax_tree"] 
 
 millennial_out = ode(
   times = seq(1, 365*1, by = 1),
