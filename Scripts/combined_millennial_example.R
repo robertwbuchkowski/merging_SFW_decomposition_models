@@ -36,8 +36,7 @@ y0["Earthworm"] = 0
 y0["C_leaf_herb"] = 0
 y0["C_root_herb"] = 0
 
-parms["GPPmax_herb"] = 0
-
+parms["GPPmax_herb"] = 0 # in this model herbaceous = grasses; forest wont have
 parms["GPPmax_tree"] 
 
 millennial_out = ode(
@@ -48,3 +47,25 @@ millennial_out = ode(
 )
 
 plot_ode_output(millennial_out)
+# OM decreases too much - need to change rates etc.
+
+
+# With detritivores:
+millennial_eqm_det = rootSolve::stode(
+  y     = init_millennial_state(T),
+  func  = millennial_model_wplant,
+  parms = parms
+)
+
+millennial_eqm_det$y
+
+# Without detritivores:
+millennial_eqm = rootSolve::stode(
+  y     = init_millennial_state(F),
+  func  = millennial_model_wplant,
+  parms = parms
+)
+
+millennial_eqm$y
+
+

@@ -3,13 +3,13 @@
 # ------------------------------------------------------------
 
 # Climate forcing
-MAT: 6
-T_amp: 26
+MAT: 10 # prev 6
+T_amp: 60 # prev 26 (temperate forest range from -30 to +30)
 MAtheta: 0.30
 theta_amp: 0.15
 
 # Texture / site
-pct_claysilt: 70
+pct_claysilt: 70 # pretty accurate for temperate
 fCLAY: 40           # clay fraction (0–1) (MIMICS)
 
 # Lignin fraction
@@ -17,12 +17,13 @@ LigFrac: 0.2 # MIMICS and Century
 
 # Calendar
 year_length_d: 365
-litter_peak_doy: 288
-litter_width_d: 30
+litter_peak_doy: 288 # November 1 ; prev 288 (Oct 15)
+litter_width_d: 30 # time of most litterfall (15 days on each side)
 
 # Plant growth ------
-GPPmax_herb: 4.0         # Maximum daily GPP (g C m-2 d-1)
-GPPmax_tree: 4.0         # Maximum daily GPP (g C m-2 d-1)
+# In temperate deciduous broadleaf forests daily GPPmax can exceed 19 and mixed forests are around 13 -- this is mostly from trees
+GPPmax_herb: 0         # Maximum daily GPP (g C m-2 d-1) # prev 4.0
+GPPmax_tree: 18.0      # Maximum daily GPP (g C m-2 d-1) # prev 4.0
 
 Q10: 2.0                 # Temperature sensitivity of photosynthesis
 Tref: 20.0               # Reference temperature (°C)
@@ -61,11 +62,11 @@ winter_root_act_prop: 0.01
 root_dormancy_temp: 5
 
 # ---- Detritivory parameters ----
-d_detritivores: 0.01
-a_detritivores: 0.5
-p_detritivores: 0.4
+d_detritivores: 0.001785714 #0.000913242 # prev 0.01 # death rate
+a_detritivores: 1.573182 #0.02082     # prev 0.5  # assimilation efficiency gC m-2
+p_detritivores: 0.00345612  # prev 0.4  # production efficiency gC m-2
 E_detritivores: 0
-c_detritivores: 0.1
+c_detritivores: 0.12        # prev 0.1  # consumption gC m-2
 
 # ---- Earthworm parameters ----
 d_earthworm: 0.01764422 #0.0084692232/0.48
