@@ -115,6 +115,8 @@ millennial_model_wplant <- function(time, state, parms){
     
     Waste_earthworm_A = (1-prop_feaces_earthworm_LMWC)*((1-a_earthworm)*(Fed_earthworm_litter + Fed_earthworm_om) + (1-a_earthworm_soil)*(Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A))
     
+    Respiration_earthworm = (1-p_earthworm)*(a_earthworm*(Fed_earthworm_litter + Fed_earthworm_om) + a_earthworm_soil*(Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A)) + E_earthworm*Earthworm
+    
     # ----------------------------
     # Detritiviory rates
     # ----------------------------
@@ -129,14 +131,30 @@ millennial_model_wplant <- function(time, state, parms){
     
     Waste_det_om = (1-a_detritivores)*(Fed_det_mic + Fed_det_om + Fed_det_lit)
     
+    Respiration_detritivore = (1-p_detritivores)*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit)
+    
+    # ----------------------------
+    # Predator rates
+    # ----------------------------
+    
+    Fed_detpred_det = c_detpredator*Detritivore*DetPredator
+    
+    Carcass_detpred_om = d_detpredator*DetPredator^2
+    
+    Waste_detpred_om = (1-a_detpredator)*c_detpredator*Detritivore*DetPredator
+    
+    Respiration_detpred = (1-p_detpredator)*a_detpredator*c_detpredator*Detritivore*DetPredator
     
     # --------------------------------------------------
     # Root herbivores
     # --------------------------------------------------
-    ConsumpRootHerb = c_rootherb*C_root_herb*RootHerb
-    DeathRootHerb = d_rootherb*RootHerb^2
-    FaecesRootHerb = (1-a_rootherb)*c_rootherb*C_root_herb*RootHerb
+    Fed_rootherb_herb = c_rootherb*C_root_herb*RootHerb
     
+    Carcass_rootherb_P = d_rootherb*RootHerb^2
+    
+    Waste_rootherb_P = (1-a_rootherb)*Fed_rootherb_herb
+    
+    Respiration_rootherb = (1-p_rootherb)*a_rootherb*Fed_rootherb_herb
     
     # ----------------------------
     # Fragmentation and physical transfer to organic and mineral soil
@@ -263,7 +281,7 @@ millennial_model_wplant <- function(time, state, parms){
     # --------------------------------------------------
     
     dC_leaf_herb <- leaf_growth_herb - litterfall_herb - leaf_mortality_herb
-    dC_root_herb <- root_growth_herb - root_mortality_herb - exudates_herb - ConsumpRootHerb
+    dC_root_herb <- root_growth_herb - root_mortality_herb - exudates_herb - Fed_rootherb_herb
     
     dC_leaf_tree <- leaf_growth_tree - litterfall_tree - leaf_mortality_tree
     dC_wood_tree <- wood_growth_tree - wood_mortality_tree
@@ -281,11 +299,14 @@ millennial_model_wplant <- function(time, state, parms){
       d_earthworm*Earthworm^2 - 
       E_earthworm*Earthworm
     
+    # Detritivore:
+    dDetritivore <- p_detritivores*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit) - Carcass_det_om 
     
-    dDetritivore <- p_detritivores*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit) - Carcass_det_om - E_detritivores*Detritivore
+    # DetPredator:
+    dDetPredator <- a_detpredator*(Fed_detpred_det) - Carcass_detpred_om
     
     # Root herbivores:
-    dRootHerb <- p_rootherb*a_rootherb*ConsumpRootHerb - DeathRootHerb
+    dRootHerb <- p_rootherb*a_rootherb*Fed_rootherb_herb - Carcass_rootherb_P
     
     # -------------------------------
     # Organic horizon pools
@@ -298,7 +319,10 @@ millennial_model_wplant <- function(time, state, parms){
     
     dOrganic <- fragmentation_litter + fragmentation_CWD +
       root_to_organic * (root_mortality_tree + root_mortality_herb) +
-      F_Organic_DOM - fragmentation_organic - Fed_earthworm_om - Fed_det_om + Carcass_det_om + Waste_det_om
+      F_Organic_DOM - fragmentation_organic - 
+      Fed_earthworm_om - 
+      Fed_det_om + Carcass_det_om + Waste_det_om + 
+      Carcass_detpred_om + Waste_detpred_om
     
     dDOM <- F_Litter_DOM + F_CWD_DOM + F_Organic_DOM + F_MIC_mortality - F_DOM_MIC - F_l_organic
     
@@ -321,7 +345,9 @@ millennial_model_wplant <- function(time, state, parms){
     # -------------------------
     
     # Eq. 1
-    dP <- p_i * Fi_t + p_a * F_a - F_pa - F_pl - Fed_earthworm_P + Carcass_earthworm_P + DeathRootHerb + FaecesRootHerb
+    dP <- p_i * Fi_t + p_a * F_a - F_pa - F_pl - 
+      Fed_earthworm_P + Carcass_earthworm_P + 
+      Carcass_rootherb_P+ Waste_rootherb_P
     
     # Eq. 7
     dL <- Fi_t * (1 - p_i) - F_l + F_pl - F_lm - F_lb + (1 - p_b) * F_bm + F_ld - Fed_earthworm_L + Waste_earthworm_L
@@ -335,6 +361,31 @@ millennial_model_wplant <- function(time, state, parms){
     # Eq. 20
     dB <- F_lb - F_bm - F_mr
     
+    # --------------------#
+    # MASS BALANCE CHECK:
+    # --------------------#
+    mass_balance_check <- (
+      dC_leaf_herb + dC_root_herb + dC_leaf_tree + dC_wood_tree + dC_root_tree +
+        dEarthworm + dDetritivore + dDetPredator + dRootHerb +
+        dLitter + dCWD + dOrganic + dDOM + dMIC +
+        dP + dL + dA + dM + dB
+    ) + (
+      # add respiration losses back
+      Ra_herb + Ra_tree +
+        Respiration_earthworm +
+        Respiration_detritivore +
+        Respiration_detpred +
+        Respiration_rootherb +
+        F_mr + F_MIC_respiration
+    ) + (
+      # add leaching losses back
+      F_l
+    ) - (
+      # subtract external inputs
+      GPP_herb + GPP_tree
+    )
+    
+    browser()
     # ---------------------------
     # Return list for deSolve
     # ---------------------------
@@ -350,6 +401,7 @@ millennial_model_wplant <- function(time, state, parms){
         # Animal pools:
         dEarthworm,
         dDetritivore,
+        dDetPredator,
         dRootHerb,
         
         # Organic horizons:
@@ -364,7 +416,7 @@ millennial_model_wplant <- function(time, state, parms){
         dL, 
         dA, 
         dM, 
-        dB)
+        dB),mass_balance_check = mass_balance_check
     )
   })
 }

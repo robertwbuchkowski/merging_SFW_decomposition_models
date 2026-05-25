@@ -18,8 +18,6 @@ parms  <- yaml::read_yaml("config/common.yml")
 parms  <- modifyList(parms, yaml::read_yaml("config/millennial.yml"))
 parms  <- derive_millennial_parms(parms)
 
-# parms$climate_forcing <- make_climate_forcing(parms)
-
 parms$climate_forcing <- make_climate_forcing_equilibrium(parms)
 
 # Plot forcing if you'd like:
@@ -37,33 +35,34 @@ if(verbose){
 init_full <- init_millennial_state()
 
 # ============================================
-# ✅ EXAMPLE 1 — FULL MODEL
+# ROOT HERBIVORE MODEL
 # ============================================
 
-config_full <- list(
+config_rootherb <- list(
   herb        = TRUE,
   tree        = FALSE,
   earthworm   = FALSE,
   detritivore = FALSE,
+  detpredator = FALSE,
   rootherb    = TRUE
 )
 
-parms  <- modifyList(parms, list(config = config_full))
+parms  <- modifyList(parms, list(config = config_rootherb))
 
-state_full <- build_initial_state(init_full, config_full)
+state_rootherb <- build_initial_state(init_full, config_rootherb)
 
-steady_full <- stode(
-  y = state_full,
+steady_rootherb <- stode(
+  y = state_rootherb,
   func = millennial_wrapper,
   parms = parms
 )
 
 print("FULL MODEL STEADY STATE:")
-print(steady_full$y)
+print(steady_rootherb$y)
 
 
 # ============================================
-# ✅ EXAMPLE 2 — NO ROOT HERBIVORES
+# NO ROOT HERBIVORE MODEL
 # ============================================
 
 config_no_rootherb <- list(
@@ -71,6 +70,7 @@ config_no_rootherb <- list(
   tree        = FALSE,
   earthworm   = FALSE,
   detritivore = FALSE,
+  detpredator = FALSE,
   rootherb    = FALSE
 )
 
@@ -89,15 +89,31 @@ print(steady_no_rootherb$y)
 
 #Run the model:
 
-y0 = init_millennial_state()
-# y0["Detritivore"] = 0
-# y0["Earthworm"] = 0
+parms$climate_forcing <- make_climate_forcing(parms)
 
 millennial_out = ode(
-  times = seq(1, 365*1, by = 1),
-  y     = y0,
+  times = seq(1, 365*2, by = 1),
+  y     = init_millennial_state(),
   func  = millennial_model_wplant,
   parms = parms
 )
 
 plot_ode_output(millennial_out)
+
+
+
+# CHECKING BALANCE:
+config_check <- list(
+  herb        = FALSE,
+  tree        = TRUE,
+  earthworm   = FALSE,
+  detritivore = FALSE,
+  detpredator = FALSE,
+  rootherb    = FALSE
+)
+
+parms$config <- config_check
+
+state_check <- build_initial_state(init_full, config_check)
+
+millennial_wrapper(1, state_check, parms)

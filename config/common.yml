@@ -3,8 +3,8 @@
 # ------------------------------------------------------------
 
 # Climate forcing
-MAT: 6
-T_amp: 26
+MAT: 15
+T_amp: 12
 MAtheta: 0.30
 theta_amp: 0.15
 
@@ -61,11 +61,18 @@ winter_root_act_prop: 0.01
 root_dormancy_temp: 5
 
 # ---- Detritivory parameters ----
-d_detritivores: 0.01
+d_detritivores: 0.00567
 a_detritivores: 0.5
-p_detritivores: 0.4
+p_detritivores: 0.35
 E_detritivores: 0
-c_detritivores: 0.1
+c_detritivores: 0.0000216
+
+# ---- Predators parameters ----
+d_detpredator: 0.0050411
+a_detpredator: 0.6
+p_detpredator: 0.35
+E_detpredator: 0
+c_detpredator: 0.0168
 
 # ---- Earthworm parameters ----
 d_earthworm: 0.01764422 #0.0084692232/0.48
@@ -86,7 +93,7 @@ d_rootherb: 4
 a_rootherb: 0.4
 p_rootherb: 0.37 # default of 1
 E_root_herb: 0 # default of 0
-k_exudate_intercept: 0.00002740
-k_exudate_slope: 0
+k_exudate_intercept: 0.00002740  #default of 0.00002740 #JY slope: 0.946
+k_exudate_slope: 0.013 #default of 0 
 
 

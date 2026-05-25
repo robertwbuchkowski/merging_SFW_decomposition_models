@@ -6,7 +6,7 @@
 full_names <- c(
   "C_leaf_herb", "C_root_herb",
   "C_leaf_tree", "C_wood_tree", "C_root_tree",
-  "Earthworm", "Detritivore", "RootHerb",
+  "Earthworm", "Detritivore", "DetPredator","RootHerb",
   "Litter", "CWD", "Organic", "DOM", "MIC",
   "P", "L", "A", "M", "B"
 )
@@ -17,6 +17,7 @@ state_groups <- list(
   tree        = c("C_leaf_tree", "C_wood_tree", "C_root_tree"),
   earthworm   = c("Earthworm"),
   detritivore = c("Detritivore"),
+  detpredator = c("DetPredator"),
   rootherb    = c("RootHerb")
 )
 

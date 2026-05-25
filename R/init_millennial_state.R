@@ -1,4 +1,4 @@
-init_millennial_state <- function(Detritivore = F, Earthworm = F, HerbNem = F) {
+init_millennial_state <- function() {
   # Units: g C m^-2
   c(
     C_leaf_herb = 200,
@@ -10,6 +10,7 @@ init_millennial_state <- function(Detritivore = F, Earthworm = F, HerbNem = F) {
     Earthworm = 0.48,
     Detritivore = 0.1,
     RootHerb = 0.001,
+    DetPredator = 0.01,
     
     Litter  = 200,
     CWD     = 1000,
