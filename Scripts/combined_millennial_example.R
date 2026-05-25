@@ -6,6 +6,7 @@ verbose = F
 
 # ---- Load models ----
 source("R/millennial_model.R")
+source("R/millennial_wrapper.R")
 
 # ---- Load config utilities ----
 source("R/climate_forcing.R")
@@ -17,7 +18,9 @@ parms  <- yaml::read_yaml("config/common.yml")
 parms  <- modifyList(parms, yaml::read_yaml("config/millennial.yml"))
 parms  <- derive_millennial_parms(parms)
 
-parms$climate_forcing <- make_climate_forcing(parms)
+# parms$climate_forcing <- make_climate_forcing(parms)
+
+parms$climate_forcing <- make_climate_forcing_equilibrium(parms)
 
 # Plot forcing if you'd like:
 if(verbose){
@@ -27,6 +30,62 @@ if(verbose){
     ggplot(aes(x = day, y = value)) + geom_line() + facet_wrap(.~name, scales = "free_y")
   
 }
+
+# --------------------------------------------
+# FULL INITIAL CONDITIONS
+# --------------------------------------------
+init_full <- init_millennial_state()
+
+# ============================================
+# ✅ EXAMPLE 1 — FULL MODEL
+# ============================================
+
+config_full <- list(
+  herb        = TRUE,
+  tree        = FALSE,
+  earthworm   = FALSE,
+  detritivore = FALSE,
+  rootherb    = TRUE
+)
+
+parms  <- modifyList(parms, list(config = config_full))
+
+state_full <- build_initial_state(init_full, config_full)
+
+steady_full <- stode(
+  y = state_full,
+  func = millennial_wrapper,
+  parms = parms
+)
+
+print("FULL MODEL STEADY STATE:")
+print(steady_full$y)
+
+
+# ============================================
+# ✅ EXAMPLE 2 — NO ROOT HERBIVORES
+# ============================================
+
+config_no_rootherb <- list(
+  herb        = TRUE,
+  tree        = FALSE,
+  earthworm   = FALSE,
+  detritivore = FALSE,
+  rootherb    = FALSE
+)
+
+parms$config <- config_no_rootherb
+
+state_no_rootherb <- build_initial_state(init_full, config_no_rootherb)
+
+steady_no_rootherb <- steady(
+  y = state_no_rootherb,
+  func = millennial_wrapper,
+  parms = parms
+)
+
+print("NO ROOT HERBIVORE STEADY STATE:")
+print(steady_no_rootherb$y)
 
 #Run the model:
 

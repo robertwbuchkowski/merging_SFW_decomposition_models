@@ -54,6 +54,8 @@ millennial_model_wplant <- function(time, state, parms){
     
     NPP_tree <- pmax(0, GPP_tree - Ra_tree)
     
+    if(abs(a_leaf_tree + a_wood_tree + a_root_tree - 1) > 1e-6) {stop("Tree allocation fractions must sum to 1")}
+    
     leaf_growth_tree <- a_leaf_tree * NPP_tree
     wood_growth_tree <- a_wood_tree * NPP_tree
     root_growth_tree  <- a_root_tree * NPP_tree
@@ -69,7 +71,7 @@ millennial_model_wplant <- function(time, state, parms){
     leaf_mortality_herb <- k_mort_leaf_herb * C_leaf_herb
     
     # Root and wood winter dormancy:
-    if(T_t < root_dormancy_temp){
+    if(T_t > root_dormancy_temp){
       wood_mortality_tree <- k_mort_wood_tree * C_wood_tree
       
       root_mortality_herb <- k_mort_root_herb * C_root_herb
