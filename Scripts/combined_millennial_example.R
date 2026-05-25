@@ -92,7 +92,7 @@ print(steady_no_rootherb$y)
 parms$climate_forcing <- make_climate_forcing(parms)
 
 millennial_out = ode(
-  times = seq(1, 365*2, by = 1),
+  times = seq(1, 365*1, by = 1),
   y     = init_millennial_state(),
   func  = millennial_model_wplant,
   parms = parms
@@ -104,8 +104,8 @@ plot_ode_output(millennial_out)
 
 # CHECKING BALANCE:
 config_check <- list(
-  herb        = FALSE,
-  tree        = TRUE,
+  herb        = TRUE,
+  tree        = FALSE,
   earthworm   = FALSE,
   detritivore = FALSE,
   detpredator = FALSE,

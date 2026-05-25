@@ -34,10 +34,14 @@ millennial_model_wplant <- function(time, state, parms){
     # --------------------------------------------------
     # Herbaceous plant carbon fluxes
     # --------------------------------------------------
-    GPP_herb <- GPPmax_herb * f_T * f_theta
-    
-    Ra_herb <- maint_resp * (C_leaf_herb + C_root_herb) +
-      growth_resp * GPP_herb
+    if(C_leaf_herb > 0){
+      GPP_herb <- GPPmax_herb * f_T * f_theta
+      Ra_herb <- maint_resp * (C_leaf_herb + C_root_herb) +
+        growth_resp * GPP_herb
+    }else{
+      GPP_herb <- 0
+      Ra_herb <- 0
+    }
     
     NPP_herb <- pmax(0, GPP_herb - Ra_herb)
     
@@ -47,10 +51,15 @@ millennial_model_wplant <- function(time, state, parms){
     # --------------------------------------------------
     # Tree plant carbon fluxes
     # --------------------------------------------------
-    GPP_tree <- GPPmax_tree * f_T * f_theta
-    
-    Ra_tree <- maint_resp * (C_leaf_tree + C_wood_tree + C_root_tree) +
-      growth_resp * GPP_tree
+    if(C_leaf_tree > 0){
+      GPP_tree <- GPPmax_tree * f_T * f_theta
+      
+      Ra_tree <- maint_resp * (C_leaf_tree + C_wood_tree + C_root_tree) +
+        growth_resp * GPP_tree
+    }else{
+      GPP_tree <- 0
+      Ra_tree <- 0
+    }
     
     NPP_tree <- pmax(0, GPP_tree - Ra_tree)
     
@@ -318,7 +327,7 @@ millennial_model_wplant <- function(time, state, parms){
     dCWD     <- wood_mortality_tree - F_CWD_DOM - fragmentation_CWD
     
     dOrganic <- fragmentation_litter + fragmentation_CWD +
-      root_to_organic * (root_mortality_tree + root_mortality_herb) +
+      root_to_organic * (root_mortality_tree + root_mortality_herb) -
       F_Organic_DOM - fragmentation_organic - 
       Fed_earthworm_om - 
       Fed_det_om + Carcass_det_om + Waste_det_om + 
@@ -371,7 +380,6 @@ millennial_model_wplant <- function(time, state, parms){
         dP + dL + dA + dM + dB
     ) + (
       # add respiration losses back
-      Ra_herb + Ra_tree +
         Respiration_earthworm +
         Respiration_detritivore +
         Respiration_detpred +
@@ -382,10 +390,9 @@ millennial_model_wplant <- function(time, state, parms){
       F_l
     ) - (
       # subtract external inputs
-      GPP_herb + GPP_tree
+      NPP_herb + NPP_tree
     )
     
-    browser()
     # ---------------------------
     # Return list for deSolve
     # ---------------------------

@@ -14,7 +14,7 @@ full_names <- c(
 # Group state variables by module
 state_groups <- list(
   herb        = c("C_leaf_herb", "C_root_herb"),
-  tree        = c("C_leaf_tree", "C_wood_tree", "C_root_tree"),
+  tree        = c("C_leaf_tree", "C_wood_tree", "C_root_tree", "CWD"),
   earthworm   = c("Earthworm"),
   detritivore = c("Detritivore"),
   detpredator = c("DetPredator"),
@@ -56,6 +56,10 @@ millennial_wrapper <- function(time, state_reduced, parms){
   d_full <- millennial_model_wplant(time, full_state, parms)[[1]]
   names(d_full) <- full_names
   
+  if(max(d_full[[2]]) > sqrt(.Machine$double.eps)) {
+    print(max(d_full[[2]]))
+    warning("Mass balance is failing!")
+  }
   # Return only active states
   active_names <- names(state_reduced)
   
