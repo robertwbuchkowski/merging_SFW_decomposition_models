@@ -53,8 +53,9 @@ millennial_wrapper <- function(time, state_reduced, parms){
   full_state[names(state_reduced)] <- state_reduced
   
   # Run full model
-  d_full <- millennial_model_wplant(time, full_state, parms)[[1]]
-  names(d_full) <- full_names
+  d_full <- millennial_model_wplant(time, full_state, parms)
+  d_full1 <- d_full[[1]]
+  names(d_full1) <- full_names
   
   if(max(d_full[[2]]) > sqrt(.Machine$double.eps)) {
     print(max(d_full[[2]]))
@@ -63,5 +64,5 @@ millennial_wrapper <- function(time, state_reduced, parms){
   # Return only active states
   active_names <- names(state_reduced)
   
-  return(list(d_full[active_names]))
+  return(list(d_full1[active_names]))
 }

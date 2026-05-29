@@ -114,6 +114,12 @@ config_check <- list(
 
 parms$config <- config_check
 
-state_check <- build_initial_state(init_full, config_check)
+state_check <- build_initial_state(init_millennial_state(), config_check)
+
+steady <- stode(
+  y = state_check,
+  func = millennial_wrapper,
+  parms = parms
+)
 
 millennial_wrapper(1, state_check, parms)

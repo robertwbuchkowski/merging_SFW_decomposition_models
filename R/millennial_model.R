@@ -393,6 +393,8 @@ millennial_model_wplant <- function(time, state, parms){
       NPP_herb + NPP_tree
     )
     
+    # browser()
+    
     # ---------------------------
     # Return list for deSolve
     # ---------------------------
