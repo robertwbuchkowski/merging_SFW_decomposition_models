@@ -66,3 +66,16 @@ millennial_wrapper <- function(time, state_reduced, parms){
   
   return(list(d_full1[active_names]))
 }
+
+# --------------------------------------------
+# A function to easily compare two equilibria
+# --------------------------------------------
+comp_eqm <- function(v1, v2){
+  df1 <- tibble(name = names(v1), v1 = v1)
+  df2 <- tibble(name = names(v2), v2 = v2)
+  
+  df <- full_join(df1, df2, by = "name") %>%
+    mutate(Difference = v1 - v2)
+  
+  return(df)
+}

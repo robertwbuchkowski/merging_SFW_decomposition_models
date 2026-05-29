@@ -80,26 +80,18 @@ millennial_model_wplant <- function(time, state, parms){
     leaf_mortality_herb <- k_mort_leaf_herb * C_leaf_herb
     
     # Root and wood winter dormancy:
-    if(T_t > root_dormancy_temp){
-      wood_mortality_tree <- k_mort_wood_tree * C_wood_tree
-      
-      root_mortality_herb <- k_mort_root_herb * C_root_herb
-      root_mortality_tree <- k_mort_root_tree * C_root_tree
-      
-      
-      exudates_herb       <- k_exudate_herb* C_root_herb
-      exudates_tree       <- k_exudate_tree* C_root_tree
-    }else{
-      wood_mortality_tree <- k_mort_wood_tree * C_wood_tree*winter_root_act_prop
-      
-      root_mortality_herb <- k_mort_root_herb * C_root_herb*winter_root_act_prop
-      root_mortality_tree <- k_mort_root_tree * C_root_tree*winter_root_act_prop
-      
-      
-      exudates_herb       <- k_exudate_herb* C_root_herb*winter_root_act_prop
-      exudates_tree       <- k_exudate_tree* C_root_tree*winter_root_act_prop
-    }
+    act <- winter_root_act_prop + 
+      (1 - winter_root_act_prop) /
+      (1 + exp(-k_root_dormancy * (T_t - root_dormancy_temp)))
     
+    wood_mortality_tree <- k_mort_wood_tree * C_wood_tree*act
+    
+    root_mortality_herb <- k_mort_root_herb * C_root_herb*act
+    root_mortality_tree <- k_mort_root_tree * C_root_tree*act
+    
+    
+    exudates_herb       <- (k_exudate_intercept + RootHerb*k_exudate_slope)* C_root_herb*act
+    exudates_tree       <- k_exudate_tree* C_root_tree*act
     
     # ----------------------------
     # Earthworm rates
@@ -309,10 +301,10 @@ millennial_model_wplant <- function(time, state, parms){
       E_earthworm*Earthworm
     
     # Detritivore:
-    dDetritivore <- p_detritivores*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit) - Carcass_det_om 
+    dDetritivore <- p_detritivores*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit) - Carcass_det_om - Fed_detpred_det
     
     # DetPredator:
-    dDetPredator <- a_detpredator*(Fed_detpred_det) - Carcass_detpred_om
+    dDetPredator <- p_detpredator*a_detpredator*(Fed_detpred_det) - Carcass_detpred_om
     
     # Root herbivores:
     dRootHerb <- p_rootherb*a_rootherb*Fed_rootherb_herb - Carcass_rootherb_P
@@ -425,7 +417,7 @@ millennial_model_wplant <- function(time, state, parms){
         dL, 
         dA, 
         dM, 
-        dB),mass_balance_check = mass_balance_check
-    )
+        dB),mass_balance_check = unname(mass_balance_check
+    ))
   })
 }

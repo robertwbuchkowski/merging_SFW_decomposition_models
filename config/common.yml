@@ -3,8 +3,8 @@
 # ------------------------------------------------------------
 
 # Climate forcing
-MAT: 15
-T_amp: 12
+MAT: 6
+T_amp: 26
 MAtheta: 0.30
 theta_amp: 0.15
 
@@ -55,6 +55,8 @@ k_mort_root_herb: 0.00021918   # 0.08/365
 k_exudate_tree: 0.00002740     # 0.01/365
 k_exudate_herb: 0.00002740     # 0.01/365
 
+k_root_dormancy: 0.5
+
 # ---- Mortality partitioning ----
 root_to_organic: 0.7
 winter_root_act_prop: 0.01
@@ -88,12 +90,12 @@ k_b_intercept: 0.02
 k_b_slope: -0.02 # Reduction in aggregate loss with earthworm biomass
 
 # ------- Root herbivory ---------
-c_rootherb: 0.05
-d_rootherb: 4
+c_rootherb: 0.001
+d_rootherb: 0.5 # 36 days life span, corrected for density-dependence and modified
 a_rootherb: 0.4
 p_rootherb: 0.37 # default of 1
 E_root_herb: 0 # default of 0
 k_exudate_intercept: 0.00002740  #default of 0.00002740 #JY slope: 0.946
-k_exudate_slope: 0.013 #default of 0 
+k_exudate_slope: 0.000013  #0.013 #default of 0 
 
 
