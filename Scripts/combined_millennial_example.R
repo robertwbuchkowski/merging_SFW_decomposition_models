@@ -96,7 +96,7 @@ parms$climate_forcing <- make_climate_forcing(parms)
 
 millennial_out = ode(
   times = seq(1, 365*500, by = 1),
-  y     = steady_rootherb$y,
+  y     = read_rds("Results/stable_y.rds"), #steady_rootherb$y,
   func  = millennial_wrapper,
   parms = parms
 )
