@@ -139,7 +139,11 @@ MIMICS_model <- function(time, state, parms) {
     )
     
     # Calculate the proportion of litter that is metabolic
-    fMET = I[1]/(I[1] + I[2])
+    if((I[1] + I[2]) > 0){
+      fMET = I[1]/(I[1] + I[2])
+    }else{
+      fMET = 0.5
+    }
     
     # ---- Temperature-dependent parameters ----
     Vmax <- exp(T_t * parms$Vslope + parms$Vint) * parms$aV
@@ -325,9 +329,6 @@ MIMICS_model <- function(time, state, parms) {
       # subtract external inputs (NPP; no leaching in MIMICS)
       NPP_herb + NPP_tree
     )
-    
-    # browser()
-    
     # ---------------------------
     # Return list for deSolve
     # ---------------------------

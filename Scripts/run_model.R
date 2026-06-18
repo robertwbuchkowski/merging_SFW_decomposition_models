@@ -52,7 +52,7 @@ if(attr(cfss, "steady")){
 # Comparison at steady state with animal scenario
 # ============================================================
 
-run_animal <- setup_model("millennial", off = c("Earthworm","DetPredator","RootHerb"))
+run_animal <- setup_model("millennial", off = c("Detritivore","DetPredator","RootHerb"))
 print(run_animal$working_state)
 
 # QUICK MASS-BALANCE CHECK at t = 0 (should be ~0)
