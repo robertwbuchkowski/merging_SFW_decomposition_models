@@ -30,7 +30,9 @@ plot_ode_output <- function(
     state_names <- variable_cols
   }
   
-  
+  if(all(abs(df$mass_balance_check) < 1e-6)){
+    state_names <- subset(state_names, state_names != "mass_balance_check")
+  }
   
   # --------------------------------------------------
   # Get starting values

@@ -9,8 +9,8 @@ init_millennial_state <- function() {
     
     Earthworm = 0.48,
     Detritivore = 0.1,
-    RootHerb = 0.1,
     DetPredator = 0.01,
+    RootHerb = 0.1,
     
     Litter  = 200,
     CWD     = 1000,
