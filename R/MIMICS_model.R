@@ -43,7 +43,6 @@
 MIMICS_model <- function(time, state, parms) {
   
   with(as.list(c(state, parms)), {
-    
     # ----------------------------
     # ---- Get climate forcing ----
     # ----------------------------

@@ -10,7 +10,7 @@ theta_amp: 0.15
 
 # Texture / site
 pct_claysilt: 70
-fCLAY: 40           # clay fraction (0–1) (MIMICS)
+fCLAY: 0.40           # clay fraction (0–1) (MIMICS)
 
 # Lignin fraction
 LigFrac: 0.2 # MIMICS and Century

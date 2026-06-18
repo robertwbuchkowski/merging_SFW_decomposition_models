@@ -19,7 +19,7 @@ source("R/setup.R")
 
 
 # # ---- switch MODEL by name, switch SCENARIO via `off` ----
-run <- setup_model("millennial", off = c("Earthworm","Detritivore","DetPredator","RootHerb"))
+run <- setup_model("MIMICS", off = c("Earthworm","Detritivore","DetPredator","RootHerb"))
 print(run$working_state)
 
 
