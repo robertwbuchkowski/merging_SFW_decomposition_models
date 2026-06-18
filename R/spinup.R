@@ -10,8 +10,8 @@
 # ============================================================
 
 # ------------------------------------------------------------
-# spinup_run(): one continuous ODE integration (seasonal forcing).
-#   y0       named initial-state vector (full model state)
+# spinup_until_stable(): one continuous ODE integration (seasonal forcing).
+#   init_state       named initial-state vector
 #   model_fn the model function, e.g. century_model
 #   parms    parameter list (must already contain everything; this sets
 #            parms$climate_forcing to the seasonal forcing)
@@ -19,12 +19,55 @@
 #   by       output step in days (1 = daily; 365 = yearly snapshots)
 # Returns the full deSolve output matrix (so you can plot/inspect it).
 # ------------------------------------------------------------
-spinup_run <- function(y0, model_fn, parms, n_years = 200, by = 1,
-                       method = "lsoda", ...) {
+
+spinup_until_stable <- function(init_state, 
+                                parms,
+                                model_fn = wrapped_model,
+                                n_years = 100,
+                                by = 1,
+                                max_iter = 10,
+                                tol = 1e-4,
+                                verbose = TRUE) {
+  
+  state <- init_state
   parms$climate_forcing <- make_climate_forcing(parms)
-  times <- seq(0, 365 * n_years, by = by)
-  deSolve::ode(y = y0, times = times, func = model_fn, parms = parms,
-               method = method, ...)
+  
+  for (i in seq_len(max_iter)) {
+    
+    if (verbose) cat("\n--- Spin-up iteration", i, "---\n")
+    
+    times <- seq(0, 365 * n_years, by = by)
+    out <- deSolve::ode(y = state, times = times, func = model_fn, parms = parms)
+    
+    # check stability
+    stab <- check_stability(out)
+    if (verbose) print(stab)
+    
+    # here assuming check_stability returns numeric drifts per pool
+    max_drift <- max(abs(stab$rel_drift), na.rm = TRUE)
+    
+    if (verbose) cat("Max drift:", max_drift, "\n")
+    
+    if (max_drift < tol) {
+      if (verbose) cat("System stabilized.\n")
+      return(list(out = out,
+                  final_state = final_state(out),
+                  converged = TRUE,
+                  iterations = i))
+    }
+    
+    # update state for next loop
+    state <- final_state(out)
+    # Increase the simulation length
+    n_years <- n_years*1.5
+  }
+  
+  if (verbose) cat("Reached max iterations without full stability.\n")
+  
+  return(list(out = out,
+              final_state = final_state(out),
+              converged = FALSE,
+              iterations = max_iter))
 }
 
 # Last row of an ODE output, as a named numeric state vector (drops time
@@ -53,14 +96,4 @@ check_stability <- function(out, period = 365) {
   res[order(-res$rel_drift), ]
 }
 
-# ------------------------------------------------------------
-# (OPTIONAL) spinup_equilibrium(): fast warm-start to the annual-MEAN
-# steady state under CONSTANT forcing, using rootSolve::runsteady. Handy
-# to get a good starting point before spinup_run(); not required.
-# ------------------------------------------------------------
-spinup_equilibrium <- function(y0, model_fn, parms, maxtime = 1e6, ...) {
-  parms$climate_forcing <- make_climate_forcing_equilibrium(parms)
-  ss <- rootSolve::runsteady(y = y0, times = c(0, maxtime),
-                             func = model_fn, parms = parms, ...)
-  setNames(pmax(ss$y, 0), names(y0))
-}
+
