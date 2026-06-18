@@ -106,7 +106,7 @@ if(attr(cfss, "steady")){
 
 spinup_until_stable <- function(init_state, parms,
                                 model_fn = wrapped_model,
-                                n_years = 50,
+                                n_years = 100,
                                 by = 1,
                                 max_iter = 10,
                                 tol = 1e-4,
@@ -124,7 +124,7 @@ spinup_until_stable <- function(init_state, parms,
     
     # check stability
     stab <- check_stability(out)
-    if (verbose) print(stab); plot_ode_output(out)
+    if (verbose) print(stab)
     
     # here assuming check_stability returns numeric drifts per pool
     max_drift <- max(abs(stab$rel_drift), na.rm = TRUE)
@@ -141,6 +141,8 @@ spinup_until_stable <- function(init_state, parms,
     
     # update state for next loop
     state <- final_state(out)
+    # Increase the simulation length
+    n_years <- n_years*1.5
   }
   
   if (verbose) cat("Reached max iterations without full stability.\n")
