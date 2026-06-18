@@ -22,7 +22,7 @@
 
 spinup_until_stable <- function(init_state, 
                                 parms,
-                                model_fn = wrapped_model,
+                                model_fn = run$wrapped_model,
                                 n_years = 100,
                                 by = 1,
                                 max_iter = 10,

@@ -138,7 +138,8 @@ MIMICS_model <- function(time, state, parms) {
       wood_mortality + root_mortality
     )
     
-    fMET = I[1]/I[2]
+    # Calculate the proportion of litter that is metabolic
+    fMET = I[1]/(I[1] + I[2])
     
     # ---- Temperature-dependent parameters ----
     Vmax <- exp(T_t * parms$Vslope + parms$Vint) * parms$aV
