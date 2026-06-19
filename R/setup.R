@@ -229,28 +229,85 @@ compare_to_baseline <- function(out_treatment, out_baseline) {
   )
 }
 
-# ============================================================
-# USAGE
-# ============================================================
-# library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml)
-# source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
-# source("R/setup.R")
+
+# ------------------------------------------------------------
+# run_scenario(): run setup, checks, and steady-state spinup
+# for a single scenario name.
 #
-# scen <- read_scenarios("config/scenarios.csv")
-# names(scen)            # "RootHerbivore" "Earthworm" "Isopod" "Mite" "MitePredator"
+#   nm      scenario name (must match names(scen))
+#   scen    scenario table/list (from read_scenarios)
+#   model   model identifier ("millennial", "century", "MIMICS")
 #
-# # one scenario, both arms (same model + same climate; baseline has no animals)
-# pair  <- setup_scenario_pair("MIMICS", scen, "Mite")
-# out_t <- spinup_run(pair$treatment$working_state, pair$treatment$wrapped_model,
-#                     pair$treatment$parms, n_years = 200, by = 1)
-# out_b <- spinup_run(pair$baseline$working_state,  pair$baseline$wrapped_model,
-#                     pair$baseline$parms,  n_years = 200, by = 1)
-# compare_to_baseline(out_t, out_b)
-#
-# # loop over every scenario for a model:
-# for (nm in names(scen)) {
-#   p  <- setup_scenario_pair("century", scen, nm)
-#   ot <- spinup_run(p$treatment$working_state, p$treatment$wrapped_model, p$treatment$parms, n_years = 200)
-#   ob <- spinup_run(p$baseline$working_state,  p$baseline$wrapped_model,  p$baseline$parms,  n_years = 200)
-#   cat("\n==", nm, "==\n"); print(compare_to_baseline(ot, ob))
-# }
+# Returns:
+#   A list with:
+#     pair        full baseline/treatment objects after spinup
+#     eq_compare  comparison of equilibrium states between
+#                 treatment and baseline
+# ------------------------------------------------------------
+run_scenario <- function(nm, scen, model) {
+  message("\n==================  ", nm, "  ==================")
+  
+  pair <- setup_scenario_pair(model, scen, nm)
+  
+  # -----------------------------
+  # Mass balance check function
+  # -----------------------------
+  check_mb <- function(obj) {
+    mb0 <- obj$wrapped_model(0, obj$working_state, obj$parms)[[2]]
+    cat(sprintf("mass_balance_check at t=0: %.3e\n", mb0))
+  }
+  
+  # -----------------------------
+  # Spin-up function
+  # -----------------------------
+  spinup_once <- function(obj) {
+    obj$parms$climate_forcing <- make_climate_forcing_equilibrium(obj$parms)
+    
+    cfss <- stode(
+      y     = obj$working_state,
+      func  = obj$wrapped_model,
+      parms = obj$parms
+    )
+    
+    obj$parms$climate_forcing <- make_climate_forcing(obj$parms)
+    
+    if (attr(cfss, "steady")) {
+      cat("Result is steady\n")
+      obj$init_state_spin <- cfss[[1]]
+    } else {
+      cat("Result did not reach stability. Using input state.\n")
+      obj$init_state_spin <- obj$working_state
+    }
+    
+    obj
+  }
+  
+  # -----------------------------
+  # Treatment
+  # -----------------------------
+  cat("Treatment\n")
+  check_mb(pair$treatment)
+  check_mb(pair$baseline)
+  
+  pair$treatment <- spinup_once(pair$treatment)
+  
+  # -----------------------------
+  # Baseline
+  # -----------------------------
+  cat("Baseline\n")
+  check_mb(pair$baseline)
+  check_mb(pair$baseline)  # keeping original duplicate check
+  
+  pair$baseline <- spinup_once(pair$baseline)
+  
+  # -----------------------------
+  # Output
+  # -----------------------------
+  list(
+    pair = pair,
+    eq_compare = compare_vectors(
+      pair$treatment$init_state_spin,
+      pair$baseline$init_state_spin
+    )
+  )
+}
