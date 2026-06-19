@@ -1,0 +1,17 @@
+Parameter,RootHerbivore,Earthworm,Isopod,Mite,MitePredator
+earthworm,0,1,0,0,0
+RootHerb,1,0,0,0,0
+Detritivore,0,0,1,0,0
+Detritivore,0,0,0,1,0
+DetPredator,0,0,0,1,1
+MAT,6,6,6,6,6
+T_amp,26,26,26,26,26
+Matheta,0.3,0.3,0.3,0.3,0.3
+theta_amp,0.15,0.15,0.15,0.15,0.15
+pct_claysilt,70,70,70,70,70
+fClay,0.4,0.4,0.4,0.4,0.4
+LigFrac,0.2,0.2,0.2,0.2,0.2
+GPPmax_herb,4,4,4,4,4
+GPPmax_tree,4,4,4,4,4
+pH,6,6,6,6,6
+BD,1300,1300,1300,1300,1300
