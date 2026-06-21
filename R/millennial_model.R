@@ -24,72 +24,69 @@ millennial_model_wplant <- function(time, state, parms){
     T_t              <- forcing["Temp"] # °C 
     theta_t          <- forcing["theta"] # m^3 m^-3
     litterfall_prob_val        <- forcing["litterfall_prob_val"] # probability of litterfall
+    npp_weight_val             <- forcing["npp_weight_val"] # within-year NPP weight (sums to 1 over the year)
     
     # --------------------------------------------------
-    # Climate scalars for plant productivity
+    # Shared growing-season activity (temperature + moisture), in [0, 1].
+    # This single activity index drives BOTH the seasonal allocation of NPP
+    # and the winter dormancy of roots/wood, so the two follow the same logic.
+    #   f_T_act : logistic temperature activity (warm -> 1, cold -> 0)
+    #   f_theta : moisture limitation (theta / theta_opt, capped at 1)
     # --------------------------------------------------
-    f_T     <- Q10 ^ ((T_t - Tref) / 10)
-    f_theta <- pmin(1, theta_t / theta_opt)
-    
+    f_T_act  <- 1 / (1 + exp(-k_root_dormancy * (T_t - root_dormancy_temp)))
+    f_theta  <- pmin(1, pmax(0, theta_t) / theta_opt)
+    activity <- f_T_act * f_theta
+
     # --------------------------------------------------
-    # Herbaceous plant carbon fluxes
+    # NPP input (the system input). NPP_herb / NPP_tree are ANNUAL parameters
+    # (g C m-2 yr-1, from the scenarios file). npp_weight_val (from the climate
+    # forcing) sums to 1 over the year and is proportional to the same activity
+    # above, so the annual total delivered equals the parameter. No leaves ->
+    # no NPP, which keeps a group off when its pools are zeroed.
     # --------------------------------------------------
-    if(C_leaf_herb > 0){
-      GPP_herb <- GPPmax_herb * f_T * f_theta
-      Ra_herb <- maint_resp * (C_leaf_herb + C_root_herb) +
-        growth_resp * GPP_herb
-    }else{
-      GPP_herb <- 0
-      Ra_herb <- 0
+    NPP_herb_ann <- NPP_herb
+    NPP_tree_ann <- NPP_tree
+
+    if (C_leaf_herb > 0) {
+      NPP_herb <- NPP_herb_ann * npp_weight_val
+    } else {
+      NPP_herb <- 0
     }
-    
-    NPP_herb <- pmax(0, GPP_herb - Ra_herb)
-    
+
+    if (C_leaf_tree > 0) {
+      NPP_tree <- NPP_tree_ann * npp_weight_val
+    } else {
+      NPP_tree <- 0
+    }
+
     leaf_growth_herb <- (1 - a_root_herb) * NPP_herb
-    root_growth_herb  <- a_root_herb * NPP_herb
-    
-    # --------------------------------------------------
-    # Tree plant carbon fluxes
-    # --------------------------------------------------
-    if(C_leaf_tree > 0){
-      GPP_tree <- GPPmax_tree * f_T * f_theta
-      
-      Ra_tree <- maint_resp * (C_leaf_tree + C_wood_tree + C_root_tree) +
-        growth_resp * GPP_tree
-    }else{
-      GPP_tree <- 0
-      Ra_tree <- 0
-    }
-    
-    NPP_tree <- pmax(0, GPP_tree - Ra_tree)
-    
+    root_growth_herb <- a_root_herb * NPP_herb
+
     if(abs(a_leaf_tree + a_wood_tree + a_root_tree - 1) > 1e-6) {stop("Tree allocation fractions must sum to 1")}
-    
+
     leaf_growth_tree <- a_leaf_tree * NPP_tree
     wood_growth_tree <- a_wood_tree * NPP_tree
-    root_growth_tree  <- a_root_tree * NPP_tree
-    
+    root_growth_tree <- a_root_tree * NPP_tree
+
     # --------------------------------------------------
     # Continuous plant losses
     # --------------------------------------------------
-    
     litterfall_tree     <- k_litterfall_ann * litterfall_prob_val * C_leaf_tree
     litterfall_herb     <- k_litterfall_herb_ann * litterfall_prob_val * C_leaf_herb
-    
+
     leaf_mortality_tree <- k_mort_leaf_tree * C_leaf_tree
     leaf_mortality_herb <- k_mort_leaf_herb * C_leaf_herb
-    
-    # Root and wood winter dormancy:
-    act <- winter_root_act_prop + 
-      (1 - winter_root_act_prop) /
-      (1 + exp(-k_root_dormancy * (T_t - root_dormancy_temp)))
-    
+
+    # Root and wood winter dormancy: same activity index that shapes NPP,
+    # with a winter floor (winter_root_act_prop) so some activity persists.
+    act <- winter_root_act_prop + (1 - winter_root_act_prop) * activity
+
     wood_mortality_tree <- k_mort_wood_tree * C_wood_tree*act
-    
+
     root_mortality_herb <- k_mort_root_herb * C_root_herb*act
     root_mortality_tree <- k_mort_root_tree * C_root_tree*act
-    
-    
+
+
     exudates_herb       <- (k_exudate_intercept + RootHerb*k_exudate_slope)* C_root_herb*act
     exudates_tree       <- k_exudate_tree* C_root_tree*act
     

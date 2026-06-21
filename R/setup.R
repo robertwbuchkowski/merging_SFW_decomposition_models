@@ -16,7 +16,7 @@
 #     and supply different detritivore PARAMETERS via override rows below.
 #   * All other rows are PARAMETER overrides (site/climate AND per-scenario
 #     animal parameters), e.g. MAT, T_amp, MAtheta, theta_amp, pct_claysilt,
-#     fCLAY, LigFrac, GPPmax_*, pH, BD, and detritivore parameters such as
+#     fCLAY, LigFrac, NPP_herb, NPP_tree, pH, BD, and detritivore parameters such as
 #     d_detritivores / c_detritivores (these let isopod vs mite scenarios use
 #     the one Detritivore pool with different values). Names are matched to the
 #     parameter list case-insensitively, so minor case differences still

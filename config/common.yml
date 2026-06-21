@@ -21,16 +21,14 @@ litter_peak_doy: 288
 litter_width_d: 30
 
 # Plant growth ------
-GPPmax_herb: 4.0         # Maximum daily GPP (g C m-2 d-1)
-GPPmax_tree: 4.0         # Maximum daily GPP (g C m-2 d-1)
+# NPP (g C m-2 yr-1) is now the SYSTEM INPUT (replaces the old GPP/Ra scheme).
+# It is spread over the year by the growing-season activity weight
+# (npp_weight_val in climate_forcing.R). These defaults are overridden per
+# scenario in Data/scenarios.csv.
+NPP_herb: 50             # Annual herbaceous NPP (g C m-2 yr-1)
+NPP_tree: 1270           # Annual tree NPP (g C m-2 yr-1)
 
-Q10: 2.0                 # Temperature sensitivity of photosynthesis
-Tref: 20.0               # Reference temperature (°C)
-
-theta_opt: 0.3          # Optimal soil moisture for plant productivity
-
-maint_resp: 0.002        # Maintenance respiration (g C g C-1 d-1)
-growth_resp: 0.25        # Fraction of GPP lost to growth respiration
+theta_opt: 0.3           # Moisture optimum for the growing-season activity
 
 # ---- Biomass allocation (must sum to 1) ----
 a_leaf_tree: 0.075
