@@ -68,6 +68,8 @@ a_detritivores: 0.5
 p_detritivores: 0.35
 E_detritivores: 0
 c_detritivores: 0.0000216
+slope_pint_det_k_frag_litter: 27.42039
+slope_pint_det_k_frag_organic: 0
 
 # ---- Predators parameters ----
 d_detpredator: 0.0050411
@@ -86,8 +88,7 @@ c_earthworm_litter: 0
 c_earthworm_soil: 0.0001892022
 c_earthworm_om: 0
 prop_feaces_earthworm_LMWC: 0
-k_b_intercept: 0.02
-k_b_slope: -0.02 # Reduction in aggregate loss with earthworm biomass
+k_b_slope_pint: -1 # Reduction in aggregate loss with earthworm biomass
 
 # ------- Root herbivory ---------
 c_rootherb: 0.001

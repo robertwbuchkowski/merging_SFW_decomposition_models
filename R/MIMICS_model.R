@@ -142,7 +142,11 @@ MIMICS_model <- function(time, state, parms) {
       fMET = I[1]/(I[1] + I[2])
     }else{
       fMET = 0.5
+      warning("I[1] + I[2] is not greater than zero. fMET = 0.5 now, but this is probably an error.")
     }
+    
+    # Input partioning -----
+    FI = c(FI0[[1]], FI0[[2]]*exp(FI0[[3]]*fMET))
     
     # ---- Temperature-dependent parameters ----
     Vmax <- exp(T_t * parms$Vslope + parms$Vint) * parms$aV
@@ -165,12 +169,20 @@ MIMICS_model <- function(time, state, parms) {
     VMAX <- Vmax * parms$MOD1
     KM   <- Km / MOD2
     
+    # ---- Animal effects on fluxes ------
+    
+    # Detritivores increase fragmentation:
+    FI = pmin(1, pmax(0, FI + FI * slope_pint_det_k_frag_litter * Detritivore))
+    
+    # Earthworms slow down physical to available transfer
+    desorb = pmax(0.001, desorb + Earthworm * k_b_slope_pint * desorb)
+    
     # ------------------------------#
     # MIMICS fluxes:  -- UNCHANGED
     # ------------------------------#
     
-    LITmin = c(NA, NA)
-    MICtrn = c(NA, NA, NA)
+    LITmin = c(NA, NA,NA, NA)
+    MICtrn = c(NA, NA, NA,NA, NA, NA)
     SOMmin = c(NA, NA)
     
     #Flows to and from MIC_1

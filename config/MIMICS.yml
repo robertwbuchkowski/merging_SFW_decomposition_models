@@ -19,7 +19,7 @@ Kint: 3.19
 aK: 10
 
 # ---- Input partitioning ----
-FI: [0.05, 0.05]
+FI0: [0.02, 0.3, 4]
 
 # ---- Carbon use efficiency ----
 CUE: [0.55, 0.25, 0.75, 0.35]

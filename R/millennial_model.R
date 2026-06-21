@@ -160,9 +160,9 @@ millennial_model_wplant <- function(time, state, parms){
     # ----------------------------
     # Fragmentation and physical transfer to organic and mineral soil
     # ----------------------------
-    fragmentation_litter   <- (intercept_det_k_frag_litter + slope_det_k_frag_litter*Detritivore)  * Litter   # -> Organic
+    fragmentation_litter   <- (k_frag_litter + k_frag_litter*slope_pint_det_k_frag_litter*Detritivore)  * Litter   # -> Organic
     fragmentation_CWD      <- k_frag_CWD     * CWD      # -> Organic
-    fragmentation_organic  <- (intercept_det_k_frag_organic + slope_det_k_frag_organic*Detritivore) * Organic  # -> POM
+    fragmentation_organic  <- (k_frag_organic + k_frag_organic*slope_pint_det_k_frag_organic*Detritivore) * Organic  # -> POM
     
     # ----------------------------
     # Sorption capacity Qmax (Eq. 11)
@@ -243,12 +243,8 @@ millennial_model_wplant <- function(time, state, parms){
     # Aggregation fluxes
     # ----------------------------
     
-    k_b_cur = ifelse(
-      (k_b_intercept + Earthworm*k_b_slope) >0,
-      (k_b_intercept + Earthworm*k_b_slope),
-      0.001
-    )
-    
+    k_b_cur = pmax(0.001, k_b + Earthworm * k_b_slope_pint * k_b)
+
     F_pa <- k_pa * S_wD * P   # Eq. 5
     F_a  <- k_b_cur  * S_wD * A   # Eq. 6
     F_ma <- k_ma * S_wD * M   # Eq. 18

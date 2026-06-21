@@ -211,6 +211,15 @@ century_model <- function(time, state, parms){
     #Equation B8
     f_PASSIVE <- PASSIVE * k_passive * t_scalar * w_scalar
     
+    # ---- Animal effects on fluxes ------
+    
+    # Detritivores increase fragmentation:
+    f_MetLitter = pmax(0, f_MetLitter + f_MetLitter * slope_pint_det_k_frag_litter * Detritivore)
+    
+    # Earthworms slow down physical to available transfer
+    f_PASSIVE = pmax(0, f_PASSIVE + Earthworm * k_b_slope_pint * f_PASSIVE)
+    
+    
     # --------------------------------------------------
     # Plant differential equations:
     # --------------------------------------------------

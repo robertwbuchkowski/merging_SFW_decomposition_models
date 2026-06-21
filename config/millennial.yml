@@ -6,10 +6,6 @@
 k_frag_litter: 0.0021918     # 0.8/365
 k_frag_CWD: 0.00013699      # 0.05/365
 k_frag_organic: 0.0021918 # Higher for tropics #0.00021918  # 0.08/365
-slope_det_k_frag_litter: 0.0601
-intercept_det_k_frag_litter: 0.0021918
-slope_det_k_frag_organic: 0
-intercept_det_k_frag_organic: 0.00021918
 
 # ---- Organic horizon microbial kinetics ----
 K_ol: 10
