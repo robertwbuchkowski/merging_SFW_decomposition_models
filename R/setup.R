@@ -74,15 +74,17 @@ make_model_wrapper <- function(model_fun, full_names, state_groups) {
 }
 
 # resolve override names to the canonical parameter keys (case-sensitive)
-.apply_overrides <- function(parms, overrides) {
+.apply_overrides <- function(parms, overrides, addkey = F) {
   if (!length(overrides)) return(parms)
   
   for (nm in names(overrides)) {
     if (nm %in% names(parms)) {
       key <- nm
     } else {
-      warning(sprintf("Parameter '%s' not found in 'parms'; adding as new key.", nm))
-      key <- nm
+      if(addkey){
+        warning(sprintf("Parameter '%s' not found in 'parms'; adding as new key.", nm))
+        key <- nm
+      }
     }
     
     parms[[key]] <- overrides[[nm]]
@@ -122,9 +124,13 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
   # initial state, then zero requested groups
   init_state <- init_fn()
   bad <- setdiff(off, names(init_state))
-  if (length(bad))
-    stop("These 'off' names are not state variables of ", model, ": ",
-         paste(bad, collapse = ", "))
+  if (length(bad)){
+    warning("These 'off' names are not state variables of ", model, "  and will be dropped: ",
+            paste(bad, collapse = ", "))
+    
+    off = off[off %in% names(init_state)]
+  }
+    
   init_state[off] <- 0
 
   full_names    <- names(init_state)
@@ -141,37 +147,53 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
 }
 
 # ------------------------------------------------------------
-# read_scenarios(): parse the scenario CSV.
-# Returns a named list (one per scenario column); each element is
-#   list(flags = c(Tree=,Herb=,earthworm=,RootHerb=,Detritivore=,DetPredator=),
-#        params = named numeric of site/climate overrides)
+# read_scenarios(): parse a LONG/TIDY scenario CSV.
+# Expected columns: Parameter, Scenario, Value [, SD].
+# One row per (Parameter, Scenario); the SD column (if present) is ignored.
+#
+# Returns a named list (one element per scenario) of:
+#   list(flags  = c(Tree=, Herb=, earthworm=, RootHerb=, Detritivore=, DetPredator=),
+#        params = named numeric of all non-flag parameter overrides)
+# Depends on `flag_pools` (defined elsewhere in setup.R) for the canonical
+# flag names and order.
 # ------------------------------------------------------------
-read_scenarios <- function(csv_path = "config/scenarios.csv") {
-  raw  <- utils::read.csv(csv_path, check.names = FALSE, stringsAsFactors = FALSE)
-  pname <- raw[[1]]
-  scen  <- names(raw)[-1]
+read_scenarios <- function(csv_path = "Data/scenarios.csv") {
+  raw <- utils::read.csv(csv_path, check.names = FALSE, stringsAsFactors = FALSE)
+  
+  needed <- c("Parameter", "Scenario", "Value")
+  if (!all(needed %in% names(raw)))
+    stop("scenarios CSV must be long form with columns: ",
+         paste(needed, collapse = ", "),
+         "\n  (found: ", paste(names(raw), collapse = ", "), ")")
+  
+  raw$Parameter <- trimws(as.character(raw$Parameter))
+  raw$Scenario  <- trimws(as.character(raw$Scenario))
+  raw$Value     <- suppressWarnings(as.numeric(raw$Value))
+  
   flag_names <- names(flag_pools)
-  is_flag <- tolower(pname) %in% tolower(flag_names)
-
-  dup <- unique(pname[duplicated(pname)])
-  if (length(dup))
-    warning("Duplicate parameter rows in CSV (last value used): ",
-            paste(dup, collapse = ", "))
-
+  scen       <- unique(raw$Scenario)          # first-seen order
+  
   out <- lapply(scen, function(s) {
-    v  <- suppressWarnings(as.numeric(raw[[s]]))
-    # flags, in canonical order; 0 if a flag row is absent
-    fi    <- match(tolower(flag_names), tolower(pname))
-    flags <- setNames(ifelse(is.na(fi), 0L, as.integer(v[fi])), flag_names)
+    sub <- raw[raw$Scenario == s, , drop = FALSE]
+    
+    dup <- unique(sub$Parameter[duplicated(sub$Parameter)])
+    if (length(dup))
+      warning("Scenario '", s, "': duplicate parameter rows (last value used): ",
+              paste(dup, collapse = ", "))
+    
+    # flags in canonical order; 0 if a flag row is absent for this scenario
+    fi    <- match(tolower(flag_names), tolower(sub$Parameter))
+    flags <- setNames(ifelse(is.na(fi), 0L, as.integer(sub$Value[fi])), flag_names)
+    
     # parameter overrides = every non-flag row (last value wins if repeated)
-    pn   <- pname[!is_flag]; pv <- v[!is_flag]
-    keep <- !duplicated(pn, fromLast = TRUE)
-    params <- setNames(pv[keep], pn[keep])
+    psub   <- sub[!(tolower(sub$Parameter) %in% tolower(flag_names)), , drop = FALSE]
+    keep   <- !duplicated(psub$Parameter, fromLast = TRUE)
+    params <- setNames(psub$Value[keep], psub$Parameter[keep])
+    
     list(flags = flags, params = params)
   })
   setNames(out, scen)
 }
-
 # ------------------------------------------------------------
 # setup_scenario(): build one arm of a scenario.
 #   animals = TRUE  -> treatment (animals per the CSV flags)
