@@ -10,7 +10,7 @@ source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
 scen     <- read_scenarios("Data/scenarios.csv")
-model    <- "century"            # which model
+model    <- "millennial"            # which model
 scenario <- "Earthworm"         # which scenario
 do_fit   <- TRUE                # calibrate treatment animal params first?
 do_treatment <- TRUE            # also spin up the treatment arm now?
@@ -27,7 +27,7 @@ if (do_fit) {
     pair$treatment, pair$baseline,
     animal            = "Earthworm",     # the animal in this scenario
     target_biomass    = NULL,            # NULL = match its input (starting) value
-    effect_pool       = "PASSIVE",         # user-defined effect target:
+    effect_pool       = "A",         # user-defined effect target:
     target_effect_pct = -80              #   earthworms decrease PASSIVE by ~10% vs baseline
   )
   cat("\nCalibration history:\n"); print(pair$treatment$fit$history)
