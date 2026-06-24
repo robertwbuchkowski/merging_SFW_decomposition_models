@@ -102,10 +102,9 @@ spinup_equilibrium <- function(obj, warm_start = NULL,
 # ------------------------------------------------------------
 spinup_until_stable <- function(init_state, parms, model_fn,
                                 n_years = 100, by = 1,
-                                max_iter = 10, tol = 1e-4, verbose = TRUE) {
+                                max_iter = 10, tol = 1e-4, verbose = TRUE, plot_spinup = TRUE) {
   if (missing(model_fn) || is.null(model_fn))
     stop("spinup_until_stable(): supply model_fn (e.g. obj$wrapped_model).")
-
   state <- init_state
   parms$climate_forcing <- make_climate_forcing(parms)
 
@@ -115,9 +114,16 @@ spinup_until_stable <- function(init_state, parms, model_fn,
     times <- seq(0, 365 * n_years, by = by)
     out   <- deSolve::ode(y = state, times = times, func = model_fn, parms = parms)
 
+    if(plot_spinup){
+      pdf(paste0("Data/spinup/tragectory_",length(state),"_", i,".pdf"))
+      plot(out)
+      dev.off()
+    }
+    
     stab <- check_stability(out)
     max_drift <- max(abs(stab$rel_drift), na.rm = TRUE)
-    if (verbose) cat("Max year-over-year drift:", signif(max_drift, 3), "\n")
+    max_drift_pool <- stab$pool[which(stab$rel_drift == max_drift)]
+    if (verbose) cat("Max year-over-year drift:", signif(max_drift, 3), "in",max_drift_pool, "\n")
 
     if (max_drift < tol) {
       if (verbose) cat("Seasonal limit cycle reached.\n")

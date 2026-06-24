@@ -10,7 +10,7 @@ source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
 scen     <- read_scenarios("Data/scenarios.csv")
-model    <- "millennial"            # which model
+model    <- "century"            # which model
 scenario <- "Earthworm"         # which scenario
 do_fit   <- TRUE                # calibrate treatment animal params first?
 do_treatment <- TRUE            # also spin up the treatment arm now?
@@ -27,7 +27,7 @@ if (do_fit) {
     pair$treatment, pair$baseline,
     animal            = "Earthworm",     # the animal in this scenario
     target_biomass    = NULL,            # NULL = match its input (starting) value
-    effect_pool       = "A",         # user-defined effect target:
+    effect_pool       = "PASSIVE",         # user-defined effect target:
     target_effect_pct = -80              #   earthworms decrease PASSIVE by ~10% vs baseline
   )
   cat("\nCalibration history:\n"); print(pair$treatment$fit$history)
@@ -37,7 +37,7 @@ if (do_fit) {
 # (part 2) BASELINE FIRST: equilibrium -> seasonal dynamic spin-up -> save
 # ------------------------------------------------------------
 cat("\n--- Baseline dynamic spin-up ---\n")
-dyn_b <- dynamic_spinup(pair$baseline, n_years = 300, by = 30, tol = 1e-4)
+dyn_b <- dynamic_spinup(pair$baseline, n_years = 300, by = 1, tol = 1e-4)
 cat("baseline converged:", dyn_b$converged, "\n")
 save_spinup(pair$baseline, dyn_b$final_state, scenario, "baseline")
 
