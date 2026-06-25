@@ -10,7 +10,7 @@ source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
 scen     <- read_scenarios("Data/scenarios.csv")
-model    <- "century"            # which model
+model    <- "MIMICS"            # which model
 scenario <- "Earthworm"         # which scenario
 do_fit   <- TRUE                # calibrate treatment animal params first?
 do_treatment <- TRUE            # also spin up the treatment arm now?
@@ -22,12 +22,14 @@ pair <- setup_scenario_pair(model, scen, scenario)
 # (defaults to its input value) and a user-defined effect on a pool.
 # ------------------------------------------------------------
 pair$baseline <- spinup_equilibrium(pair$baseline)        # needed as the effect reference
+
+# Something weird about this...check
 if (do_fit) {
   pair$treatment <- fit_animal_params(
     pair$treatment, pair$baseline,
     animal            = "Earthworm",     # the animal in this scenario
     target_biomass    = NULL,            # NULL = match its input (starting) value
-    effect_pool       = "PASSIVE",         # user-defined effect target:
+    effect_pool       = "SOM_1",         # user-defined effect target:
     target_effect_pct = -80              #   earthworms decrease PASSIVE by ~10% vs baseline
   )
   cat("\nCalibration history:\n"); print(pair$treatment$fit$history)
