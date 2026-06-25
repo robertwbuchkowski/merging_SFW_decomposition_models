@@ -172,7 +172,7 @@ MIMICS_model <- function(time, state, parms) {
     FI = pmin(1, pmax(0, FI + FI * slope_pint_det_k_frag_litter * Detritivore))
     
     # Earthworms slow down physical to available transfer
-    desorb = pmax(0.001, desorb + Earthworm * k_b_slope_pint * desorb)
+    desorb = pmax(0, desorb + Earthworm * k_b_slope_pint * desorb)
     
     # ------------------------------#
     # MIMICS fluxes:  -- UNCHANGED
