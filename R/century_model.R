@@ -124,7 +124,7 @@ century_model <- function(time, state, parms){
     
     Fed_earthworm_ACTIVE  = c_earthworm_soil*Earthworm*ACTIVE
     Fed_earthworm_SLOW    = c_earthworm_soil*Earthworm*SLOW
-    Fed_earthworm_PASSIVE = c_earthworm_soil*Earthworm*PASSIVE
+    Fed_earthworm_PASSIVE = 0 #c_earthworm_soil*Earthworm*PASSIVE
     
     # Assimilated carbon (litter assimilation vs. soil assimilation efficiencies)
     Assim_earthworm = a_earthworm*Fed_earthworm_MetLitter +
@@ -213,7 +213,7 @@ century_model <- function(time, state, parms){
     # Detritivores increase fragmentation:
     f_MetLitter = pmax(0, f_MetLitter + f_MetLitter * slope_pint_det_k_frag_litter * Detritivore)
     
-    # Earthworms slow down physical to available transfer
+    # Earthworms slow down PASSIVE to ACTIVE transfer
     f_PASSIVE = pmax(0, f_PASSIVE + Earthworm * k_b_slope_pint * f_PASSIVE)
     
     
