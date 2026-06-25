@@ -124,7 +124,7 @@ century_model <- function(time, state, parms){
     
     Fed_earthworm_ACTIVE  = c_earthworm_soil*Earthworm*ACTIVE
     Fed_earthworm_SLOW    = c_earthworm_soil*Earthworm*SLOW
-    Fed_earthworm_PASSIVE = 0 #c_earthworm_soil*Earthworm*PASSIVE
+    Fed_earthworm_PASSIVE = c_earthworm_soil*Earthworm*PASSIVE
     
     # Assimilated carbon (litter assimilation vs. soil assimilation efficiencies)
     Assim_earthworm = a_earthworm*Fed_earthworm_MetLitter +
@@ -136,7 +136,7 @@ century_model <- function(time, state, parms){
     
     # Faeces split: labile -> ACTIVE, stabilised -> SLOW
     Waste_earthworm_ACTIVE = prop_feaces_earthworm_LMWC      * Egest_earthworm
-    Waste_earthworm_SLOW   = (1 - prop_feaces_earthworm_LMWC) * Egest_earthworm
+    Waste_earthworm_PASSIVE   = (1 - prop_feaces_earthworm_LMWC) * Egest_earthworm
     
     # Necromass -> SLOW
     Carcass_earthworm_SLOW = d_earthworm*Earthworm^2
@@ -275,15 +275,14 @@ century_model <- function(time, state, parms){
     #Equation B12
     dSLOW <- LigFrac * strlitter_to_slow * f_StrLitter +
       f_ACTIVE * (1 - f_TEX - active_to_passive) - f_SLOW -
-      Fed_earthworm_SLOW +
-      Waste_earthworm_SLOW + Carcass_earthworm_SLOW +
+      Fed_earthworm_SLOW + Carcass_earthworm_SLOW +
       Carcass_det_SLOW + Waste_det_SLOW +
       Carcass_detpred_SLOW + Waste_detpred_SLOW +
       Carcass_rootherb_SLOW + Waste_rootherb_SLOW
     
     #Equation B13
     dPASSIVE <- f_ACTIVE * active_to_passive + f_SLOW * slow_to_passive - f_PASSIVE -
-      Fed_earthworm_PASSIVE
+      Fed_earthworm_PASSIVE + Waste_earthworm_PASSIVE
     
     # --------------------#
     # MASS BALANCE CHECK:
