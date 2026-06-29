@@ -22,14 +22,14 @@
 # Returns list(out, final_state, converged, iterations).
 # ------------------------------------------------------------
 dynamic_spinup <- function(obj, from = NULL, n_years = 300, by = 30,
-                           max_iter = 6, tol = 1e-4, verbose = TRUE) {
+                           max_iter = 6, tol = 1e-3, abs_floor = 1e-3, verbose = TRUE) {
   start <- if (!is.null(from)) from
            else if (!is.null(obj$init_state_spin)) obj$init_state_spin
            else obj$working_state
   start <- start[names(obj$working_state)]            # align to active pools
   spinup_until_stable(start, obj$parms, obj$wrapped_model,
-                      n_years = n_years, by = by,
-                      max_iter = max_iter, tol = tol, verbose = verbose)
+                      n_years = n_years, by = by, max_iter = max_iter,
+                      tol = tol, abs_floor = abs_floor, verbose = verbose)
 }
 
 # ------------------------------------------------------------

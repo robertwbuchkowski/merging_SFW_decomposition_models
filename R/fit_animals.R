@@ -31,12 +31,14 @@ animal_fit_defaults <- list(
 .bracket_root <- function(f, x0, step, max_expand = 40) {
   f0 <- f(x0); if (!is.finite(f0)) return(NULL)
   if (f0 == 0) return(c(x0, x0))
-  lo <- x0; hi <- x0; flo <- f0; fhi <- f0
+  lo <- x0; hi <- x0
   for (k in seq_len(max_expand)) {
     lo <- lo - step; flo <- f(lo)
-    if (is.finite(flo) && flo * f0 <= 0) return(c(lo, hi))
+    # tight bracket between the sign-change point and x0 (BOTH finite) -- never
+    # return a far endpoint that may sit in a blown-up / non-converged region.
+    if (is.finite(flo) && flo * f0 <= 0) return(c(lo, x0))
     hi <- hi + step; fhi <- f(hi)
-    if (is.finite(fhi) && fhi * f0 <= 0) return(c(lo, hi))
+    if (is.finite(fhi) && fhi * f0 <= 0) return(c(x0, hi))
   }
   NULL
 }
@@ -77,12 +79,14 @@ fit_animal_params <- function(treatment, baseline,
     baseline <- spinup_equilibrium(baseline, max_time = max_time, stol = stol, verbose = FALSE)
   base_eq <- baseline$init_state_spin
 
-  # warm-started equilibrium evaluator for the treatment
-  last_eq <- treatment$working_state
+  # warm-started equilibrium evaluator for the treatment (error-safe)
+  last_eq   <- treatment$working_state
+  last_conv <- TRUE
   eq_now <- function() {
     sp <- spinup_equilibrium(treatment, warm_start = last_eq,
                              max_time = max_time, stol = stol, verbose = FALSE)
-    last_eq <<- sp$init_state_spin
+    if (all(is.finite(sp$init_state_spin))) last_eq <<- sp$init_state_spin
+    last_conv <<- isTRUE(sp$spin_info$converged)
     sp$init_state_spin
   }
   effect_of <- function(eq) 100 * (eq[effect_pool] - base_eq[effect_pool]) /
@@ -102,8 +106,10 @@ fit_animal_params <- function(treatment, baseline,
       warning("Could not bracket a feeding rate for target biomass ", target_biomass,
               " (target may be outside the achievable range).")
     } else {
-      root <- stats::uniroot(fb, lower = br[1], upper = br[2], tol = 1e-4)$root
-      treatment$parms[[biomass_param]] <- 10^root
+      root <- tryCatch(stats::uniroot(fb, lower = br[1], upper = br[2], tol = 1e-4)$root,
+                       error = function(e) { warning("biomass uniroot failed: ",
+                                                     conditionMessage(e)); NA_real_ })
+      if (is.finite(root)) treatment$parms[[biomass_param]] <- 10^root
     }
 
     # ---- (2) effect via effect parameter (linear scale, monotone) ----
@@ -119,8 +125,10 @@ fit_animal_params <- function(treatment, baseline,
         warning("Target effect ", target_effect_pct, "% on ", effect_pool,
                 " not achievable (the parameter saturates or the target is too large).")
       } else {
-        roote <- stats::uniroot(fe, lower = bre[1], upper = bre[2], tol = 1e-6)$root
-        treatment$parms[[effect_param]] <- roote
+        roote <- tryCatch(stats::uniroot(fe, lower = bre[1], upper = bre[2], tol = 1e-6)$root,
+                          error = function(e) { warning("effect uniroot failed: ",
+                                                        conditionMessage(e)); NA_real_ })
+        if (is.finite(roote)) treatment$parms[[effect_param]] <- roote
       }
     }
 
@@ -151,6 +159,7 @@ fit_animal_params <- function(treatment, baseline,
   treatment$init_state_spin <- eq_now()
   treatment$fit <- list(
     animal = animal,
+    solver_converged = last_conv,
     biomass_param = biomass_param, fitted_biomass_param = treatment$parms[[biomass_param]],
     target_biomass = target_biomass, achieved_biomass = unname(treatment$init_state_spin[animal]),
     effect_param = if (do_effect) effect_param else NA,

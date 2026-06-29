@@ -52,7 +52,7 @@ for (model in models) {
       if (is.null(pair$treatment$init_state_spin))
         pair$treatment <- spinup_equilibrium(pair$treatment,
                                              warm_start = pair$baseline$init_state_spin)
-      dyn_t <- dynamic_spinup(pair$treatment, n_years = 300, by = 30, tol = 1e-4)
+      dyn_t <- dynamic_spinup(pair$treatment, n_years = 300, by = 1, tol = 1e-4)
       cat("treatment converged:", dyn_t$converged, "\n")
       save_spinup(pair$treatment, dyn_t$final_state, scenario, "treatment")
     }
