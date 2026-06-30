@@ -5,12 +5,12 @@
 #   * REMOVE animals from the spun-up TREATMENT (extirpation)
 # Run from project root.
 # ============================================================
-library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml)
+library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/dynamic_spinup.R")
 
-scen     <- read_scenarios("Data/scenarios.csv")
+scen     <- read_scenarios("Data/scenarios.xlsx")
 model    <- "MIMICS"
 scenario <- "Earthworm"
 

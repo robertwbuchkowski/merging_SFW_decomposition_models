@@ -5,12 +5,12 @@
 # forcing equilibrium only -- no seasonal spin-up -- but still does many
 # runsteady solves, so it takes a few minutes.
 # ============================================================
-library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml)
+library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
-scen   <- read_scenarios("Data/scenarios.csv")
+scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("century", "millennial", "MIMICS")
 
 # ------------------------------------------------------------

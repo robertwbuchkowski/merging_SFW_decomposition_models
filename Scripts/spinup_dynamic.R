@@ -4,12 +4,12 @@
 # -> save the stable limit-cycle state to Data/spinup/.
 # Run from project root. This can take a while; that is why it is separate.
 # ============================================================
-library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml)
+library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
-scen   <- read_scenarios("Data/scenarios.csv")
+scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("century", "millennial", "MIMICS")
 do_fit   <- F                # calibrate treatment animal params first?
 do_treatment <- F            # also spin up the treatment arm now?
@@ -24,7 +24,23 @@ for (model in models) {
     # (defaults to its input value) and a user-defined effect on a pool.
     # ------------------------------------------------------------
     pair$baseline <- spinup_equilibrium(pair$baseline)        # needed as the effect reference
-    
+
+    # ------------------------------------------------------------
+    # (optional) EXPLORE before fitting: response curves along a user-defined
+    # parameter gradient. Shows equilibrium biomass + pool effect and flags
+    # non-converged / unstable regions (red), so you can tune by hand instead
+    # of (or alongside) the automatic optimum below.
+    # ------------------------------------------------------------
+    if (FALSE) {                                   # set TRUE to explore
+      grid <- 10^seq(-7, -3, length.out = 13)      # gradient of the feeding rate
+      sc_scan <- scan_animal_param(
+        pair$treatment, param = "c_detritivores", values = grid,
+        animal = "Detritivore", baseline = pair$baseline,
+        effect_pool = "SOM_1")                     # optional: track an effect too
+      print(sc_scan)
+      plot_animal_scan(sc_scan, target_biomass = 0.1, log_x = TRUE)
+    }
+
     if (do_fit) {
       pair$treatment <- fit_animal_params(
         pair$treatment, pair$baseline,

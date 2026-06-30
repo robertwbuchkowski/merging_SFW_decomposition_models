@@ -4,24 +4,19 @@
 # Functions:
 #   make_model_wrapper()   integrate only the ACTIVE (non-zero) pools
 #   setup_model()          pick a model + turn groups off + override params
-#   read_scenarios()       read a scenario CSV (animals on/off + site params)
+#   read_scenarios()       read the scenarios workbook (Excel .xlsx, 3 sheets)
 #   setup_scenario()       build ONE arm of a scenario (treatment or baseline)
 #   setup_scenario_pair()  build treatment + matched no-animal baseline
 #   compare_to_baseline()  treatment - baseline on shared pools
 #
-# Scenario CSV layout (rows = parameters, columns = scenarios):
-#   * Flag rows  (Tree, Herb, earthworm, RootHerb, Detritivore, DetPredator)
-#     use 1/0 for on/off. There is a single Detritivore pool; different
-#     detritivore *scenarios* (e.g. isopods vs mites) turn that one pool on
-#     and supply different detritivore PARAMETERS via override rows below.
-#   * All other rows are PARAMETER overrides (site/climate AND per-scenario
-#     animal parameters), e.g. MAT, T_amp, MAtheta, theta_amp, pct_claysilt,
-#     fCLAY, LigFrac, NPP_herb, NPP_tree, pH, BD, and detritivore parameters such as
-#     d_detritivores / c_detritivores (these let isopod vs mite scenarios use
-#     the one Detritivore pool with different values). Names are matched to the
-#     parameter list case-insensitively, so minor case differences still
-#     resolve (e.g. 'fClay' -> 'fCLAY'). Parameters used by only one model
-#     (e.g. Millennial's *_det_k_frag_* or pH/BD) are harmless extras elsewhere.
+# Scenarios live in Data/scenarios.xlsx (see read_scenarios() for the sheet
+# layout): a "scenarios" sheet of per-scenario PARAMETER overrides, a
+# "state_variable_include" sheet of on/off FLAGS (Tree, Herb, earthworm,
+# RootHerb, Detritivore, DetPredator), and a "state_variables_value" sheet of
+# initial pool values. There is a single Detritivore pool; isopod vs mite
+# scenarios turn it on and supply different detritivore parameters. Parameter
+# and pool names are matched case-insensitively; parameters or pools used by
+# only one model are harmless extras elsewhere.
 #
 # Each scenario is compared to its OWN baseline: same plants + same climate,
 # but ALL animals off.
@@ -100,7 +95,7 @@ make_model_wrapper <- function(model_fun, full_names, state_groups) {
 #                    derive and before climate forcing is built)
 # ------------------------------------------------------------
 setup_model <- function(model, off = character(0), param_overrides = list(),
-                        source_files = TRUE) {
+                        init_overrides = list(), source_files = TRUE) {
 
   m <- model_table[[model]]
   if (is.null(m))
@@ -121,8 +116,15 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
   # Add in the climate forcing:
   parms$climate_forcing <- make_climate_forcing(parms)
   
-  # initial state, then zero requested groups
+  # initial state from the model's init_*_state(); then override values supplied
+  # from the workbook (matched by pool name; blanks/unknowns ignored), then zero
+  # the requested groups.
   init_state <- init_fn()
+  if (length(init_overrides)) {
+    iv <- init_overrides[names(init_overrides) %in% names(init_state)]
+    iv <- iv[is.finite(iv)]
+    if (length(iv)) init_state[names(iv)] <- iv
+  }
   bad <- setdiff(off, names(init_state))
   if (length(bad)){
     warning("These 'off' names are not state variables of ", model, "  and will be dropped: ",
@@ -147,53 +149,127 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
 }
 
 # ------------------------------------------------------------
-# read_scenarios(): parse a LONG/TIDY scenario CSV.
-# Expected columns: Parameter, Scenario, Value [, SD].
-# One row per (Parameter, Scenario); the SD column (if present) is ignored.
+# read_scenarios(): read the scenarios workbook (Excel .xlsx) with 3 sheets.
 #
-# Returns a named list (one element per scenario) of:
+#   "scenarios"              long-form PARAMETER overrides:
+#                            columns Parameter, Scenario, Value (extra metadata
+#                            columns such as SD/Min/Max/Reference are ignored).
+#   "state_variable_include" inclusion FLAGS (1/0) per StateVariable x Scenario,
+#                            StateVariable being a flag group (Tree, Herb,
+#                            earthworm, RootHerb, Detritivore, DetPredator).
+#   "state_variables_value"  INITIAL pool values: Model, Scenario, StateVariable,
+#                            InitialEq. Model is "All" (plants/animals) or a
+#                            model name (its soil pools); Scenario is "All" or a
+#                            specific one. A blank InitialEq keeps the
+#                            init_*_state.R default for that pool.
+#
+# Scenario names are matched across sheets ignoring case and punctuation, so
+# "Earthworm - Temperate" and "Earthworm-Temperate" refer to the same scenario.
+#
+# Returns a named list (one per scenario, in "scenarios"-sheet order) of:
 #   list(flags  = c(Tree=, Herb=, earthworm=, RootHerb=, Detritivore=, DetPredator=),
-#        params = named numeric of all non-flag parameter overrides)
-# Depends on `flag_pools` (defined elsewhere in setup.R) for the canonical
-# flag names and order.
+#        params = named numeric parameter overrides,
+#        init   = named numeric initial values overriding the model defaults)
+#
+# A legacy long-form .csv path still works (flags + params from the one sheet).
 # ------------------------------------------------------------
-read_scenarios <- function(csv_path = "Data/scenarios.csv") {
-  raw <- utils::read.csv(csv_path, check.names = FALSE, stringsAsFactors = FALSE)
-  
-  needed <- c("Parameter", "Scenario", "Value")
-  if (!all(needed %in% names(raw)))
-    stop("scenarios CSV must be long form with columns: ",
-         paste(needed, collapse = ", "),
-         "\n  (found: ", paste(names(raw), collapse = ", "), ")")
-  
-  raw$Parameter <- trimws(as.character(raw$Parameter))
-  raw$Scenario  <- trimws(as.character(raw$Scenario))
-  raw$Value     <- suppressWarnings(as.numeric(raw$Value))
-  
+read_scenarios <- function(path = "Data/scenarios.xlsx",
+                           sheet_params  = "scenarios",
+                           sheet_include = "state_variable_include",
+                           sheet_init    = "state_variables_value") {
+
+  if (grepl("\\.csv$", path, ignore.case = TRUE)) return(.read_scenarios_csv(path))
+  if (!requireNamespace("readxl", quietly = TRUE))
+    stop("read_scenarios() needs the 'readxl' package to read ", path,
+         "  (install.packages('readxl')).")
+
+  rd  <- function(sh) as.data.frame(readxl::read_excel(path, sheet = sh),
+                                    check.names = FALSE, stringsAsFactors = FALSE)
+  nrm <- function(x) tolower(gsub("[^[:alnum:]]+", "", trimws(as.character(x))))
+
+  # ---- parameters ----
+  pr <- rd(sheet_params)
+  need <- c("Parameter", "Scenario", "Value")
+  if (!all(need %in% names(pr)))
+    stop("Sheet '", sheet_params, "' needs columns: ", paste(need, collapse = ", "))
+  pr$Parameter <- trimws(as.character(pr$Parameter))
+  pr$Scenario  <- trimws(as.character(pr$Scenario))
+  pr$Value     <- suppressWarnings(as.numeric(as.character(pr$Value)))
+  pr <- pr[nzchar(pr$Parameter) & !is.na(pr$Parameter) &
+           nzchar(pr$Scenario)  & !is.na(pr$Scenario), , drop = FALSE]
+
+  # ---- inclusion flags ----
+  inc <- rd(sheet_include)
+  need <- c("StateVariable", "Scenario", "Inclusion")
+  if (!all(need %in% names(inc)))
+    stop("Sheet '", sheet_include, "' needs columns: ", paste(need, collapse = ", "))
+  inc$sv  <- trimws(as.character(inc$StateVariable))
+  inc$key <- nrm(inc$Scenario)
+
+  # ---- initial values ----
+  iv <- rd(sheet_init)
+  need <- c("Model", "Scenario", "StateVariable", "InitialEq")
+  if (!all(need %in% names(iv)))
+    stop("Sheet '", sheet_init, "' needs columns: ", paste(need, collapse = ", "))
+  iv$sv        <- trimws(as.character(iv$StateVariable))
+  iv$key       <- nrm(iv$Scenario)
+  iv$InitialEq <- suppressWarnings(as.numeric(as.character(iv$InitialEq)))
+
   flag_names <- names(flag_pools)
-  scen       <- unique(raw$Scenario)          # first-seen order
-  
+  scen       <- unique(pr$Scenario)                 # canonical names + order
+
   out <- lapply(scen, function(s) {
-    sub <- raw[raw$Scenario == s, , drop = FALSE]
-    
+    skey <- nrm(s)
+    sub  <- pr[pr$Scenario == s, , drop = FALSE]
+
     dup <- unique(sub$Parameter[duplicated(sub$Parameter)])
     if (length(dup))
       warning("Scenario '", s, "': duplicate parameter rows (last value used): ",
               paste(dup, collapse = ", "))
-    
-    # flags in canonical order; 0 if a flag row is absent for this scenario
-    fi    <- match(tolower(flag_names), tolower(sub$Parameter))
-    flags <- setNames(ifelse(is.na(fi), 0L, as.integer(sub$Value[fi])), flag_names)
-    
-    # parameter overrides = every non-flag row (last value wins if repeated)
-    psub   <- sub[!(tolower(sub$Parameter) %in% tolower(flag_names)), , drop = FALSE]
-    keep   <- !duplicated(psub$Parameter, fromLast = TRUE)
-    params <- setNames(psub$Value[keep], psub$Parameter[keep])
-    
-    list(flags = flags, params = params)
+    keep   <- !duplicated(sub$Parameter, fromLast = TRUE)
+    params <- setNames(sub$Value[keep], sub$Parameter[keep])
+    params <- params[!is.na(params)]
+
+    # flags (absent -> 0)
+    fsub  <- inc[inc$key == skey, , drop = FALSE]
+    fi    <- match(tolower(flag_names), tolower(fsub$sv))
+    flags <- setNames(ifelse(is.na(fi), 0L, as.integer(fsub$Inclusion[fi])), flag_names)
+
+    # initial values: "All" scenario first, this scenario overrides; drop blanks
+    isub  <- iv[iv$key %in% c(nrm("All"), skey), , drop = FALSE]
+    isub  <- isub[order(isub$key == skey), , drop = FALSE]   # specific rows last
+    isub  <- isub[!is.na(isub$InitialEq), , drop = FALSE]
+    init  <- setNames(isub$InitialEq, isub$sv)
+    init  <- init[!duplicated(names(init), fromLast = TRUE)]
+
+    list(flags = flags, params = params, init = init)
   })
   setNames(out, scen)
 }
+
+# Legacy reader: long-form CSV with flag rows + parameter rows in one sheet.
+.read_scenarios_csv <- function(csv_path) {
+  raw <- utils::read.csv(csv_path, check.names = FALSE, stringsAsFactors = FALSE)
+  needed <- c("Parameter", "Scenario", "Value")
+  if (!all(needed %in% names(raw)))
+    stop("scenarios CSV must be long form with columns: ", paste(needed, collapse = ", "))
+  raw$Parameter <- trimws(as.character(raw$Parameter))
+  raw$Scenario  <- trimws(as.character(raw$Scenario))
+  raw$Value     <- suppressWarnings(as.numeric(raw$Value))
+  flag_names <- names(flag_pools)
+  scen       <- unique(raw$Scenario)
+  out <- lapply(scen, function(s) {
+    sub   <- raw[raw$Scenario == s, , drop = FALSE]
+    fi    <- match(tolower(flag_names), tolower(sub$Parameter))
+    flags <- setNames(ifelse(is.na(fi), 0L, as.integer(sub$Value[fi])), flag_names)
+    psub  <- sub[!(tolower(sub$Parameter) %in% tolower(flag_names)), , drop = FALSE]
+    keep  <- !duplicated(psub$Parameter, fromLast = TRUE)
+    params <- setNames(psub$Value[keep], psub$Parameter[keep])
+    list(flags = flags, params = params[!is.na(params)], init = setNames(numeric(0), character(0)))
+  })
+  setNames(out, scen)
+}
+
 # ------------------------------------------------------------
 # setup_scenario(): build one arm of a scenario.
 #   animals = TRUE  -> treatment (animals per the CSV flags)
@@ -215,6 +291,7 @@ setup_scenario <- function(model, scenarios, scenario, animals = TRUE,
   off <- unlist(flag_pools[names(flags)[flags == 0L]], use.names = FALSE)
 
   s <- setup_model(model, off = off, param_overrides = sc$params,
+                   init_overrides = if (is.null(sc$init)) list() else sc$init,
                    source_files = source_files)
   s$scenario <- scenario
   s$arm      <- if (animals) "treatment" else "baseline"

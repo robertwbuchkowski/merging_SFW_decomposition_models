@@ -170,3 +170,115 @@ fit_animal_params <- function(treatment, baseline,
   )
   treatment
 }
+
+# ============================================================
+# scan_animal_param() - response curves along a USER-DEFINED parameter gradient
+# ------------------------------------------------------------
+# fit_animal_params() returns a single optimum; this returns the WHOLE curve so
+# you can see how equilibrium biomass and the pool effect respond to a
+# parameter, spot non-convergent / unstable regions (flagged, not fatal), and
+# tune by hand. Each point uses the error-safe runsteady spin-up and is
+# warm-started from the previous point for speed and continuity.
+#
+#   treatment    a treatment setup object (animals on)
+#   param        name of the parameter to vary (e.g. "c_detritivores",
+#                "slope_pint_det_k_frag_litter")
+#   values       numeric vector to sweep (the gradient you define)
+#   animal       which animal's biomass to record (auto if exactly one active)
+#   baseline     baseline setup/equilibrium; needed only if effect_pool is set
+#   effect_pool  optional pool whose % change vs the baseline equilibrium to record
+#   warm_start   start each point from the previous equilibrium (default TRUE)
+#
+# Returns a data.frame with columns: <param>, biomass, effect_pct, converged,
+# max_deriv. attr(, "param"/"animal"/"effect_pool") describe the scan.
+# ============================================================
+scan_animal_param <- function(treatment, param, values,
+                              animal = NULL, baseline = NULL, effect_pool = NULL,
+                              warm_start = TRUE,
+                              max_time = 1e7, stol = 1e-8, verbose = TRUE) {
+
+  if (!param %in% names(treatment$parms))
+    warning("Parameter '", param, "' is not currently in parms; it will be added.")
+
+  animals_all    <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")
+  active_animals <- intersect(animals_all, treatment$active)
+  if (is.null(animal)) {
+    if (length(active_animals) != 1)
+      stop("Specify `animal`; treatment has active animals: ",
+           paste(active_animals, collapse = ", "))
+    animal <- active_animals
+  }
+
+  base_eq <- NULL
+  if (!is.null(effect_pool)) {
+    if (is.null(baseline)) stop("effect_pool set but no `baseline` supplied.")
+    if (is.null(baseline$init_state_spin))
+      baseline <- spinup_equilibrium(baseline, max_time = max_time, stol = stol, verbose = FALSE)
+    base_eq <- baseline$init_state_spin
+  }
+
+  last_eq <- treatment$working_state
+  rows <- vector("list", length(values))
+  for (i in seq_along(values)) {
+    treatment$parms[[param]] <- values[i]
+    sp <- spinup_equilibrium(treatment, warm_start = if (warm_start) last_eq else NULL,
+                             max_time = max_time, stol = stol, verbose = FALSE)
+    eq <- sp$init_state_spin
+    if (all(is.finite(eq))) last_eq <- eq
+    B   <- unname(eq[animal])
+    eff <- if (!is.null(effect_pool))
+             100 * (unname(eq[effect_pool]) - unname(base_eq[effect_pool])) /
+               max(abs(unname(base_eq[effect_pool])), 1e-8)
+           else NA_real_
+    rows[[i]] <- data.frame(value = values[i], biomass = B, effect_pct = eff,
+                            converged = isTRUE(sp$spin_info$converged),
+                            max_deriv = sp$spin_info$max_deriv)
+    if (verbose)
+      cat(sprintf("  %s = %.4g -> %s = %.4g%s  [%s]\n",
+                  param, values[i], animal, B,
+                  if (!is.null(effect_pool)) sprintf(", %s %+.1f%%", effect_pool, eff) else "",
+                  if (isTRUE(sp$spin_info$converged)) "ok" else "NOT converged"))
+  }
+  res <- do.call(rbind, rows)
+  names(res)[1] <- param
+  attr(res, "param") <- param
+  attr(res, "animal") <- animal
+  attr(res, "effect_pool") <- effect_pool
+  res
+}
+
+# ------------------------------------------------------------
+# plot_animal_scan(): quick base-R view of a scan_animal_param() result.
+# Biomass (and effect, if present) vs the parameter; non-converged points are
+# drawn in red so unstable regions are obvious. Optional reference lines for a
+# target biomass and a fitted optimum.
+# ------------------------------------------------------------
+plot_animal_scan <- function(scan, target_biomass = NULL, fitted_value = NULL,
+                             log_x = FALSE) {
+  param <- attr(scan, "param"); animal <- attr(scan, "animal")
+  ep    <- attr(scan, "effect_pool")
+  x     <- scan[[param]]
+  col   <- ifelse(scan$converged, "black", "red")
+  has_eff <- !all(is.na(scan$effect_pct))
+  lx <- if (log_x) "x" else ""
+
+  op <- graphics::par(mfrow = c(1, if (has_eff) 2 else 1), mar = c(4.2, 4.2, 2.4, 1))
+  on.exit(graphics::par(op))
+
+  graphics::plot(x, scan$biomass, type = "b", log = lx, pch = 19, col = col,
+                 xlab = param, ylab = paste(animal, "equilibrium biomass"),
+                 main = "Biomass vs parameter")
+  if (!is.null(target_biomass)) graphics::abline(h = target_biomass, lty = 2, col = "blue")
+  if (!is.null(fitted_value))   graphics::abline(v = fitted_value,  lty = 3, col = "darkgreen")
+  graphics::legend("topleft", bty = "n", pch = c(19, 19), col = c("black", "red"),
+                   legend = c("converged", "not converged"), cex = 0.8)
+
+  if (has_eff) {
+    graphics::plot(x, scan$effect_pct, type = "b", log = lx, pch = 19, col = col,
+                   xlab = param, ylab = paste0("% change in ", ep, " vs baseline"),
+                   main = "Effect vs parameter")
+    graphics::abline(h = 0, col = "grey60")
+    if (!is.null(fitted_value)) graphics::abline(v = fitted_value, lty = 3, col = "darkgreen")
+  }
+  invisible(NULL)
+}

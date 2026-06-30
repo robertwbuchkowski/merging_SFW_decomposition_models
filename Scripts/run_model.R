@@ -9,7 +9,7 @@
 # ============================================================
 
 library(pacman)
-p_load(deSolve, rootSolve, tidyverse, yaml)
+p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 
 # ---- shared utilities ----
 source("R/climate_forcing.R")

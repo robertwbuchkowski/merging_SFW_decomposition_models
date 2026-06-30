@@ -2,12 +2,12 @@
 # Run all scenarios across MULTIPLE models, spin up to equilibrium,
 # compare treatment vs baseline, and plot. Run from project root.
 # ============================================================
-library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml)
+library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/run_models.R");      source("R/plot_eq_compare.R")
 
-scen   <- read_scenarios("Data/scenarios.csv")
+scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("century", "millennial", "MIMICS")
 
 # ------------------------------------------------------------
