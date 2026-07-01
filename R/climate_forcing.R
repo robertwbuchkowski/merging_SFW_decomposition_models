@@ -7,7 +7,17 @@ climate_forcing_function <- function(time, parms) {
   doy <- (time %% 365) + 1
 
   Temp  <- parms$MAT     + parms$T_amp     * sin(2 * pi * (doy - 110) / 365)
-  theta <- parms$MAtheta + parms$theta_amp * cos(4 * pi * (doy - 110) / 365)
+  
+  if(N_theta_peaks == 2){
+    theta <- parms$MAtheta + parms$theta_amp * cos(4 * pi * (doy - 110) / 365)
+  }else{
+    if(N_theta_peaks == 1){
+      theta <- parms$MAtheta + parms$theta_amp * sin(2 * pi * (doy - 110) / 365)
+    }else{
+      stop("N_theta_peaks must be 1 or 2.")
+    }
+  }
+  
 
   # --------------------------------------------------
   # Seasonal litterfall (shoots & leaves): normalized to sum to 1 over a year
@@ -29,7 +39,15 @@ climate_forcing_function <- function(time, parms) {
   # --------------------------------------------------
   doy_all   <- 1:365
   Temp_all  <- parms$MAT     + parms$T_amp     * sin(2 * pi * (doy_all - 110) / 365)
-  theta_all <- parms$MAtheta + parms$theta_amp * cos(4 * pi * (doy_all - 110) / 365)
+  if(N_theta_peaks == 2){
+    theta_all <- parms$MAtheta + parms$theta_amp * cos(4 * pi * (doy_all - 110) / 365)
+  }else{
+    if(N_theta_peaks == 1){
+      theta_all <- parms$MAtheta + parms$theta_amp * sin(2 * pi * (doy_all - 110) / 365)
+    }else{
+      stop("N_theta_peaks must be 1 or 2.")
+    }
+  }
   fT_all    <- 1 / (1 + exp(-parms$k_root_dormancy * (Temp_all - parms$root_dormancy_temp)))
   fth_all   <- pmin(1, pmax(0, theta_all) / parms$theta_opt)
   act_all   <- fT_all * fth_all

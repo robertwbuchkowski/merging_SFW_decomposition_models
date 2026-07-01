@@ -7,6 +7,7 @@ MAT: 6
 T_amp: 26
 MAtheta: 0.30
 theta_amp: 0.15
+N_theta_peaks: 2
 
 # Texture / site
 pct_claysilt: 70

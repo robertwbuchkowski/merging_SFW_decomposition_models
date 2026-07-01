@@ -25,21 +25,8 @@ for (model in models) {
     # ------------------------------------------------------------
     pair$baseline <- spinup_equilibrium(pair$baseline)        # needed as the effect reference
 
-    # ------------------------------------------------------------
-    # (optional) EXPLORE before fitting: response curves along a user-defined
-    # parameter gradient. Shows equilibrium biomass + pool effect and flags
-    # non-converged / unstable regions (red), so you can tune by hand instead
-    # of (or alongside) the automatic optimum below.
-    # ------------------------------------------------------------
-    if (FALSE) {                                   # set TRUE to explore
-      grid <- 10^seq(-7, -3, length.out = 13)      # gradient of the feeding rate
-      sc_scan <- scan_animal_param(
-        pair$treatment, param = "c_detritivores", values = grid,
-        animal = "Detritivore", baseline = pair$baseline,
-        effect_pool = "SOM_1")                     # optional: track an effect too
-      print(sc_scan)
-      plot_animal_scan(sc_scan, target_biomass = 0.1, log_x = TRUE)
-    }
+    # For response curves along a parameter gradient (manual tuning across
+    # stable/unstable regions), see Scripts/fit_all_animals.R (scan_animal_param).
 
     if (do_fit) {
       pair$treatment <- fit_animal_params(
@@ -51,6 +38,21 @@ for (model in models) {
       )
       cat("\nCalibration history:\n"); print(pair$treatment$fit$history)
     }
+
+    # ------------------------------------------------------------
+    # QUICK CHECK - equilibrium animal biomass and the animal's effect on ALL
+    # state variables (treatment vs baseline), before the long seasonal spin-up.
+    # ------------------------------------------------------------
+    if (is.null(pair$treatment$init_state_spin))
+      pair$treatment <- spinup_equilibrium(pair$treatment,
+                                           warm_start = pair$baseline$init_state_spin)
+    eq_t    <- pair$treatment$init_state_spin
+    animals <- intersect(c("Earthworm", "Detritivore", "DetPredator", "RootHerb"),
+                         names(eq_t))
+    cat("\nEquilibrium animal biomass (", model, "/", scenario, "):\n", sep = "")
+    print(round(eq_t[animals], 4))
+    cat("\nAnimal effect on all state variables (treatment vs baseline):\n")
+    print(compare_vectors(eq_t, pair$baseline$init_state_spin), digits = 4)
     
     # ------------------------------------------------------------
     # (part 2) BASELINE FIRST: equilibrium -> seasonal dynamic spin-up -> save

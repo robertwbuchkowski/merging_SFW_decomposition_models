@@ -18,13 +18,66 @@
 # you can see exactly what happened. Requires setup.R, spinup.R sourced.
 # ============================================================
 
-# default parameter levers per animal (override via args if your model differs)
+# default parameter levers per animal (override via args if your model differs).
+#   biomass_param  feeding-rate parameter tuned to hit a target biomass
+#   effect_param   parameter tuned to hit a target pool effect (same name in
+#                  all three models here)
+#   effect_pool    the pool whose response defines the "effect" -- specified
+#                  PER MODEL, since pool names differ (MIMICS SOM_*, Century
+#                  ACTIVE/SLOW/PASSIVE, Millennial Organic/DOM/A/M/...). Edit
+#                  these to whichever pool you want the effect measured on.
 animal_fit_defaults <- list(
-  Earthworm   = list(biomass_param = "c_earthworm_soil",  effect_param = "k_b_slope_pint"),
-  Detritivore = list(biomass_param = "c_detritivores",    effect_param = "slope_pint_det_k_frag_litter"),
-  DetPredator = list(biomass_param = "c_detpredator",     effect_param = NA),
-  RootHerb    = list(biomass_param = "c_rootherb",        effect_param = "k_exudate_slope")
+  Earthworm = list(
+    biomass_param = "c_earthworm_soil",
+    effect_param  = "k_b_slope_pint",                 # acts on desorb / binding / f_PASSIVE
+    effect_pool   = list(MIMICS = "SOM_1", century = "PASSIVE", millennial = "M")),
+  Detritivore = list(
+    biomass_param = "c_detritivores",
+    effect_param  = "slope_pint_det_k_frag_litter",   # acts on FI / f_MetLitter / fragmentation
+    effect_pool   = list(MIMICS = "LIT_1", century = "MetLitter", millennial = "Litter")),
+  DetPredator = list(
+    biomass_param = "c_detpredator",
+    effect_param  = NA,                               # predator: no direct pool effect
+    effect_pool   = list()),
+  RootHerb = list(
+    biomass_param = "c_rootherb",
+    effect_param  = "k_exudate_slope",                # acts on root exudation
+    effect_pool   = list(MIMICS = "SOM_1", century = "ACTIVE", millennial = "DOM"))
 )
+
+# ------------------------------------------------------------
+# animal_fit_spec(): resolve the default biomass_param, effect_param, and the
+# per-MODEL effect_pool for an animal. Returns NA for anything unspecified.
+# ------------------------------------------------------------
+animal_fit_spec <- function(animal, model = NULL) {
+  d <- animal_fit_defaults[[animal]]
+  if (is.null(d)) stop("No animal_fit_defaults entry for '", animal, "'.")
+  ep <- if (!is.null(model)) d$effect_pool[[model]] else NULL
+  list(biomass_param = if (is.null(d$biomass_param)) NA else d$biomass_param,
+       effect_param  = if (is.null(d$effect_param))  NA else d$effect_param,
+       effect_pool   = if (is.null(ep)) NA else ep)
+}
+
+# ------------------------------------------------------------
+# fit_param_grid(): build a gradient that BUFFERS around a parameter's default
+# (or any center) value, for scan_animal_param().
+#   center  the value to buffer around (e.g. parms[[biomass_param]])
+#   buffer  half-width: decades each side on a log scale (default), or a
+#           fraction of |center| on a linear scale
+#   scale   "log" for positive rate parameters; "linear" for params that can
+#           be <= 0 (e.g. k_b_slope_pint)
+# ------------------------------------------------------------
+fit_param_grid <- function(center, buffer = 1, n = 11, scale = c("log", "linear")) {
+  scale <- match.arg(scale)
+  if (scale == "log") {
+    if (!is.finite(center) || center <= 0)
+      stop("log grid needs a positive center; use scale='linear' for <= 0 params.")
+    center * 10^seq(-buffer, buffer, length.out = n)
+  } else {
+    half <- if (center != 0) abs(center) * buffer else buffer
+    seq(center - half, center + half, length.out = n)
+  }
+}
 
 # expand around x0 until f changes sign; returns c(lo, hi) or NULL (monotone,
 # no root in range -> target not achievable, e.g. a saturating effect).
@@ -64,13 +117,17 @@ fit_animal_params <- function(treatment, baseline,
            paste(active_animals, collapse = ", "))
     animal <- active_animals
   }
-  if (is.null(biomass_param)) biomass_param <- animal_fit_defaults[[animal]]$biomass_param
+  spec <- animal_fit_spec(animal, treatment$model)
+  if (is.null(biomass_param)) biomass_param <- spec$biomass_param
   if (is.null(target_biomass)) target_biomass <- unname(treatment$working_state[animal])
   if (is.null(biomass_param) || is.na(biomass_param))
     stop("No biomass_param available for ", animal, " - pass biomass_param=.")
 
+  # effect_pool defaults PER MODEL from animal_fit_defaults; only fit an effect
+  # when a target is given AND a pool is known.
+  if (is.null(effect_pool) && !is.na(spec$effect_pool)) effect_pool <- spec$effect_pool
   do_effect <- !is.null(effect_pool) && !is.null(target_effect_pct)
-  if (do_effect && is.null(effect_param)) effect_param <- animal_fit_defaults[[animal]]$effect_param
+  if (do_effect && is.null(effect_param)) effect_param <- spec$effect_param
   if (do_effect && (is.null(effect_param) || is.na(effect_param)))
     stop("Effect fitting requested but no effect_param for ", animal, " - pass effect_param=.")
 

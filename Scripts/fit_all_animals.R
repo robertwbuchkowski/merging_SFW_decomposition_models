@@ -114,3 +114,90 @@ cat("\n========= FITTED FEEDING RATE BY MODEL (baseline = default) =========\n")
 print(wide, digits = 4)
 
 cat("\nSaved Results/animal_fit_summary_long.csv and Results/animal_fit_feeding_rate_by_model.csv\n")
+
+# ============================================================
+# PARAMETER-GRADIENT SCANS (manual-tuning aid)
+# ------------------------------------------------------------
+# For each model x scenario x animal, sweep the feeding rate over a grid that
+# BUFFERS around its default value (fit_param_grid) and record equilibrium
+# biomass + the effect on the per-model effect_pool (from animal_fit_defaults
+# via animal_fit_spec). Non-converged / unstable points are flagged, not fatal.
+# Saved to Results/animal_scan_long.csv so you can see biomass and effect along
+# the gradient and tune by hand where the automatic optimum lands in an
+# unstable region.
+# ============================================================
+do_scan      <- TRUE
+scan_buffer  <- 2       # grid spans default x 10^(-buffer) .. x 10^(+buffer)
+scan_n       <- 13      # points in the grid
+track_effect <- TRUE    # also record the effect on the per-model effect_pool
+
+if (do_scan) {
+  scan_rows <- list()
+  for (model in models) {
+    for (scenario in names(scen)) {
+
+      pair <- tryCatch(setup_scenario_pair(model, scen, scenario),
+                       error = function(e) NULL)
+      if (is.null(pair)) next
+      pair$baseline <- spinup_equilibrium(pair$baseline, verbose = FALSE)
+
+      animals <- animals_order[animals_order %in% pair$treatment$active]
+      for (a in animals) {
+        spec <- animal_fit_spec(a, model)          # per-model effect_pool
+        bp   <- spec$biomass_param
+        if (is.na(bp)) next
+        # gradient buffered around the DEFAULT feeding rate
+        grid  <- fit_param_grid(pair$treatment$parms[[bp]], buffer = scan_buffer, n = scan_n)
+        epool <- if (track_effect && !is.na(spec$effect_pool)) spec$effect_pool else NULL
+
+        sc <- tryCatch(
+          scan_animal_param(pair$treatment, param = bp, values = grid, animal = a,
+                            baseline = pair$baseline, effect_pool = epool,
+                            verbose = FALSE),
+          error = function(e) { message("scan failed ", model, "/", scenario, "/", a,
+                                        ": ", conditionMessage(e)); NULL })
+        if (is.null(sc)) next
+
+        scan_rows[[length(scan_rows) + 1]] <- data.frame(
+          model = model, scenario = scenario, animal = a, param = bp,
+          effect_pool = if (is.null(epool)) NA_character_ else epool,
+          value = sc[[bp]], biomass = sc$biomass, effect_pct = sc$effect_pct,
+          converged = sc$converged, max_deriv = sc$max_deriv,
+          stringsAsFactors = FALSE)
+      }
+      cat("Scanned", scenario, "for", model, "\n")
+    }
+  }
+
+  if (length(scan_rows)) {
+    scan_long <- do.call(rbind, scan_rows)
+    write.csv(scan_long, "Results/animal_scan_long.csv", row.names = FALSE)
+    cat("\nSaved Results/animal_scan_long.csv (", nrow(scan_long), " rows ).\n", sep = "")
+  }
+}
+
+# ------------------------------------------------------------
+# Interactive single scan + plot (run by hand while tuning). scan_animal_param
+# returns an object plot_animal_scan() understands directly; the batch loop
+# above just flattens many such scans into one CSV.
+# ------------------------------------------------------------
+if (FALSE) {
+  model <- "MIMICS"; scenario <- "Mite"; a <- "Detritivore"
+  pair <- setup_scenario_pair(model, scen, scenario)
+  pair$baseline <- spinup_equilibrium(pair$baseline, verbose = FALSE)
+  spec <- animal_fit_spec(a, model)
+  grid <- fit_param_grid(pair$treatment$parms[[spec$biomass_param]], buffer = 2, n = 15)
+  sc <- scan_animal_param(pair$treatment, param = spec$biomass_param, values = grid,
+                          animal = a, baseline = pair$baseline,
+                          effect_pool = spec$effect_pool)
+  plot_animal_scan(sc, target_biomass = pair$treatment$working_state[a], log_x = TRUE)
+  
+  
+  grid <- fit_param_grid(pair$treatment$parms[[spec$effect_param]], buffer = 2, n = 15)
+  sc <- scan_animal_param(pair$treatment, param = spec$effect_param, values = grid,
+                          animal = a, baseline = pair$baseline,
+                          effect_pool = spec$effect_pool)
+  plot_animal_scan(sc, target_biomass = pair$treatment$working_state[a], log_x = TRUE)
+  
+  
+}
