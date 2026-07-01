@@ -26,8 +26,6 @@ tol_biomass   <- 0.02
 
 scen$MitePredator = NULL
 
-models <- c("century", "millennial")
-
 rows <- list()
 for (model in models) {
   for (scenario in names(scen)) {

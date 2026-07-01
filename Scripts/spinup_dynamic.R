@@ -11,7 +11,7 @@ source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
 scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("century", "millennial", "MIMICS")
-do_fit   <- F                # calibrate treatment animal params first?
+do_fit   <- T                # calibrate treatment animal params first?
 do_treatment <- F            # also spin up the treatment arm now?
 
 for (model in models) {
@@ -29,14 +29,21 @@ for (model in models) {
     # stable/unstable regions), see Scripts/fit_all_animals.R (scan_animal_param).
 
     if (do_fit) {
-      pair$treatment <- fit_animal_params(
-        pair$treatment, pair$baseline,
-        animal            = "Detritivore",       # the animal in this scenario
-        target_biomass    = NULL,         # NULL = match its input (starting) value
-        effect_pool       = NULL,         # user-defined effect target:
-        target_effect_pct = NULL              #   target percent change
-      )
-      cat("\nCalibration history:\n"); print(pair$treatment$fit$history)
+      
+      animals_order <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")
+      
+      animals <- animals_order[animals_order %in% pair$treatment$active]
+      for(a in animals){
+        pair$treatment <- fit_animal_params(
+          pair$treatment, pair$baseline,
+          animal            = a,       # the animal in this scenario
+          target_biomass    = NULL,         # NULL = match its input (starting) value
+          effect_pool       = NULL,         # user-defined effect target:
+          target_effect_pct = NULL              #   target percent change
+        )
+        cat("\nCalibration history:\n"); print(pair$treatment$fit$history)
+      }
+
     }
 
     # ------------------------------------------------------------
