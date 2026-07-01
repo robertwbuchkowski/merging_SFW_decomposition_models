@@ -14,6 +14,9 @@ models <- c("century", "millennial", "MIMICS")
 do_fit   <- T                # calibrate treatment animal params first?
 do_treatment <- F            # also spin up the treatment arm now?
 
+scen$MitePredator = NULL
+
+animal_eq_effect = list()
 for (model in models) {
   for (scenario in names(scen)) {
     
@@ -61,6 +64,8 @@ for (model in models) {
     cat("\nAnimal effect on all state variables (treatment vs baseline):\n")
     print(compare_vectors(eq_t, pair$baseline$init_state_spin), digits = 4)
     
+    animal_eq_effect[[length(animal_eq_effect) + 1]] = cbind(compare_vectors(eq_t, pair$baseline$init_state_spin), model = model, scenario = scenario)
+    
     # ------------------------------------------------------------
     # (part 2) BASELINE FIRST: equilibrium -> seasonal dynamic spin-up -> save
     # ------------------------------------------------------------
@@ -86,3 +91,10 @@ for (model in models) {
     
   }
 }
+
+# Check all animal state variables are correct:
+do.call("rbind",animal_eq_effect) %>% filter(is.na(baseline))
+
+# Check the animal effects:
+do.call("rbind",animal_eq_effect) %>% filter(!is.na(baseline)) %>%
+  ggplot(aes(x = model, y = abs(difference), shape = scenario, color = scenario)) + geom_point() + facet_wrap(.~name, scales = "free") + scale_y_log10()
