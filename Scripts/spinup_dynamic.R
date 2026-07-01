@@ -11,10 +11,17 @@ source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
 scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("century", "millennial", "MIMICS")
-do_fit   <- T                # calibrate treatment animal params first?
-do_treatment <- F            # also spin up the treatment arm now?
+use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)?
+do_treatment      <- F       # also spin up the treatment arm now?
+do_spinup <- F
 
 scen$MitePredator = NULL
+
+# Fitted animal parameters saved by Scripts/fit_all_animals.R, keyed BY MODEL
+# (x scenario x param). Read once here; applied per model/scenario in the loop
+# instead of re-fitting.
+fitted_params <- if (use_fitted_params)
+  load_fitted_params("Results/fitted_animal_params.csv") else NULL
 
 animal_eq_effect = list()
 for (model in models) {
@@ -23,30 +30,16 @@ for (model in models) {
     pair <- setup_scenario_pair(model, scen, scenario)
     
     # ------------------------------------------------------------
-    # (part 1) CALIBRATION - fit the treatment animal to a reasonable biomass
-    # (defaults to its input value) and a user-defined effect on a pool.
+    # (part 1) APPLY SAVED FITTED PARAMETERS (by model) from
+    # Scripts/fit_all_animals.R -- no re-fitting here.
     # ------------------------------------------------------------
     pair$baseline <- spinup_equilibrium(pair$baseline)        # needed as the effect reference
 
     # For response curves along a parameter gradient (manual tuning across
     # stable/unstable regions), see Scripts/fit_all_animals.R (scan_animal_param).
 
-    if (do_fit) {
-      
-      animals_order <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")
-      
-      animals <- animals_order[animals_order %in% pair$treatment$active]
-      for(a in animals){
-        pair$treatment <- fit_animal_params(
-          pair$treatment, pair$baseline,
-          animal            = a,       # the animal in this scenario
-          target_biomass    = NULL,         # NULL = match its input (starting) value
-          effect_pool       = NULL,         # user-defined effect target:
-          target_effect_pct = NULL              #   target percent change
-        )
-        cat("\nCalibration history:\n"); print(pair$treatment$fit$history)
-      }
-
+    if (use_fitted_params) {
+      pair$treatment <- apply_fitted_params(pair$treatment, fitted_params, model, scenario)
     }
 
     # ------------------------------------------------------------
@@ -66,31 +59,35 @@ for (model in models) {
     
     animal_eq_effect[[length(animal_eq_effect) + 1]] = cbind(compare_vectors(eq_t, pair$baseline$init_state_spin), model = model, scenario = scenario)
     
-    # ------------------------------------------------------------
-    # (part 2) BASELINE FIRST: equilibrium -> seasonal dynamic spin-up -> save
-    # ------------------------------------------------------------
-    cat("\n--- Baseline dynamic spin-up ---\n")
-    dyn_b <- dynamic_spinup(pair$baseline, n_years = 300, by = 1, tol = 1e-4)
-    cat("baseline converged:", dyn_b$converged, "\n")
-    save_spinup(pair$baseline, dyn_b$final_state, scenario, "baseline")
-    
-    # ------------------------------------------------------------
-    # TREATMENT (flexible - can be run later in a separate session)
-    # ------------------------------------------------------------
-    if (do_treatment) {
-      cat("\n--- Treatment dynamic spin-up ---\n")
-      if (is.null(pair$treatment$init_state_spin))
-        pair$treatment <- spinup_equilibrium(pair$treatment,
-                                             warm_start = pair$baseline$init_state_spin)
-      dyn_t <- dynamic_spinup(pair$treatment, n_years = 300, by = 1, tol = 1e-4)
-      cat("treatment converged:", dyn_t$converged, "\n")
-      save_spinup(pair$treatment, dyn_t$final_state, scenario, "treatment")
+    if(do_spinup){
+      # ------------------------------------------------------------
+      # (part 2) BASELINE FIRST: equilibrium -> seasonal dynamic spin-up -> save
+      # ------------------------------------------------------------
+      cat("\n--- Baseline dynamic spin-up ---\n")
+      dyn_b <- dynamic_spinup(pair$baseline, n_years = 300, by = 1, tol = 1e-4)
+      cat("baseline converged:", dyn_b$converged, "\n")
+      save_spinup(pair$baseline, dyn_b$final_state, scenario, "baseline")
+      
+      # ------------------------------------------------------------
+      # TREATMENT (flexible - can be run later in a separate session)
+      # ------------------------------------------------------------
+      if (do_treatment) {
+        cat("\n--- Treatment dynamic spin-up ---\n")
+        if (is.null(pair$treatment$init_state_spin))
+          pair$treatment <- spinup_equilibrium(pair$treatment,
+                                               warm_start = pair$baseline$init_state_spin)
+        dyn_t <- dynamic_spinup(pair$treatment, n_years = 300, by = 1, tol = 1e-4)
+        cat("treatment converged:", dyn_t$converged, "\n")
+        save_spinup(pair$treatment, dyn_t$final_state, scenario, "treatment")
+      }
+      
+      cat("\nDone. Stable states saved under Data/spinup/. Use Scripts/followup_analysis.R next.\n")
     }
-    
-    cat("\nDone. Stable states saved under Data/spinup/. Use Scripts/followup_analysis.R next.\n")
     
   }
 }
+
+write_csv(do.call("rbind",animal_eq_effect), "Results/animal_eq_effect.csv")
 
 # Check all animal state variables are correct:
 do.call("rbind",animal_eq_effect) %>% filter(is.na(baseline))

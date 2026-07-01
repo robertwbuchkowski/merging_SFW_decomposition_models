@@ -93,6 +93,10 @@ summary_long <- do.call(rbind, rows)
 dir.create("Results", showWarnings = FALSE)
 write.csv(summary_long, "Results/animal_fit_summary_long.csv", row.names = FALSE)
 
+# Save the fitted parameters (keyed by MODEL x scenario x param) for reuse in
+# Scripts/spinup_dynamic.R -- so the spin-up reads them instead of re-fitting.
+save_fitted_params(summary_long, "Results/fitted_animal_params.csv")
+
 cat("\n================= FITTED ANIMAL PARAMETERS (long) =================\n")
 print(summary_long, digits = 4)
 

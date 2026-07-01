@@ -339,3 +339,69 @@ plot_animal_scan <- function(scan, target_biomass = NULL, fitted_value = NULL,
   }
   invisible(NULL)
 }
+
+# ============================================================
+# SAVE / LOAD / APPLY fitted animal parameters
+# ------------------------------------------------------------
+# Fit once (Scripts/fit_all_animals.R), save to a tidy file keyed by MODEL, and
+# reuse elsewhere (e.g. Scripts/spinup_dynamic.R) instead of re-fitting.
+# ============================================================
+
+# save_fitted_params(): write one row per model x scenario x fitted parameter.
+# `summary_long` is the data frame built by fit_all_animals.R (needs columns
+# model, scenario, animal, param, fitted, role).
+save_fitted_params <- function(summary_long,
+                               file = "Results/fitted_animal_params.csv") {
+  need <- c("model", "scenario", "animal", "param", "fitted", "role")
+  if (!all(need %in% names(summary_long)))
+    stop("save_fitted_params(): summary_long needs columns ", paste(need, collapse = ", "))
+  keep <- summary_long[, need]
+  names(keep)[names(keep) == "fitted"] <- "value"
+  keep <- keep[!is.na(keep$param) & is.finite(keep$value), , drop = FALSE]
+  dir.create(dirname(file), showWarnings = FALSE, recursive = TRUE)
+  utils::write.csv(keep, file, row.names = FALSE)
+  message("saved fitted parameters -> ", file, " (", nrow(keep), " rows)")
+  invisible(file)
+}
+
+# load_fitted_params(): read the fitted-parameter table back. If the dedicated
+# file is missing, fall back to the full summary (animal_fit_summary_long.csv),
+# so the spin-up still works from an earlier fit run.
+load_fitted_params <- function(file = "Results/fitted_animal_params.csv",
+                               fallback = "Results/animal_fit_summary_long.csv") {
+  if (!file.exists(file)) {
+    if (file.exists(fallback)) {
+      message("'", file, "' not found; using ", fallback)
+      d <- utils::read.csv(fallback, stringsAsFactors = FALSE)
+      if ("fitted" %in% names(d)) names(d)[names(d) == "fitted"] <- "value"
+      return(d[, intersect(c("model", "scenario", "animal", "param", "value", "role"),
+                           names(d))])
+    }
+    stop("No fitted-parameter file found (looked for ", file, " and ", fallback,
+         ")  -- run Scripts/fit_all_animals.R first.")
+  }
+  utils::read.csv(file, stringsAsFactors = FALSE)
+}
+
+# apply_fitted_params(): overwrite a setup object's parms with the fitted values
+# for a given MODEL and scenario. Matching is BY MODEL first, then scenario, so
+# each model gets its own fitted parameters. Returns the object unchanged (with
+# a message) if no saved fit matches.
+apply_fitted_params <- function(obj, fitted, model, scenario, verbose = TRUE) {
+  if (is.null(fitted) || !nrow(fitted)) {
+    if (verbose) message("  no fitted-parameter table supplied -- parms unchanged")
+    return(obj)
+  }
+  sub <- fitted[fitted$model == model & fitted$scenario == scenario, , drop = FALSE]
+  sub <- sub[!is.na(sub$param) & is.finite(sub$value), , drop = FALSE]
+  if (!nrow(sub)) {
+    if (verbose) message("  no saved fit for ", model, " / ", scenario, " -- parms unchanged")
+    return(obj)
+  }
+  for (i in seq_len(nrow(sub))) obj$parms[[ sub$param[i] ]] <- sub$value[i]
+  if (verbose)
+    cat(sprintf("  applied %d fitted param(s) for %s / %s: %s\n",
+                nrow(sub), model, scenario,
+                paste(sub$param, signif(sub$value, 4), sep = "=", collapse = ", ")))
+  obj
+}
