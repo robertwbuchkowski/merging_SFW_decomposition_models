@@ -7,7 +7,6 @@
 #   read_scenarios()       read the scenarios workbook (Excel .xlsx, 3 sheets)
 #   setup_scenario()       build ONE arm of a scenario (treatment or baseline)
 #   setup_scenario_pair()  build treatment + matched no-animal baseline
-#   compare_to_baseline()  treatment - baseline on shared pools
 #
 # Scenarios live in Data/scenarios.xlsx (see read_scenarios() for the sheet
 # layout): a "scenarios" sheet of per-scenario PARAMETER overrides, a
@@ -178,7 +177,6 @@ read_scenarios <- function(path = "Data/scenarios.xlsx",
                            sheet_include = "state_variable_include",
                            sheet_init    = "state_variables_value") {
 
-  if (grepl("\\.csv$", path, ignore.case = TRUE)) return(.read_scenarios_csv(path))
   if (!requireNamespace("readxl", quietly = TRUE))
     stop("read_scenarios() needs the 'readxl' package to read ", path,
          "  (install.packages('readxl')).")
@@ -247,29 +245,6 @@ read_scenarios <- function(path = "Data/scenarios.xlsx",
   setNames(out, scen)
 }
 
-# Legacy reader: long-form CSV with flag rows + parameter rows in one sheet.
-.read_scenarios_csv <- function(csv_path) {
-  raw <- utils::read.csv(csv_path, check.names = FALSE, stringsAsFactors = FALSE)
-  needed <- c("Parameter", "Scenario", "Value")
-  if (!all(needed %in% names(raw)))
-    stop("scenarios CSV must be long form with columns: ", paste(needed, collapse = ", "))
-  raw$Parameter <- trimws(as.character(raw$Parameter))
-  raw$Scenario  <- trimws(as.character(raw$Scenario))
-  raw$Value     <- suppressWarnings(as.numeric(raw$Value))
-  flag_names <- names(flag_pools)
-  scen       <- unique(raw$Scenario)
-  out <- lapply(scen, function(s) {
-    sub   <- raw[raw$Scenario == s, , drop = FALSE]
-    fi    <- match(tolower(flag_names), tolower(sub$Parameter))
-    flags <- setNames(ifelse(is.na(fi), 0L, as.integer(sub$Value[fi])), flag_names)
-    psub  <- sub[!(tolower(sub$Parameter) %in% tolower(flag_names)), , drop = FALSE]
-    keep  <- !duplicated(psub$Parameter, fromLast = TRUE)
-    params <- setNames(psub$Value[keep], psub$Parameter[keep])
-    list(flags = flags, params = params[!is.na(params)], init = setNames(numeric(0), character(0)))
-  })
-  setNames(out, scen)
-}
-
 # ------------------------------------------------------------
 # setup_scenario(): build one arm of a scenario.
 #   animals = TRUE  -> treatment (animals per the CSV flags)
@@ -308,103 +283,5 @@ setup_scenario_pair <- function(model, scenarios, scenario, source_files = TRUE)
                                source_files = source_files),
     baseline  = setup_scenario(model, scenarios, scenario, animals = FALSE,
                                source_files = FALSE)
-  )
-}
-
-# ------------------------------------------------------------
-# compare_to_baseline(): treatment - baseline on the pools they share
-# (plants + soil; animal pools exist only in the treatment).
-# ------------------------------------------------------------
-compare_to_baseline <- function(out_treatment, out_baseline) {
-  ft <- final_state(out_treatment); fb <- final_state(out_baseline)
-  shared <- intersect(names(ft), names(fb))
-  data.frame(
-    pool      = shared,
-    treatment = as.numeric(ft[shared]),
-    baseline  = as.numeric(fb[shared]),
-    diff      = as.numeric(ft[shared] - fb[shared]),
-    pct       = 100 * as.numeric((ft[shared] - fb[shared]) / pmax(abs(fb[shared]), 1e-8)),
-    row.names = NULL
-  )
-}
-
-
-# ------------------------------------------------------------
-# run_scenario(): set up a scenario, check mass balance, and spin up to
-# equilibrium. The BASELINE is spun up first; the TREATMENT spin-up is
-# optional and (by default) warm-started from the baseline equilibrium, which
-# they nearly share (same plants + climate) -- a big convergence speed-up.
-#
-#   nm, scen, model        scenario name, scenario table, model id
-#   spinup                 master on/off switch for spin-up
-#   spinup_treatment       also spin up the treatment arm (default TRUE)
-#   warm_start_treatment   start treatment from the baseline equilibrium
-#   method                 "runsteady" (robust, default) | "stode" | "none"
-#   max_time, stol         runsteady horizon (days) and steady tolerance
-#
-# Returns list(model, scenario, pair, spin, eq_compare).
-# ------------------------------------------------------------
-run_scenario <- function(nm, scen, model,
-                         spinup = TRUE,
-                         spinup_treatment = TRUE,
-                         warm_start_treatment = TRUE,
-                         method = c("runsteady", "stode", "none"),
-                         max_time = 1e7, stol = 1e-8,
-                         verbose = TRUE) {
-  method <- match.arg(method)
-  message("\n==================  ", nm, "  (", model, ")  ==================")
-
-  pair <- setup_scenario_pair(model, scen, nm)
-
-  check_mb <- function(obj, label) {
-    mb0 <- obj$wrapped_model(0, obj$working_state, obj$parms)[[2]]
-    if (verbose) cat(sprintf("  [%s] mass_balance_check at t=0: %.3e\n", label, mb0))
-    invisible(mb0)
-  }
-
-  spin_arm <- function(obj, warm_start = NULL) {
-    if (!spinup || method == "none") {
-      obj$init_state_spin <- obj$working_state
-      obj$spin_info <- list(method = "none", converged = NA)
-      return(obj)
-    }
-    if (method == "runsteady")
-      return(spinup_equilibrium(obj, warm_start = warm_start,
-                                max_time = max_time, stol = stol, verbose = verbose))
-    # method == "stode": kept for comparison; may fail on stiff models (MIMICS)
-    obj$parms$climate_forcing <- make_climate_forcing_equilibrium(obj$parms)
-    y0 <- obj$working_state
-    if (!is.null(warm_start)) { sh <- intersect(names(y0), names(warm_start)); y0[sh] <- warm_start[sh] }
-    cfss <- rootSolve::stode(y = y0, func = obj$wrapped_model, parms = obj$parms)
-    obj$parms$climate_forcing <- make_climate_forcing(obj$parms)
-    ok <- isTRUE(attr(cfss, "steady"))
-    if (verbose) cat(sprintf("  stode: %s\n", if (ok) "steady" else "NOT steady (using input state)"))
-    obj$init_state_spin <- if (ok) setNames(cfss[[1]], names(y0)) else y0
-    obj$spin_info <- list(method = "stode", converged = ok)
-    obj
-  }
-
-  # ---- Baseline first ----
-  if (verbose) cat("Baseline\n"); check_mb(pair$baseline, "baseline")
-  pair$baseline <- spin_arm(pair$baseline)
-
-  # ---- Treatment (optional; warm-started from the baseline equilibrium) ----
-  if (verbose) cat("Treatment\n"); check_mb(pair$treatment, "treatment")
-  if (spinup_treatment) {
-    ws <- if (warm_start_treatment) pair$baseline$init_state_spin else NULL
-    pair$treatment <- spin_arm(pair$treatment, warm_start = ws)
-  } else {
-    pair$treatment$init_state_spin <- pair$treatment$working_state
-    pair$treatment$spin_info <- list(method = "none", converged = NA)
-  }
-
-  list(
-    model    = model,
-    scenario = nm,
-    pair     = pair,
-    spin     = list(baseline = pair$baseline$spin_info,
-                    treatment = pair$treatment$spin_info),
-    eq_compare = compare_vectors(pair$treatment$init_state_spin,
-                                 pair$baseline$init_state_spin)
   )
 }
