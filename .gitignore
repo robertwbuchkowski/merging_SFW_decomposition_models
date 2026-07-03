@@ -5,3 +5,5 @@
 Plots/
 Results/
 *.pdf
+*.png
+Data/spinup/*
