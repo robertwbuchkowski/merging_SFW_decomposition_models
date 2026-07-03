@@ -13,6 +13,8 @@ source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("century", "millennial", "MIMICS")
 
+manual_tune_add = T
+
 # ------------------------------------------------------------
 # OPTIONAL effect targets (user-defined). Empty list = biomass-only fitting,
 # which is robust and always well-posed. To also fit an effect, add an entry
@@ -30,6 +32,10 @@ rows <- list()
 for (model in models) {
   for (scenario in names(scen)) {
 
+    if(manual_tune_add){
+      if(model == "MIMICS" & scenario == "Mite") next # Skip ones I did manually
+    }
+    
     pair <- tryCatch(setup_scenario_pair(model, scen, scenario),
                      error = function(e) { message("setup failed ", model, "/", scenario,
                                                     ": ", conditionMessage(e)); NULL })
@@ -87,6 +93,18 @@ for (model in models) {
     cat("Done", scenario, "for", model, "\n")
   }
 }
+
+if(manual_tune_add){
+  rows[[length(rows) + 1]] <- data.frame(
+    model = "MIMICS", scenario = "Mite", animal = "Detritivore",
+    param = "adj_detritivores", role = "biomass (feeding rate)",
+    baseline = 1, fitted = 0.01529,
+    ratio = 0.01529,
+    target = 0.1, achieved = 0.1,
+    converged = TRUE,
+    stringsAsFactors = FALSE)
+}
+
 
 if (!length(rows)) stop("No fits succeeded - check the model/scenario setup.")
 summary_long <- do.call(rbind, rows)
@@ -184,11 +202,12 @@ if (do_scan) {
 # above just flattens many such scans into one CSV.
 # ------------------------------------------------------------
 if (FALSE) {
-  model <- "MIMICS"; scenario <- "Mite"; a <- "Detritivore"
+  model <- "MIMICS"; scenario <- "MitePredator"; a <- "DetPredator"
   pair <- setup_scenario_pair(model, scen, scenario)
   pair$baseline <- spinup_equilibrium(pair$baseline, verbose = FALSE)
   spec <- animal_fit_spec(a, model)
   grid <- fit_param_grid(pair$treatment$parms[[spec$biomass_param]], buffer = 2, n = 15)
+  grid <- seq(0.001, 0.01, length.out = 20)
   sc <- scan_animal_param(pair$treatment, param = spec$biomass_param, values = grid,
                           animal = a, baseline = pair$baseline,
                           effect_pool = spec$effect_pool)
@@ -200,6 +219,4 @@ if (FALSE) {
                           animal = a, baseline = pair$baseline,
                           effect_pool = spec$effect_pool)
   plot_animal_scan(sc, target_biomass = pair$treatment$working_state[a], log_x = TRUE)
-  
-  
 }

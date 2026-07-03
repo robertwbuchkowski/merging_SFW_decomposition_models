@@ -17,6 +17,20 @@
 millennial_model_wplant <- function(time, state, parms){
   
   with(c(state, parms), {
+
+    # ----------------------------------------------------------------
+    # Feeding-rate adjustment factors: one knob per animal scales ALL of
+    # that animal's feeding coefficients together (default 1 = no change).
+    # The animal fitting tunes these (adj_*) instead of the individual c_*
+    # rates, so an animal that feeds on several pools keeps its relative
+    # food preferences while its overall feeding rate goes up or down.
+    # ----------------------------------------------------------------
+    c_earthworm_litter <- adj_earthworm    * c_earthworm_litter
+    c_earthworm_soil   <- adj_earthworm    * c_earthworm_soil
+    c_earthworm_om     <- adj_earthworm    * c_earthworm_om
+    c_detritivores     <- adj_detritivores * c_detritivores
+    c_detpredator      <- adj_detpredator  * c_detpredator
+    c_rootherb         <- adj_rootherb     * c_rootherb
     # ----------------------------
     # ---- Get climate forcing ----
     # ----------------------------
