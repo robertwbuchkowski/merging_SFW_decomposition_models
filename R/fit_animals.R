@@ -19,7 +19,11 @@
 # ============================================================
 
 # default parameter levers per animal (override via args if your model differs).
-#   biomass_param  feeding-rate parameter tuned to hit a target biomass
+#   biomass_param  feeding-rate ADJUSTMENT FACTOR (adj_*) tuned to hit a target
+#                  biomass. adj_* scales ALL of an animal's individual feeding
+#                  coefficients together (see the models), so multi-food animals
+#                  (e.g. earthworms, detritivores) keep their relative food
+#                  preferences while overall feeding scales up/down.
 #   effect_param   parameter tuned to hit a target pool effect (same name in
 #                  all three models here)
 #   effect_pool    the pool whose response defines the "effect" -- specified
@@ -28,19 +32,19 @@
 #                  these to whichever pool you want the effect measured on.
 animal_fit_defaults <- list(
   Earthworm = list(
-    biomass_param = "c_earthworm_soil",
+    biomass_param = "adj_earthworm",     # scales all earthworm feeding rates
     effect_param  = "k_b_slope_pint",                 # acts on desorb / binding / f_PASSIVE
     effect_pool   = list(MIMICS = "SOM_1", century = "PASSIVE", millennial = "M")),
   Detritivore = list(
-    biomass_param = "c_detritivores",
+    biomass_param = "adj_detritivores",  # scales all detritivore feeding rates
     effect_param  = "slope_pint_det_k_frag_litter",   # acts on FI / f_MetLitter / fragmentation
     effect_pool   = list(MIMICS = "LIT_1", century = "MetLitter", millennial = "Litter")),
   DetPredator = list(
-    biomass_param = "c_detpredator",
+    biomass_param = "adj_detpredator",   # scales predator feeding rate
     effect_param  = NA,                               # predator: no direct pool effect
     effect_pool   = list()),
   RootHerb = list(
-    biomass_param = "c_rootherb",
+    biomass_param = "adj_rootherb",      # scales root-herbivore feeding rate
     effect_param  = "k_exudate_slope",                # acts on root exudation
     effect_pool   = list(MIMICS = "SOM_1", century = "ACTIVE", millennial = "DOM"))
 )

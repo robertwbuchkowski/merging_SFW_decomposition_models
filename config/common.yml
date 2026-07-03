@@ -89,6 +89,16 @@ c_earthworm_om: 0
 prop_feaces_earthworm_LMWC: 0
 k_b_slope_pint: -1 # Reduction in aggregate loss with earthworm biomass
 
+# ------- Feeding-rate adjustment factors ---------
+# One knob per animal that scales ALL of that animal's feeding coefficients
+# together (1 = no change). The animal fitting tunes these to match biomass
+# instead of the individual c_* rates, which keeps the relative preference
+# among food sources fixed for animals that feed on several pools.
+adj_earthworm: 1.0
+adj_detritivores: 1.0
+adj_detpredator: 1.0
+adj_rootherb: 1.0
+
 # ------- Root herbivory ---------
 c_rootherb: 0.001
 d_rootherb: 0.5 # 36 days life span, corrected for density-dependence and modified
