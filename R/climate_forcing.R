@@ -8,10 +8,10 @@ climate_forcing_function <- function(time, parms) {
 
   Temp  <- parms$MAT     + parms$T_amp     * sin(2 * pi * (doy - 110) / 365)
   
-  if(N_theta_peaks == 2){
+  if(parms$N_theta_peaks == 2){
     theta <- parms$MAtheta + parms$theta_amp * cos(4 * pi * (doy - 110) / 365)
   }else{
-    if(N_theta_peaks == 1){
+    if(parms$N_theta_peaks == 1){
       theta <- parms$MAtheta + parms$theta_amp * sin(2 * pi * (doy - 110) / 365)
     }else{
       stop("N_theta_peaks must be 1 or 2.")
@@ -39,10 +39,10 @@ climate_forcing_function <- function(time, parms) {
   # --------------------------------------------------
   doy_all   <- 1:365
   Temp_all  <- parms$MAT     + parms$T_amp     * sin(2 * pi * (doy_all - 110) / 365)
-  if(N_theta_peaks == 2){
+  if(parms$N_theta_peaks == 2){
     theta_all <- parms$MAtheta + parms$theta_amp * cos(4 * pi * (doy_all - 110) / 365)
   }else{
-    if(N_theta_peaks == 1){
+    if(parms$N_theta_peaks == 1){
       theta_all <- parms$MAtheta + parms$theta_amp * sin(2 * pi * (doy_all - 110) / 365)
     }else{
       stop("N_theta_peaks must be 1 or 2.")
