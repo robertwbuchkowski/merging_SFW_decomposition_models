@@ -25,10 +25,10 @@ baseline_setup  <- setup_scenario(model, scen, scenario, animals = FALSE)
 baseline_setup$parms  <- base_saved$parms
 
 # ---- ADD animals to the baseline limit cycle (seed = input biomass) ----
-add <- followup_add_animals(base_saved, treatment_setup, n_years = 100, by = 30)
+add <- followup_add_animals(base_saved, treatment_setup, n_years = 10, by = 1)
 
 # ---- REMOVE animals from the treatment limit cycle ----
-rem <- followup_remove_animals(trt_saved, baseline_setup, n_years = 100, by = 30)
+rem <- followup_remove_animals(trt_saved, baseline_setup, n_years = 10, by = 1)
 
 # ---- inspect ----
 cat("\nADD-animals end state:\n");    print(final_state(add$out))
