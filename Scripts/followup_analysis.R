@@ -21,8 +21,8 @@ models <- c("century", "millennial", "MIMICS")
 
 scen$MitePredator = NULL          # match the scenarios actually spun up
 
-n_years <- 100                    # length of every follow-up run below
-by      <- 30
+n_years <- 4                    # length of every follow-up run below
+by      <- 1
 
 # ------------------------------------------------------------
 # LOOP 1: ADD animals + CONTINUED-BASELINE control
@@ -39,18 +39,15 @@ for (model in models) {
   for (scenario in names(scen)) {
 
     base_file <- sprintf("Data/spinup/%s_%s_baseline.rds",  model, scenario)
-    trt_file  <- sprintf("Data/spinup/%s_%s_treatment.rds", model, scenario)
-    if (!file.exists(base_file) || !file.exists(trt_file)) {
+    if (!file.exists(base_file)) {
       message("skip (no saved spin-up): ", model, " / ", scenario)
       next
     }
     cat("\n==== ADD + continue-baseline:", model, "/", scenario, "====\n")
 
     base_saved <- load_spinup(base_file)
-    trt_saved  <- load_spinup(trt_file)
 
     treatment_setup <- setup_scenario(model, scen, scenario, animals = TRUE)
-    treatment_setup$parms <- trt_saved$parms
     baseline_setup  <- setup_scenario(model, scen, scenario, animals = FALSE)
     baseline_setup$parms  <- base_saved$parms
 
@@ -108,7 +105,7 @@ for (model in models) {
 # this can be run later without re-running either loop above.
 # ------------------------------------------------------------
 # Example, one model/scenario:
-# plot_followup_add("MIMICS", "Earthworm")
+plot_followup_add("MIMICS", "RootHerbivore")
 
 # All model x scenario combos that have saved add + continue_baseline runs:
 for (model in models) {
@@ -117,5 +114,15 @@ for (model in models) {
         file.exists(sprintf("Data/followup/%s_%s_continue_baseline.rds", model, scenario))) {
       print(plot_followup_add(model, scenario))
     }
+  }
+}
+
+
+# All models for one scenario combos that have saved add + continue_baseline runs:
+for (model in models) {
+  scenario = "Isopod"
+  if (file.exists(sprintf("Data/followup/%s_%s_add.rds", model, scenario)) &&
+      file.exists(sprintf("Data/followup/%s_%s_continue_baseline.rds", model, scenario))) {
+    print(plot_followup_add(model, scenario))
   }
 }
