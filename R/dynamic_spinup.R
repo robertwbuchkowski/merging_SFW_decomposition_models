@@ -105,3 +105,43 @@ followup_remove_animals <- function(treatment_saved, baseline_setup,
   list(start = ws,
        out = run_followup(ws, baseline_setup, n_years = n_years, by = by, verbose = verbose))
 }
+
+# ------------------------------------------------------------
+# followup_continue_baseline(): CONTROL run for followup_add_animals() -- the
+# saved baseline (no-animal) limit cycle, continued forward on the SAME
+# baseline setup (animals stay off) for the same n_years/by as the add-animals
+# run. This gives a time-matched "what if animals were never added" trajectory
+# to plot against the add-animals result (see plot_followup_comparison()).
+# ------------------------------------------------------------
+followup_continue_baseline <- function(baseline_saved, baseline_setup,
+                                       n_years = 100, by = 30, verbose = TRUE) {
+  ws     <- baseline_setup$working_state
+  shared <- intersect(names(ws), names(baseline_saved$state))
+  ws[shared] <- baseline_saved$state[shared]
+  if (verbose) message("continuing baseline (no animals) for ", n_years, " yr")
+  list(start = ws,
+       out = run_followup(ws, baseline_setup, n_years = n_years, by = by, verbose = verbose))
+}
+
+# ------------------------------------------------------------
+# save_followup() / load_followup(): persist a follow-up run (add / remove /
+# continue_baseline) keyed by model x scenario x kind, so the two loops in
+# Scripts/followup_analysis.R (add+control, remove) can run independently of
+# each other and of the plotting step.
+# ------------------------------------------------------------
+save_followup <- function(model, scenario, kind, result,
+                          dir = "Data/followup", tag = NULL) {
+  dir.create(dir, showWarnings = FALSE, recursive = TRUE)
+  tag  <- if (is.null(tag)) sprintf("%s_%s_%s", model, scenario, kind) else tag
+  file <- file.path(dir, paste0(tag, ".rds"))
+  saveRDS(list(start = result$start, out = result$out, model = model,
+               scenario = scenario, kind = kind, saved = Sys.time()), file)
+  message("saved follow-up (", kind, ") -> ", file)
+  invisible(file)
+}
+
+load_followup <- function(model, scenario, kind, dir = "Data/followup") {
+  file <- file.path(dir, sprintf("%s_%s_%s.rds", model, scenario, kind))
+  if (!file.exists(file)) stop("Follow-up file not found: ", file)
+  readRDS(file)
+}

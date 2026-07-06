@@ -1,43 +1,121 @@
 # ============================================================
 # FAST FOLLOW-UP - reuse saved stable states (from spinup_dynamic.R) for
-# short (~100 yr) perturbation experiments:
-#   * ADD animals to the spun-up BASELINE   (colonization)
-#   * REMOVE animals from the spun-up TREATMENT (extirpation)
-# Run from project root.
+# short (~100 yr) perturbation experiments, looped over ALL models x scenarios:
+#   LOOP 1  ADD animals to the spun-up BASELINE (colonization), plus a
+#           time-matched CONTINUED-BASELINE control (same setup, no animals
+#           added) so the two can be plotted against each other.
+#   LOOP 2  REMOVE animals from the spun-up TREATMENT (extirpation) -- kept
+#           separate so it can be run on its own, independent of Loop 1.
+# Each run is saved to Data/followup/ keyed by model_scenario_kind.rds, so
+# either loop can be (re)run independently and plotting can happen later,
+# in a fresh session, without re-running any simulation.
+# Run from project root; requires Data/spinup/*.rds from spinup_dynamic.R.
 # ============================================================
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/dynamic_spinup.R")
 
-scen     <- read_scenarios("Data/scenarios.xlsx")
-model    <- "MIMICS"
-scenario <- "Earthworm"
+scen   <- read_scenarios("Data/scenarios.xlsx")
+models <- c("century", "millennial", "MIMICS")
 
-base_saved <- load_spinup(sprintf("Data/spinup/%s_%s_baseline.rds",  model, scenario))
-trt_saved  <- load_spinup(sprintf("Data/spinup/%s_%s_treatment.rds", model, scenario))
+scen$MitePredator = NULL          # match the scenarios actually spun up
 
-# Rebuild the setups, then reuse the SAVED parameter lists so any calibration
-# done during spin-up is preserved.
-treatment_setup <- setup_scenario(model, scen, scenario, animals = TRUE)
-treatment_setup$parms <- trt_saved$parms
-baseline_setup  <- setup_scenario(model, scen, scenario, animals = FALSE)
-baseline_setup$parms  <- base_saved$parms
+n_years <- 100                    # length of every follow-up run below
+by      <- 30
 
-# ---- ADD animals to the baseline limit cycle (seed = input biomass) ----
-add <- followup_add_animals(base_saved, treatment_setup, n_years = 10, by = 1)
+# ------------------------------------------------------------
+# LOOP 1: ADD animals + CONTINUED-BASELINE control
+# For each model x scenario with saved spin-ups, reuses the SAVED parameter
+# lists (so any calibration from fit_all_animals.R / spinup_dynamic.R is
+# preserved), then runs:
+#   add               animals introduced into the baseline limit cycle
+#   continue_baseline the same baseline limit cycle continued with no animals
+# Both are saved to Data/followup/ for plotting (see plot_followup_add()).
+# ------------------------------------------------------------
+add_results <- list()
 
-# ---- REMOVE animals from the treatment limit cycle ----
-rem <- followup_remove_animals(trt_saved, baseline_setup, n_years = 10, by = 1)
+for (model in models) {
+  for (scenario in names(scen)) {
 
-# ---- inspect ----
-cat("\nADD-animals end state:\n");    print(final_state(add$out))
-cat("\nREMOVE-animals end state:\n"); print(final_state(rem$out))
-# plot_ode_output(add$out)
-# plot_ode_output(rem$out)
+    base_file <- sprintf("Data/spinup/%s_%s_baseline.rds",  model, scenario)
+    trt_file  <- sprintf("Data/spinup/%s_%s_treatment.rds", model, scenario)
+    if (!file.exists(base_file) || !file.exists(trt_file)) {
+      message("skip (no saved spin-up): ", model, " / ", scenario)
+      next
+    }
+    cat("\n==== ADD + continue-baseline:", model, "/", scenario, "====\n")
 
-# Effect of the manipulation = end state vs the saved pre-manipulation state:
-cat("\nAdd-animals effect (end - baseline limit cycle), shared pools:\n")
-print(compare_vectors(final_state(add$out), base_saved$state))
-cat("\nRemove-animals effect (end - treatment limit cycle), shared pools:\n")
-print(compare_vectors(final_state(rem$out), trt_saved$state))
+    base_saved <- load_spinup(base_file)
+    trt_saved  <- load_spinup(trt_file)
+
+    treatment_setup <- setup_scenario(model, scen, scenario, animals = TRUE)
+    treatment_setup$parms <- trt_saved$parms
+    baseline_setup  <- setup_scenario(model, scen, scenario, animals = FALSE)
+    baseline_setup$parms  <- base_saved$parms
+
+    add     <- followup_add_animals(base_saved, treatment_setup, n_years = n_years, by = by)
+    control <- followup_continue_baseline(base_saved, baseline_setup, n_years = n_years, by = by)
+
+    save_followup(model, scenario, "add", add)
+    save_followup(model, scenario, "continue_baseline", control)
+
+    key <- paste(model, scenario, sep = ".")
+    add_results[[key]] <- list(add = add, control = control)
+
+    cat("Add-animals effect (end - baseline limit cycle), shared pools:\n")
+    print(compare_vectors(final_state(add$out), base_saved$state))
+  }
+}
+
+# ------------------------------------------------------------
+# LOOP 2: REMOVE animals (fully independent of Loop 1 -- reads only the
+# saved spin-ups from disk, so it can be run on its own / in a fresh session).
+# ------------------------------------------------------------
+remove_results <- list()
+
+for (model in models) {
+  for (scenario in names(scen)) {
+
+    base_file <- sprintf("Data/spinup/%s_%s_baseline.rds",  model, scenario)
+    trt_file  <- sprintf("Data/spinup/%s_%s_treatment.rds", model, scenario)
+    if (!file.exists(base_file) || !file.exists(trt_file)) {
+      message("skip (no saved spin-up): ", model, " / ", scenario)
+      next
+    }
+    cat("\n==== REMOVE:", model, "/", scenario, "====\n")
+
+    base_saved <- load_spinup(base_file)
+    trt_saved  <- load_spinup(trt_file)
+
+    baseline_setup <- setup_scenario(model, scen, scenario, animals = FALSE)
+    baseline_setup$parms <- base_saved$parms
+
+    rem <- followup_remove_animals(trt_saved, baseline_setup, n_years = n_years, by = by)
+    save_followup(model, scenario, "remove", rem)
+
+    key <- paste(model, scenario, sep = ".")
+    remove_results[[key]] <- rem
+
+    cat("Remove-animals effect (end - treatment limit cycle), shared pools:\n")
+    print(compare_vectors(final_state(rem$out), trt_saved$state))
+  }
+}
+
+# ------------------------------------------------------------
+# PLOTTING: continued baseline (no animals) vs. animals-added, per
+# model/scenario. Works directly from the saved Data/followup/*.rds files, so
+# this can be run later without re-running either loop above.
+# ------------------------------------------------------------
+# Example, one model/scenario:
+# plot_followup_add("MIMICS", "Earthworm")
+
+# All model x scenario combos that have saved add + continue_baseline runs:
+for (model in models) {
+  for (scenario in names(scen)) {
+    if (file.exists(sprintf("Data/followup/%s_%s_add.rds", model, scenario)) &&
+        file.exists(sprintf("Data/followup/%s_%s_continue_baseline.rds", model, scenario))) {
+      print(plot_followup_add(model, scenario))
+    }
+  }
+}
