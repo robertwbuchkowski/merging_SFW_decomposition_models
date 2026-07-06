@@ -92,10 +92,28 @@ make_model_wrapper <- function(model_fun, full_names, state_groups) {
 #   off              character vector of state pools to zero
 #   param_overrides  named list/vector of parameter values (applied BEFORE
 #                    derive and before climate forcing is built)
+#   mode             "scenario" (default) or "wrapper" -- selects what
+#                    obj$wrapped_model points to (see note below).
+#
+# Every model function (century_model / millennial_model_wplant / MIMICS_model)
+# now reads pools it's missing as 0, so the SAME function works two ways:
+#   - obj$model_scenario  call it directly on the reduced `working_state`
+#                         (only the active pools) -- fastest; no wrapper
+#                         indirection or full-state reconstruction.
+#   - obj$model_wrapper   make_model_wrapper(...) reconstructs the FULL state
+#                         (inactive pools = 0) every call, then subsets the
+#                         derivative back down -- kept for cases where you
+#                         want the model called on the full pool set.
+# obj$wrapped_model is set to whichever `mode` you asked for, so existing
+# code that calls obj$wrapped_model (spinup_equilibrium, dynamic_spinup,
+# run_followup, deSolve/rootSolve calls) picks up the chosen mode with no
+# changes at the call site. Both modes give IDENTICAL numerical results.
 # ------------------------------------------------------------
 setup_model <- function(model, off = character(0), param_overrides = list(),
-                        init_overrides = list(), source_files = TRUE) {
+                        init_overrides = list(), source_files = TRUE,
+                        mode = c("scenario", "wrapper")) {
 
+  mode <- match.arg(mode)
   m <- model_table[[model]]
   if (is.null(m))
     stop("Unknown model '", model, "'. Choose: ",
@@ -141,10 +159,17 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
   if (!any(c("C_leaf_herb","C_root_herb","C_leaf_tree","C_wood_tree","C_root_tree") %in% active))
     warning("No plant pools active -> no litter input; soil will decay to ~0.")
 
+  # scenario mode: call model_fn directly on the reduced working_state (pools
+  # it doesn't receive read as 0 inside the model itself -- see the models).
+  model_scenario <- model_fn
+  # wrapper mode: reconstruct the FULL state every call, then subset back down.
+  model_wrapper  <- make_model_wrapper(model_fn, full_names, active)
+
   list(model = model, model_fn = model_fn, parms = parms,
        init_state = init_state, working_state = working_state,
        full_names = full_names, active = active,
-       wrapped_model = make_model_wrapper(model_fn, full_names, active))
+       model_scenario = model_scenario, model_wrapper = model_wrapper,
+       wrapped_model = if (mode == "scenario") model_scenario else model_wrapper)
 }
 
 # ------------------------------------------------------------
@@ -251,7 +276,8 @@ read_scenarios <- function(path = "Data/scenarios.xlsx",
 #   animals = FALSE -> baseline  (all animals off; same plants + climate)
 # ------------------------------------------------------------
 setup_scenario <- function(model, scenarios, scenario, animals = TRUE,
-                           source_files = TRUE) {
+                           source_files = TRUE, mode = c("scenario", "wrapper")) {
+  mode <- match.arg(mode)
   sc <- scenarios[[scenario]]
   if (is.null(sc))
     stop("Unknown scenario '", scenario, "'. Available: ",
@@ -267,7 +293,7 @@ setup_scenario <- function(model, scenarios, scenario, animals = TRUE,
 
   s <- setup_model(model, off = off, param_overrides = sc$params,
                    init_overrides = if (is.null(sc$init)) list() else sc$init,
-                   source_files = source_files)
+                   source_files = source_files, mode = mode)
   s$scenario <- scenario
   s$arm      <- if (animals) "treatment" else "baseline"
   s
@@ -277,11 +303,13 @@ setup_scenario <- function(model, scenarios, scenario, animals = TRUE,
 # setup_scenario_pair(): treatment + matched no-animal baseline.
 # Same plants and same climate/site parameters; baseline has no animals.
 # ------------------------------------------------------------
-setup_scenario_pair <- function(model, scenarios, scenario, source_files = TRUE) {
+setup_scenario_pair <- function(model, scenarios, scenario, source_files = TRUE,
+                                mode = c("scenario", "wrapper")) {
+  mode <- match.arg(mode)
   list(
     treatment = setup_scenario(model, scenarios, scenario, animals = TRUE,
-                               source_files = source_files),
+                               source_files = source_files, mode = mode),
     baseline  = setup_scenario(model, scenarios, scenario, animals = FALSE,
-                               source_files = FALSE)
+                               source_files = FALSE, mode = mode)
   )
 }

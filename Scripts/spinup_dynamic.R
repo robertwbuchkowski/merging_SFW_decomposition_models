@@ -13,7 +13,7 @@ scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("century", "millennial", "MIMICS")
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)?
 do_treatment      <- F       # also spin up the treatment arm now?
-do_spinup         <- T
+do_spinup         <- F
 
 scen$MitePredator = NULL
 
