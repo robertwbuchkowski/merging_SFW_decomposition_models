@@ -14,15 +14,22 @@
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
-source("R/dynamic_spinup.R")
+source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
 scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("century", "millennial", "MIMICS")
+use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)?
 
 scen$MitePredator = NULL          # match the scenarios actually spun up
 
 n_years <- 4                    # length of every follow-up run below
 by      <- 1
+
+# Fitted animal parameters saved by Scripts/fit_all_animals.R, keyed BY MODEL
+# (x scenario x param). Read once here; applied per model/scenario in the loop
+# instead of re-fitting.
+fitted_params <- if (use_fitted_params)
+  load_fitted_params("Results/fitted_animal_params.csv") else NULL
 
 # ------------------------------------------------------------
 # LOOP 1: ADD animals + CONTINUED-BASELINE control
@@ -50,7 +57,13 @@ for (model in models) {
     treatment_setup <- setup_scenario(model, scen, scenario, animals = TRUE)
     baseline_setup  <- setup_scenario(model, scen, scenario, animals = FALSE)
     baseline_setup$parms  <- base_saved$parms
-
+    treatment_setup$parms <- base_saved$parms
+    
+    if (use_fitted_params) {
+      baseline_setup <- apply_fitted_params(baseline_setup, fitted_params, model, scenario)
+      treatment_setup <- apply_fitted_params(treatment_setup, fitted_params, model, scenario)
+    }
+    
     add     <- followup_add_animals(base_saved, treatment_setup, n_years = n_years, by = by)
     control <- followup_continue_baseline(base_saved, baseline_setup, n_years = n_years, by = by)
 
@@ -109,8 +122,8 @@ plot_followup_add("MIMICS", "RootHerbivore")
 
 pdf("Plots/output.pdf", width = 8, height = 8)
 # All model x scenario combos that have saved add + continue_baseline runs:
-for (model in models) {
-  for (scenario in names(scen)) {
+for (scenario in names(scen)) {
+  for (model in models) {
     if (file.exists(sprintf("Data/followup/%s_%s_add.rds", model, scenario)) &&
         file.exists(sprintf("Data/followup/%s_%s_continue_baseline.rds", model, scenario))) {
       print(plot_followup_add(model, scenario))
