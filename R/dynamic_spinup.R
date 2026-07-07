@@ -77,12 +77,12 @@ run_followup <- function(start_state, target, n_years = 100, by = 30,
 # values from the treatment setup).
 # ------------------------------------------------------------
 followup_add_animals <- function(baseline_saved, treatment_setup,
-                                 seed = NULL, n_years = 100, by = 30, verbose = TRUE) {
+                                 seed = NULL, seed_mod = 0.01, n_years = 100, by = 30, verbose = TRUE) {
   ws     <- treatment_setup$working_state
   shared <- intersect(names(ws), names(baseline_saved$state))
   ws[shared] <- baseline_saved$state[shared]               # carry over spun-up pools
   animals <- intersect(c("Earthworm","Detritivore","DetPredator","RootHerb"), names(ws))
-  if (is.null(seed)) seed <- treatment_setup$working_state[animals]  # input biomass
+  if (is.null(seed)) seed <- treatment_setup$working_state[animals]*seed_mod  # input biomass
   for (a in animals) if (a %in% names(seed)) ws[a] <- seed[a]
   if (verbose) message("adding animals: ", paste(animals, collapse = ", "),
                        " (seed = ", paste(signif(ws[animals],3), collapse=", "), ")")

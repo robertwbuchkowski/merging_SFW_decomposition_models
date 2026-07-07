@@ -120,7 +120,7 @@ for (model in models) {
 
 # All models for one scenario combos that have saved add + continue_baseline runs:
 for (model in models) {
-  scenario = "Isopod"
+  scenario = "Mite"
   if (file.exists(sprintf("Data/followup/%s_%s_add.rds", model, scenario)) &&
       file.exists(sprintf("Data/followup/%s_%s_continue_baseline.rds", model, scenario))) {
     print(plot_followup_add(model, scenario))
