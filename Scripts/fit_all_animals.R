@@ -13,7 +13,7 @@ source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("century", "millennial", "MIMICS")
 
-manual_tune_add = T
+manual_tune_add = F
 
 # ------------------------------------------------------------
 # EFFECT fitting. Effect targets now come from animal_fit_spec(), which
