@@ -28,38 +28,122 @@
 #                  all three models here)
 #   effect_pool    the pool whose response defines the "effect" -- specified
 #                  PER MODEL, since pool names differ (MIMICS SOM_*, Century
-#                  ACTIVE/SLOW/PASSIVE, Millennial Organic/DOM/A/M/...). Edit
-#                  these to whichever pool you want the effect measured on.
+#                  ACTIVE/SLOW/PASSIVE, Millennial Organic/DOM/A/M/...). This is
+#                  the per-MODEL DEFAULT; override it per model x scenario in
+#                  effect_pool_overrides below.
+#   effect_pct     default target effect SIZE (percent change vs the no-animal
+#                  baseline equilibrium) for this animal, used when you fit an
+#                  effect but do not pass an explicit target. Sign matters:
+#                  detritivores/earthworms typically DEPLETE the litter/pool
+#                  they feed on (negative), root herbivores boost exudate-fed
+#                  pools (positive). These are starting guesses -- confirm with
+#                  a scan_animal_param() sweep and adjust to your data.
 animal_fit_defaults <- list(
   Earthworm = list(
     biomass_param = "adj_earthworm",     # scales all earthworm feeding rates
     effect_param  = "k_b_slope_pint",                 # acts on desorb / binding / f_PASSIVE
-    effect_pool   = list(MIMICS = "SOM_1", century = "PASSIVE", millennial = "M")),
+    effect_pool   = list(MIMICS = "SOM_1", century = "PASSIVE", millennial = "M"),
+    effect_pct    = -10),
   Detritivore = list(
     biomass_param = "adj_detritivores",  # scales all detritivore feeding rates
     effect_param  = "slope_pint_det_k_frag_litter",   # acts on FI / f_MetLitter / fragmentation
-    effect_pool   = list(MIMICS = "LIT_1", century = "MetLitter", millennial = "Litter")),
+    effect_pool   = list(MIMICS = "LIT_1", century = "MetLitter", millennial = "Litter"),
+    effect_pct    = -15),
   DetPredator = list(
     biomass_param = "adj_detpredator",   # scales predator feeding rate
     effect_param  = NA,                               # predator: no direct pool effect
-    effect_pool   = list()),
+    effect_pool   = list(),
+    effect_pct    = NA),
   RootHerb = list(
     biomass_param = "adj_rootherb",      # scales root-herbivore feeding rate
     effect_param  = "k_exudate_slope",                # acts on root exudation
-    effect_pool   = list(MIMICS = "SOM_1", century = "ACTIVE", millennial = "DOM"))
+    effect_pool   = list(MIMICS = "SOM_1", century = "ACTIVE", millennial = "DOM"),
+    effect_pct    = +10)
 )
 
 # ------------------------------------------------------------
-# animal_fit_spec(): resolve the default biomass_param, effect_param, and the
-# per-MODEL effect_pool for an animal. Returns NA for anything unspecified.
+# PER model x scenario x animal OVERRIDES of the effect target (pool, param,
+# and/or size). This is the key knob you asked for: the effect pool no longer
+# has to be the same for a given animal across scenarios -- set a different
+# pool (and, if you like, a different target size or even a different effect
+# parameter) for any specific model x scenario x animal here. Anything left
+# out falls back to the per-MODEL default in animal_fit_defaults above.
+#
+# Keyed as effect_pool_overrides[[model]][[scenario]][[animal]] = list(
+#     pool = "<pool name in THIS model>",   # which pool the effect is measured on
+#     pct  = <numeric percent change>,      # optional; else animal's effect_pct
+#     param = "<effect parameter>"          # optional; else animal's effect_param
+#   ). Scenario names are matched case/punctuation-insensitively (normalize()),
+# so "EarthwormTemperate" and "Earthworm - Temperate" both work.
+#
+# SUGGESTED DEFAULTS (starting points -- verify with scan_animal_param and edit):
+#   Detritivores shred/consume litter, so they DEPLETE the metabolic-litter /
+#   structural-litter pool they feed on (target the litter pool, negative pct).
+#   Earthworms rework and stabilise organo-mineral C, so target a protected /
+#   passive soil pool (SOM_1 / PASSIVE / M) -- sign depends on whether your
+#   hypothesis is net protection (+) or accelerated turnover (-).
+#   Root herbivores raise root exudation, feeding the fast/active DOM pool
+#   (SOM_1 / ACTIVE / DOM, positive).
+effect_pool_overrides <- list(
+  MIMICS = list(
+    Isopod        = list(Detritivore = list(pool = "LIT_1", pct = -15)),
+    Mite          = list(Detritivore = list(pool = "LIT_2", pct = -10)),
+    MitePredator  = list(Detritivore = list(pool = "LIT_2", pct = -10)),
+    RootHerbivore = list(RootHerb    = list(pool = "SOM_1", pct = +10)),
+    Earthworm     = list(Earthworm   = list(pool = "SOM_1", pct = -10))
+  ),
+  century = list(
+    Isopod        = list(Detritivore = list(pool = "MetLitter", pct = -15)),
+    Mite          = list(Detritivore = list(pool = "StrLitter", pct = -10)),
+    MitePredator  = list(Detritivore = list(pool = "StrLitter", pct = -10)),
+    RootHerbivore = list(RootHerb    = list(pool = "ACTIVE",    pct = +10)),
+    Earthworm     = list(Earthworm   = list(pool = "PASSIVE",   pct = -10))
+  ),
+  millennial = list(
+    Isopod        = list(Detritivore = list(pool = "Litter",  pct = -15)),
+    Mite          = list(Detritivore = list(pool = "Organic", pct = -10)),
+    MitePredator  = list(Detritivore = list(pool = "Organic", pct = -10)),
+    RootHerbivore = list(RootHerb    = list(pool = "DOM",     pct = +10)),
+    Earthworm     = list(Earthworm   = list(pool = "M",       pct = -10))
+  )
+)
+
+# resolve effect_pool_overrides[[model]][[scenario]][[animal]] with scenario
+# names normalized (so punctuation/case differences don't matter).
+.norm_scen <- function(x) tolower(gsub("[^[:alnum:]]+", "", trimws(as.character(x))))
+.lookup_effect_override <- function(model, scenario, animal) {
+  mo <- effect_pool_overrides[[model]]
+  if (is.null(mo) || is.null(scenario)) return(NULL)
+  key <- names(mo)[.norm_scen(names(mo)) == .norm_scen(scenario)]
+  if (!length(key)) return(NULL)
+  mo[[key[1]]][[animal]]
+}
+
 # ------------------------------------------------------------
-animal_fit_spec <- function(animal, model = NULL) {
+# animal_fit_spec(): resolve biomass_param, effect_param, effect_pool, and the
+# default effect size (effect_pct) for an animal. Resolution order for the
+# effect pool/param/size is:
+#   (1) a per model x scenario override in effect_pool_overrides, then
+#   (2) the per-MODEL default in animal_fit_defaults, then
+#   (3) NA (nothing to fit).
+# Pass `scenario` to enable per model x scenario resolution; omit it to get the
+# per-MODEL default only (backwards compatible).
+# ------------------------------------------------------------
+animal_fit_spec <- function(animal, model = NULL, scenario = NULL) {
   d <- animal_fit_defaults[[animal]]
   if (is.null(d)) stop("No animal_fit_defaults entry for '", animal, "'.")
-  ep <- if (!is.null(model)) d$effect_pool[[model]] else NULL
+
+  ep_default <- if (!is.null(model)) d$effect_pool[[model]] else NULL
+  ov <- if (!is.null(model)) .lookup_effect_override(model, scenario, animal) else NULL
+
+  effect_pool  <- if (!is.null(ov$pool))  ov$pool  else ep_default
+  effect_param <- if (!is.null(ov$param)) ov$param else d$effect_param
+  effect_pct   <- if (!is.null(ov$pct))   ov$pct   else d$effect_pct
+
   list(biomass_param = if (is.null(d$biomass_param)) NA else d$biomass_param,
-       effect_param  = if (is.null(d$effect_param))  NA else d$effect_param,
-       effect_pool   = if (is.null(ep)) NA else ep)
+       effect_param  = if (is.null(effect_param)) NA else effect_param,
+       effect_pool   = if (is.null(effect_pool))  NA else effect_pool,
+       effect_pct    = if (is.null(effect_pct))   NA else effect_pct)
 }
 
 # ------------------------------------------------------------
@@ -102,10 +186,11 @@ fit_param_grid <- function(center, buffer = 1, n = 11, scale = c("log", "linear"
 
 fit_animal_params <- function(treatment, baseline,
                               animal            = NULL,
+                              scenario          = NULL,   # enables per model x scenario effect pool
                               target_biomass    = NULL,   # default: the animal's input value
                               biomass_param     = NULL,
-                              effect_pool       = NULL,   # set these two to ALSO fit an effect
-                              target_effect_pct = NULL,
+                              effect_pool       = NULL,   # set to ALSO fit an effect (else uses
+                              target_effect_pct = NULL,   #   the per model x scenario default)
                               effect_param      = NULL,
                               tol_biomass = 0.02,   # relative
                               tol_effect  = 1.0,    # percentage points
@@ -121,15 +206,17 @@ fit_animal_params <- function(treatment, baseline,
            paste(active_animals, collapse = ", "))
     animal <- active_animals
   }
-  spec <- animal_fit_spec(animal, treatment$model)
+  if (is.null(scenario)) scenario <- treatment$scenario   # set by setup_scenario()
+  spec <- animal_fit_spec(animal, treatment$model, scenario)
   if (is.null(biomass_param)) biomass_param <- spec$biomass_param
   if (is.null(target_biomass)) target_biomass <- unname(treatment$working_state[animal])
   if (is.null(biomass_param) || is.na(biomass_param))
     stop("No biomass_param available for ", animal, " - pass biomass_param=.")
 
-  # effect_pool defaults PER MODEL from animal_fit_defaults; only fit an effect
-  # when a target is given AND a pool is known.
+  # effect_pool / target size default PER MODEL x SCENARIO (animal_fit_spec);
+  # only fit an effect when both a pool AND a target size are available.
   if (is.null(effect_pool) && !is.na(spec$effect_pool)) effect_pool <- spec$effect_pool
+  if (is.null(target_effect_pct) && !is.na(spec$effect_pct)) target_effect_pct <- spec$effect_pct
   do_effect <- !is.null(effect_pool) && !is.null(target_effect_pct)
   if (do_effect && is.null(effect_param)) effect_param <- spec$effect_param
   if (do_effect && (is.null(effect_param) || is.na(effect_param)))

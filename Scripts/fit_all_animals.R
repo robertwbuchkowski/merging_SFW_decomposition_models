@@ -16,11 +16,20 @@ models <- c("century", "millennial", "MIMICS")
 manual_tune_add = T
 
 # ------------------------------------------------------------
-# OPTIONAL effect targets (user-defined). Empty list = biomass-only fitting,
-# which is robust and always well-posed. To also fit an effect, add an entry
-# per animal with an ACHIEVABLE, correctly-signed target, e.g.:
-#   effect_spec <- list(Detritivore = list(pool = "SOM_1", pct = +10))
+# EFFECT fitting. Effect targets now come from animal_fit_spec(), which
+# resolves a pool + target size PER model x scenario x animal from
+# effect_pool_overrides / animal_fit_defaults in R/fit_animals.R -- so you can
+# have a different effect pool for every model x scenario. Edit them there.
+#
+#   fit_effects <- TRUE   also fit each animal's effect (pool + size) using
+#                         those per model x scenario defaults.
+#   fit_effects <- FALSE  biomass-only fitting (robust, always well-posed).
+#
+# `effect_spec` below still lets you FORCE an explicit pool/size for a given
+# animal, overriding the per-scenario default for every scenario (rarely
+# needed now; leave empty to use the per model x scenario table).
 # ------------------------------------------------------------
+fit_effects <- TRUE
 effect_spec <- list()
 
 animals_order <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")  # prey before predator
@@ -46,20 +55,26 @@ for (model in models) {
     animals <- animals_order[animals_order %in% pair$treatment$active]
     if (!length(animals)) next
 
-    # capture DEFAULT (baseline) parameter values up front, before any fitting
+    # capture DEFAULT (baseline) parameter values up front, before any fitting.
+    # effect_param is resolved per model x scenario (animal_fit_spec).
     defaults <- lapply(animals, function(a) {
-      bp <- animal_fit_defaults[[a]]$biomass_param
-      ep <- animal_fit_defaults[[a]]$effect_param
+      sp <- animal_fit_spec(a, model, scenario)
+      bp <- sp$biomass_param
+      ep <- sp$effect_param
       list(bp = bp, bp_default = if (!is.na(bp)) pair$treatment$parms[[bp]] else NA,
-           ep = ep, ep_default = if (!is.na(ep)) pair$treatment$parms[[ep]] else NA)
+           ep = ep, ep_default = if (!is.na(ep) && ep %in% names(pair$treatment$parms))
+                                  pair$treatment$parms[[ep]] else NA)
     })
     names(defaults) <- animals
 
     for (a in animals) {
-      es <- effect_spec[[a]]
+      # explicit effect_spec (if any) overrides the per model x scenario default;
+      # otherwise fit_animal_params() pulls pool + size from animal_fit_spec().
+      es  <- effect_spec[[a]]
       fit <- tryCatch(
-        fit_animal_params(pair$treatment, pair$baseline, animal = a,
-                          effect_pool = es$pool, target_effect_pct = es$pct,
+        fit_animal_params(pair$treatment, pair$baseline, animal = a, scenario = scenario,
+                          effect_pool = if (fit_effects) es$pool else NULL,
+                          target_effect_pct = if (fit_effects) es$pct else NULL,
                           verbose = FALSE),
         error = function(e) { message("fit failed ", model, "/", scenario, "/", a,
                                       ": ", conditionMessage(e)); NULL })
@@ -78,15 +93,20 @@ for (model in models) {
                     max(abs(f$target_biomass), 1e-8) < tol_biomass,
         stringsAsFactors = FALSE)
 
-      # effect parameter row (only if an effect target was given for this animal)
-      if (!is.null(es) && !is.na(d$ep)) {
+      # effect parameter row -- written whenever an effect was actually fit
+      # (pool + target resolved for this model x scenario x animal).
+      did_effect <- !is.na(f$effect_param) && !is.null(f$effect_pool) &&
+                    !is.na(f$target_effect_pct)
+      if (did_effect) {
         rows[[length(rows) + 1]] <- data.frame(
           model = model, scenario = scenario, animal = a,
-          param = d$ep, role = "effect on pool",
+          param = f$effect_param, role = paste0("effect on ", f$effect_pool),
           baseline = d$ep_default, fitted = f$fitted_effect_param,
-          ratio = f$fitted_effect_param / d$ep_default,
-          target = es$pct, achieved = f$achieved_effect_pct,
-          converged = abs(f$achieved_effect_pct - es$pct) < 1,
+          ratio = if (is.na(d$ep_default) || d$ep_default == 0) NA
+                  else f$fitted_effect_param / d$ep_default,
+          target = f$target_effect_pct, achieved = f$achieved_effect_pct,
+          converged = is.finite(f$achieved_effect_pct) &&
+                      abs(f$achieved_effect_pct - f$target_effect_pct) < 1,
           stringsAsFactors = FALSE)
       }
     }
@@ -163,7 +183,7 @@ if (do_scan) {
 
       animals <- animals_order[animals_order %in% pair$treatment$active]
       for (a in animals) {
-        spec <- animal_fit_spec(a, model)          # per-model effect_pool
+        spec <- animal_fit_spec(a, model, scenario)   # per model x scenario effect_pool
         bp   <- spec$biomass_param
         if (is.na(bp)) next
         # gradient buffered around the DEFAULT feeding rate
@@ -205,7 +225,7 @@ if (FALSE) {
   model <- "MIMICS"; scenario <- "MitePredator"; a <- "DetPredator"
   pair <- setup_scenario_pair(model, scen, scenario)
   pair$baseline <- spinup_equilibrium(pair$baseline, verbose = FALSE)
-  spec <- animal_fit_spec(a, model)
+  spec <- animal_fit_spec(a, model, scenario)
   grid <- fit_param_grid(pair$treatment$parms[[spec$biomass_param]], buffer = 2, n = 15)
   grid <- seq(0.001, 0.01, length.out = 20)
   sc <- scan_animal_param(pair$treatment, param = spec$biomass_param, values = grid,
