@@ -21,7 +21,7 @@
 #   n_years  length per attempt; lengthened automatically if still drifting
 # Returns list(out, final_state, converged, iterations).
 # ------------------------------------------------------------
-dynamic_spinup <- function(obj, from = NULL, n_years = 300, by = 30,
+dynamic_spinup <- function(obj, from = NULL, n_years = 600, by = 30,
                            max_iter = 6, tol = 1e-3, abs_floor = 1e-3, verbose = TRUE) {
   start <- if (!is.null(from)) from
            else if (!is.null(obj$init_state_spin)) obj$init_state_spin

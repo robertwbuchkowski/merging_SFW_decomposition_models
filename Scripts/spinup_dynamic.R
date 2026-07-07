@@ -64,7 +64,7 @@ for (model in models) {
       # (part 2) BASELINE FIRST: equilibrium -> seasonal dynamic spin-up -> save
       # ------------------------------------------------------------
       cat("\n--- Baseline dynamic spin-up ---\n")
-      dyn_b <- dynamic_spinup(pair$baseline, n_years = 300, by = 1, tol = 1e-4)
+      dyn_b <- dynamic_spinup(pair$baseline, n_years = 600, by = 1, tol = 1e-4)
       cat("baseline converged:", dyn_b$converged, "\n")
       save_spinup(pair$baseline, dyn_b$final_state, scenario, "baseline")
       
@@ -76,7 +76,7 @@ for (model in models) {
         if (is.null(pair$treatment$init_state_spin))
           pair$treatment <- spinup_equilibrium(pair$treatment,
                                                warm_start = pair$baseline$init_state_spin)
-        dyn_t <- dynamic_spinup(pair$treatment, n_years = 300, by = 1, tol = 1e-4)
+        dyn_t <- dynamic_spinup(pair$treatment, n_years = 600, by = 1, tol = 1e-4)
         cat("treatment converged:", dyn_t$converged, "\n")
         save_spinup(pair$treatment, dyn_t$final_state, scenario, "treatment")
       }

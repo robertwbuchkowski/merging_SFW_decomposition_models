@@ -169,7 +169,9 @@ spinup_until_stable <- function(init_state, parms, model_fn,
                   max_drift = max_drift, converged = TRUE, iterations = i))
     }
     state   <- final_state(out)
-    n_years <- n_years * 1.5
+    if(i == 3){
+      n_years <- n_years * 5
+    }
   }
   if (verbose) cat("Reached max iterations; worst drift", signif(max_drift, 3),
                    "in", worst, "- inspect the PNGs / raise max_iter or tol.\n")
