@@ -95,3 +95,8 @@ do.call("rbind",animal_eq_effect) %>% filter(is.na(baseline))
 # Check the animal effects:
 do.call("rbind",animal_eq_effect) %>% filter(!is.na(baseline)) %>%
   ggplot(aes(x = model, y = abs(difference), shape = scenario, color = scenario)) + geom_point() + facet_wrap(.~name, scales = "free") + scale_y_log10()
+
+
+do.call("rbind",animal_eq_effect) %>% filter(!is.na(baseline)) %>%
+  ggplot(aes(x = model, y = percent_change, shape = scenario, color = scenario)) + 
+  geom_point() + facet_wrap(.~name, scales = "free")

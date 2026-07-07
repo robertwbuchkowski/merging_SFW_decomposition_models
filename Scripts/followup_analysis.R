@@ -107,6 +107,7 @@ for (model in models) {
 # Example, one model/scenario:
 plot_followup_add("MIMICS", "RootHerbivore")
 
+pdf("Plots/output.pdf", width = 8, height = 8)
 # All model x scenario combos that have saved add + continue_baseline runs:
 for (model in models) {
   for (scenario in names(scen)) {
@@ -116,7 +117,7 @@ for (model in models) {
     }
   }
 }
-
+dev.off()
 
 # All models for one scenario combos that have saved add + continue_baseline runs:
 for (model in models) {
