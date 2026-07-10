@@ -345,8 +345,7 @@ MIMICS_model <- function(time, state, parms) {
     Fed_det_LIT1 = c_detritivores * LIT_1 * Detritivore
     Fed_det_MIC1 = c_detritivores * MIC_1 * Detritivore
     Fed_det_MIC2 = c_detritivores * MIC_2 * Detritivore
-    Fed_det_SOM3 = c_detritivores * SOM_3 * Detritivore
-    Fed_det_tot  = Fed_det_LIT1 + Fed_det_MIC1 + Fed_det_MIC2 + Fed_det_SOM3
+    Fed_det_tot  = Fed_det_LIT1 + Fed_det_MIC1 + Fed_det_MIC2
 
     Carcass_det_SOM3 = d_detritivores * Detritivore^2
     Waste_det_SOM3   = (1 - a_detritivores) * Fed_det_tot
@@ -411,17 +410,17 @@ MIMICS_model <- function(time, state, parms) {
 
     dSOM_1 = I[1]*FI[1] + MICtrn[1] + MICtrn[4] - DEsorb -
       Fed_earthworm_SOM1 +
-      Waste_earthworm_SOM1
+      Waste_earthworm_SOM1 # PHYSICAL
 
     dSOM_2 = I[2]*FI[2] + MICtrn[2] + MICtrn[5] - OXIDAT -
-      Fed_earthworm_SOM2
+      Fed_earthworm_SOM2 # CHECMIAL
 
     dSOM_3  = MICtrn[3] + MICtrn[6] + DEsorb + OXIDAT - SOMmin[1] - SOMmin[2] -
-      Fed_earthworm_SOM3 - Fed_det_SOM3 +
+      Fed_earthworm_SOM3 +
       Waste_earthworm_SOM3 + Carcass_earthworm_SOM3 +
       Carcass_det_SOM3 + Waste_det_SOM3 +
       Carcass_detpred_SOM3 + Waste_detpred_SOM3 +
-      Carcass_rootherb_SOM3 + Waste_rootherb_SOM3
+      Carcass_rootherb_SOM3 + Waste_rootherb_SOM3 # AVAILABLE
 
     # --------------------#
     # MASS BALANCE CHECK:
