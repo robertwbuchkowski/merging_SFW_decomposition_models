@@ -11,9 +11,8 @@ source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
 scen   <- read_scenarios("Data/scenarios.xlsx")
-models <- c("century", "millennial", "MIMICS")
+models <- c("millennial")
 
-manual_tune_add = F
 
 # ------------------------------------------------------------
 # EFFECT fitting. Effect targets now come from animal_fit_spec(), which
@@ -41,10 +40,6 @@ rows <- list()
 for (model in models) {
   for (scenario in names(scen)) {
 
-    if(manual_tune_add){
-      if(model == "MIMICS" & scenario == "Mite") next # Skip ones I did manually
-    }
-    
     pair <- tryCatch(setup_scenario_pair(model, scen, scenario),
                      error = function(e) { message("setup failed ", model, "/", scenario,
                                                     ": ", conditionMessage(e)); NULL })
@@ -113,18 +108,6 @@ for (model in models) {
     cat("Done", scenario, "for", model, "\n")
   }
 }
-
-if(manual_tune_add){
-  rows[[length(rows) + 1]] <- data.frame(
-    model = "MIMICS", scenario = "Mite", animal = "Detritivore",
-    param = "adj_detritivores", role = "biomass (feeding rate)",
-    baseline = 1, fitted = 0.01529,
-    ratio = 0.01529,
-    target = 0.1, achieved = 0.1,
-    converged = TRUE,
-    stringsAsFactors = FALSE)
-}
-
 
 if (!length(rows)) stop("No fits succeeded - check the model/scenario setup.")
 summary_long <- do.call(rbind, rows)
@@ -222,7 +205,7 @@ if (do_scan) {
 # above just flattens many such scans into one CSV.
 # ------------------------------------------------------------
 if (FALSE) {
-  model <- "MIMICS"; scenario <- "MitePredator"; a <- "DetPredator"
+  model <- "millennial"; scenario <- "MitePredator"; a <- "DetPredator"
   pair <- setup_scenario_pair(model, scen, scenario)
   pair$baseline <- spinup_equilibrium(pair$baseline, verbose = FALSE)
   spec <- animal_fit_spec(a, model, scenario)

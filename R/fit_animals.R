@@ -27,9 +27,8 @@
 #   effect_param   parameter tuned to hit a target pool effect (same name in
 #                  all three models here)
 #   effect_pool    the pool whose response defines the "effect" -- specified
-#                  PER MODEL, since pool names differ (MIMICS SOM_*, Century
-#                  ACTIVE/SLOW/PASSIVE, Millennial Organic/DOM/A/M/...). This is
-#                  the per-MODEL DEFAULT; override it per model x scenario in
+#                  the DEFAULT pool (Millennial pools: Litter/CWD/Organic/
+#                  DOM/MIC/P/L/A/M/B); override it per scenario in
 #                  effect_pool_overrides below.
 #   effect_pct     default target effect SIZE (percent change vs the no-animal
 #                  baseline equilibrium) for this animal, used when you fit an
@@ -42,12 +41,12 @@ animal_fit_defaults <- list(
   Earthworm = list(
     biomass_param = "adj_earthworm",     # scales all earthworm feeding rates
     effect_param  = "k_b_slope_pint",                 # acts on desorb / binding / f_PASSIVE
-    effect_pool   = list(MIMICS = "SOM_1", century = "PASSIVE", millennial = "M"),
+    effect_pool   = list(millennial = "M"),
     effect_pct    = -10),
   Detritivore = list(
     biomass_param = "adj_detritivores",  # scales all detritivore feeding rates
     effect_param  = "slope_pint_det_k_frag_litter",   # acts on FI / f_MetLitter / fragmentation
-    effect_pool   = list(MIMICS = "LIT_1", century = "MetLitter", millennial = "Litter"),
+    effect_pool   = list(millennial = "Litter"),
     effect_pct    = -15),
   DetPredator = list(
     biomass_param = "adj_detpredator",   # scales predator feeding rate
@@ -57,7 +56,7 @@ animal_fit_defaults <- list(
   RootHerb = list(
     biomass_param = "adj_rootherb",      # scales root-herbivore feeding rate
     effect_param  = "k_exudate_slope",                # acts on root exudation
-    effect_pool   = list(MIMICS = "SOM_1", century = "ACTIVE", millennial = "DOM"),
+    effect_pool   = list(millennial = "DOM"),
     effect_pct    = +10)
 )
 
@@ -85,23 +84,11 @@ animal_fit_defaults <- list(
 #   Root herbivores raise root exudation, feeding the fast/active DOM pool
 #   (SOM_1 / ACTIVE / DOM, positive).
 effect_pool_overrides <- list(
-  MIMICS = list(
-    Isopod        = list(Detritivore = list(pool = "LIT_1", pct = -10)),
-    Mite          = list(Detritivore = list(pool = "LIT_1", pct = -10)),
-    RootHerbivore = list(RootHerb    = list(pool = "SOM_1", pct = +10)),
-    Earthworm     = list(Earthworm   = list(pool = "SOM_1", pct = +10))
-  ),
-  century = list(
-    Isopod        = list(Detritivore = list(pool = "MetLitter", pct = -15)),
-    Mite          = list(Detritivore = list(pool = "MetLitter", pct = -10)),
-    RootHerbivore = list(RootHerb    = list(pool = "ACTIVE",    pct = +10)),
-    Earthworm     = list(Earthworm   = list(pool = "PASSIVE",   pct = +10))
-  ),
   millennial = list(
-    Isopod        = list(Detritivore = list(pool = "Litter",  pct = -10)),
+    Isopod        = list(Detritivore = list(pool = "Litter", pct = -10)),
     Mite          = list(Detritivore = list(pool = "Litter", pct = -10)),
-    RootHerbivore = list(RootHerb    = list(pool = "DOM",     pct = +10)),
-    Earthworm     = list(Earthworm   = list(pool = "M",       pct = +10))
+    RootHerbivore = list(RootHerb    = list(pool = "DOM",    pct = +10)),
+    Earthworm     = list(Earthworm   = list(pool = "M",      pct = +10))
   )
 )
 

@@ -29,15 +29,7 @@ model_table <- list(
   millennial = list(
     src    = c("R/millennial_model.R", "R/derive_millennial_parms.R", "R/init_millennial_state.R"),
     fn = "millennial_model_wplant", yaml = "config/millennial.yml",
-    derive = "derive_millennial_parms", init = "init_millennial_state"),
-  century = list(
-    src    = c("R/century_model.R", "R/derive_century_parms.R", "R/init_century_state.R"),
-    fn = "century_model", yaml = "config/century.yml",
-    derive = "derive_century_parms", init = "init_century_state"),
-  MIMICS = list(
-    src    = c("R/MIMICS_model.R", "R/derive_MIMICS_parms.R", "R/init_MIMICS_state.R"),
-    fn = "MIMICS_model", yaml = "config/MIMICS.yml",
-    derive = "derive_MIMICS_parms", init = "init_MIMICS_state")
+    derive = "derive_millennial_parms", init = "init_millennial_state")
 )
 
 # which state pools each flag controls
@@ -95,7 +87,7 @@ make_model_wrapper <- function(model_fun, full_names, state_groups) {
 #   mode             "scenario" (default) or "wrapper" -- selects what
 #                    obj$wrapped_model points to (see note below).
 #
-# Every model function (century_model / millennial_model_wplant / MIMICS_model)
+# Every model function (millennial_model_wplant)
 # now reads pools it's missing as 0, so the SAME function works two ways:
 #   - obj$model_scenario  call it directly on the reduced `working_state`
 #                         (only the active pools) -- fastest; no wrapper
@@ -312,4 +304,37 @@ setup_scenario_pair <- function(model, scenarios, scenario, source_files = TRUE,
     baseline  = setup_scenario(model, scenarios, scenario, animals = FALSE,
                                source_files = FALSE, mode = mode)
   )
+}
+
+# ------------------------------------------------------------
+# INDIRECT-EFFECT parameters. The animals affect soil pools in two ways:
+#   (a) DIRECT   -- feeding fluxes (Fed_*), always on.
+#   (b) INDIRECT -- animals modify RATE parameters of the soil model. In the
+#       millennial model these "_pint" (parameter-interaction) slopes are:
+#         slope_pint_det_k_frag_litter    detritivores -> litter fragmentation
+#         slope_pint_det_k_frag_organic   detritivores -> organic fragmentation
+#         k_b_slope_pint                  earthworms   -> aggregate (k_b) loss
+#       (The root-herbivore exudation response, k_exudate_slope, is a direct
+#       root-exudate flux rather than a _pint slope, so it is NOT zeroed here;
+#       add it to `params` below if you want to switch that off too.)
+# ------------------------------------------------------------
+indirect_effect_params <- c("slope_pint_det_k_frag_litter",
+                            "slope_pint_det_k_frag_organic",
+                            "k_b_slope_pint")
+
+# zero_indirect_effects(): return a copy of a setup object (or a scenario pair)
+# with all indirect-effect (_pint) parameters set to 0, so animals act ONLY
+# through their direct feeding fluxes. Works on a single setup object OR on a
+# list(treatment=, baseline=) pair.
+zero_indirect_effects <- function(obj, params = indirect_effect_params, verbose = TRUE) {
+  if (!is.null(obj$treatment) && !is.null(obj$baseline)) {   # a scenario pair
+    obj$treatment <- zero_indirect_effects(obj$treatment, params, verbose)
+    obj$baseline  <- zero_indirect_effects(obj$baseline,  params, verbose = FALSE)
+    return(obj)
+  }
+  present <- intersect(params, names(obj$parms))
+  for (p in present) obj$parms[[p]] <- 0
+  if (verbose)
+    message("indirect effects OFF: set ", paste(present, collapse = ", "), " = 0")
+  obj
 }

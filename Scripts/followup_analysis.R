@@ -17,7 +17,7 @@ source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
 scen   <- read_scenarios("Data/scenarios.xlsx")
-models <- c("century", "millennial", "MIMICS")
+models <- c("millennial")
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)?
 
 scen$MitePredator = NULL          # match the scenarios actually spun up
@@ -118,7 +118,7 @@ for (model in models) {
 # this can be run later without re-running either loop above.
 # ------------------------------------------------------------
 # Example, one model/scenario:
-plot_followup_add("MIMICS", "RootHerbivore")
+plot_followup_add("millennial", "RootHerbivore")
 
 pdf("Plots/output.pdf", width = 8, height = 8)
 # All model x scenario combos that have saved add + continue_baseline runs:

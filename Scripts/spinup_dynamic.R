@@ -10,7 +10,7 @@ source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
 scen   <- read_scenarios("Data/scenarios.xlsx")
-models <- c("century", "millennial", "MIMICS")
+models <- c("millennial")
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)?
 do_treatment      <- F       # also spin up the treatment arm now?
 do_spinup         <- F
