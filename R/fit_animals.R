@@ -86,25 +86,22 @@ animal_fit_defaults <- list(
 #   (SOM_1 / ACTIVE / DOM, positive).
 effect_pool_overrides <- list(
   MIMICS = list(
-    Isopod        = list(Detritivore = list(pool = "LIT_1", pct = -15)),
-    Mite          = list(Detritivore = list(pool = "LIT_2", pct = -10)),
-    MitePredator  = list(Detritivore = list(pool = "LIT_2", pct = -10)),
+    Isopod        = list(Detritivore = list(pool = "LIT_1", pct = -10)),
+    Mite          = list(Detritivore = list(pool = "LIT_1", pct = -10)),
     RootHerbivore = list(RootHerb    = list(pool = "SOM_1", pct = +10)),
-    Earthworm     = list(Earthworm   = list(pool = "SOM_1", pct = -10))
+    Earthworm     = list(Earthworm   = list(pool = "SOM_1", pct = +10))
   ),
   century = list(
     Isopod        = list(Detritivore = list(pool = "MetLitter", pct = -15)),
-    Mite          = list(Detritivore = list(pool = "StrLitter", pct = -10)),
-    MitePredator  = list(Detritivore = list(pool = "StrLitter", pct = -10)),
+    Mite          = list(Detritivore = list(pool = "MetLitter", pct = -10)),
     RootHerbivore = list(RootHerb    = list(pool = "ACTIVE",    pct = +10)),
-    Earthworm     = list(Earthworm   = list(pool = "PASSIVE",   pct = -10))
+    Earthworm     = list(Earthworm   = list(pool = "PASSIVE",   pct = +10))
   ),
   millennial = list(
-    Isopod        = list(Detritivore = list(pool = "Litter",  pct = -15)),
-    Mite          = list(Detritivore = list(pool = "Organic", pct = -10)),
-    MitePredator  = list(Detritivore = list(pool = "Organic", pct = -10)),
+    Isopod        = list(Detritivore = list(pool = "Litter",  pct = -10)),
+    Mite          = list(Detritivore = list(pool = "Litter", pct = -10)),
     RootHerbivore = list(RootHerb    = list(pool = "DOM",     pct = +10)),
-    Earthworm     = list(Earthworm   = list(pool = "M",       pct = -10))
+    Earthworm     = list(Earthworm   = list(pool = "M",       pct = +10))
   )
 )
 
