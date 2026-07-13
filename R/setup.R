@@ -309,23 +309,23 @@ setup_scenario_pair <- function(model, scenarios, scenario, source_files = TRUE,
 # ------------------------------------------------------------
 # INDIRECT-EFFECT parameters. The animals affect soil pools in two ways:
 #   (a) DIRECT   -- feeding fluxes (Fed_*), always on.
-#   (b) INDIRECT -- animals modify RATE parameters of the soil model. In the
-#       millennial model these "_pint" (parameter-interaction) slopes are:
+#   (b) INDIRECT -- animals modify RATE parameters of the soil model. These are
+#       the animal-effect slopes zeroed by zero_indirect_effects():
 #         slope_pint_det_k_frag_litter    detritivores -> litter fragmentation
 #         slope_pint_det_k_frag_organic   detritivores -> organic fragmentation
 #         k_b_slope_pint                  earthworms   -> aggregate (k_b) loss
-#       (The root-herbivore exudation response, k_exudate_slope, is a direct
-#       root-exudate flux rather than a _pint slope, so it is NOT zeroed here;
-#       add it to `params` below if you want to switch that off too.)
+#         k_exudate_slope                 root herbivores -> root exudation
+#       Setting all four to 0 leaves animals acting ONLY through direct feeding.
 # ------------------------------------------------------------
 indirect_effect_params <- c("slope_pint_det_k_frag_litter",
                             "slope_pint_det_k_frag_organic",
-                            "k_b_slope_pint")
+                            "k_b_slope_pint",
+                            "k_exudate_slope")
 
 # zero_indirect_effects(): return a copy of a setup object (or a scenario pair)
-# with all indirect-effect (_pint) parameters set to 0, so animals act ONLY
-# through their direct feeding fluxes. Works on a single setup object OR on a
-# list(treatment=, baseline=) pair.
+# with all indirect-effect parameters (the _pint slopes + k_exudate_slope) set
+# to 0, so animals act ONLY through their direct feeding fluxes. Works on a
+# single setup object OR on a list(treatment=, baseline=) pair.
 zero_indirect_effects <- function(obj, params = indirect_effect_params, verbose = TRUE) {
   if (!is.null(obj$treatment) && !is.null(obj$baseline)) {   # a scenario pair
     obj$treatment <- zero_indirect_effects(obj$treatment, params, verbose)

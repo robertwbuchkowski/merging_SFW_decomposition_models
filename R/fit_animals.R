@@ -197,11 +197,14 @@ fit_animal_params <- function(treatment, baseline,
   if (is.null(biomass_param) || is.na(biomass_param))
     stop("No biomass_param available for ", animal, " - pass biomass_param=.")
 
-  # effect_pool / target size default PER MODEL x SCENARIO (animal_fit_spec);
-  # only fit an effect when both a pool AND a target size are available.
-  if (is.null(effect_pool) && !is.na(spec$effect_pool)) effect_pool <- spec$effect_pool
-  if (is.null(target_effect_pct) && !is.na(spec$effect_pct)) target_effect_pct <- spec$effect_pct
-  do_effect <- !is.null(effect_pool) && !is.null(target_effect_pct)
+  # EFFECT FITTING IS EXPLICIT: an effect is fit ONLY when the caller supplies
+  # BOTH an effect_pool AND a target_effect_pct (e.g. from an effect_spec read
+  # in by Scripts/fit_all_animals.R). Nothing is pulled from the defaults table
+  # in the background -- so leaving them NULL gives clean biomass-only fitting.
+  # (effect_param, the LEVER, still defaults from the spec once you ask for an
+  # effect; pass effect_param= to override it.)
+  do_effect <- !is.null(effect_pool) && !is.null(target_effect_pct) &&
+               !all(is.na(effect_pool)) && !all(is.na(target_effect_pct))
   if (do_effect && is.null(effect_param)) effect_param <- spec$effect_param
   if (do_effect && (is.null(effect_param) || is.na(effect_param)))
     stop("Effect fitting requested but no effect_param for ", animal, " - pass effect_param=.")
@@ -479,4 +482,85 @@ apply_fitted_params <- function(obj, fitted, model, scenario, verbose = TRUE) {
                 nrow(sub), model, scenario,
                 paste(sub$param, signif(sub$value, 4), sep = "=", collapse = ", ")))
   obj
+}
+
+# ============================================================
+# EFFECT TARGETS - saved effect sizes, read in explicitly for fitting
+# ------------------------------------------------------------
+# Effect fitting is now OPT-IN and EXPLICIT. In Scripts/fit_all_animals.R:
+#
+#   effect_spec <- list()                          # biomass-only fitting
+#   effect_spec <- load_effect_targets()           # ALSO fit effects, using the
+#                                                  #   saved sizes on disk
+#
+# The saved file (default config/effect_targets.csv) has one row per
+# model x scenario x animal:
+#     model, scenario, animal, pool, pct, param
+#   pool   the pool the effect is measured on (a pool name in THIS model)
+#   pct    target % change vs the no-animal baseline equilibrium
+#   param  (optional, may be blank) the effect parameter to tune; blank falls
+#          back to the animal's effect_param in animal_fit_defaults
+# Edit that CSV to change which pool / how big an effect you fit, per
+# model x scenario. Rows with a blank or NA pool/pct are skipped (no effect fit
+# for that animal), so you can turn individual animals off without deleting them.
+# ============================================================
+
+# write the built-in animal_fit_defaults / effect_pool_overrides table out to a
+# CSV you can then edit by hand. Run once to (re)generate the starting file.
+save_effect_targets <- function(file = "config/effect_targets.csv",
+                                models = names(effect_pool_overrides)) {
+  rows <- list()
+  for (m in models) {
+    for (sc in names(effect_pool_overrides[[m]])) {
+      for (a in names(effect_pool_overrides[[m]][[sc]])) {
+        sp <- animal_fit_spec(a, m, sc)
+        rows[[length(rows) + 1]] <- data.frame(
+          model = m, scenario = sc, animal = a,
+          pool  = if (is.na(sp$effect_pool)) NA_character_ else sp$effect_pool,
+          pct   = if (is.na(sp$effect_pct))  NA_real_      else sp$effect_pct,
+          param = if (is.na(sp$effect_param)) NA_character_ else sp$effect_param,
+          stringsAsFactors = FALSE)
+      }
+    }
+  }
+  out <- do.call(rbind, rows)
+  dir.create(dirname(file), showWarnings = FALSE, recursive = TRUE)
+  utils::write.csv(out, file, row.names = FALSE)
+  message("wrote effect targets -> ", file, " (", nrow(out), " rows)")
+  invisible(out)
+}
+
+# read the saved effect targets. Returns a data.frame that get_effect_target()
+# understands. Errors if the file is missing (so a typo can't silently turn
+# effect fitting off).
+load_effect_targets <- function(file = "Data/effect_targets.csv") {
+  if (!file.exists(file))
+    stop("Effect-target file not found: ", file,
+         "  -- run save_effect_targets() once to create it, or use ",
+         "effect_spec <- list() for biomass-only fitting.")
+  d <- utils::read.csv(file, stringsAsFactors = FALSE)
+  need <- c("model", "scenario", "animal", "pool", "pct")
+  if (!all(need %in% names(d)))
+    stop("effect-target file needs columns: ", paste(need, collapse = ", "))
+  message("effect targets loaded from ", file, " (", nrow(d), " rows)")
+  d
+}
+
+# look up one effect target. Works with:
+#   spec = list()            -> NULL (no effect fitting)  <- the biomass-only case
+#   spec = <data.frame>      -> the matching row, or NULL if absent/blank
+# Returns list(pool=, pct=, param=) or NULL.
+get_effect_target <- function(spec, model, scenario, animal) {
+  if (is.null(spec) || !length(spec)) return(NULL)          # effect_spec <- list()
+  if (!is.data.frame(spec)) return(spec[[animal]])          # hand-written list, as before
+  sub <- spec[.norm_scen(spec$model)    == .norm_scen(model) &
+              .norm_scen(spec$scenario) == .norm_scen(scenario) &
+              .norm_scen(spec$animal)   == .norm_scen(animal), , drop = FALSE]
+  if (!nrow(sub)) return(NULL)
+  r <- sub[1, ]
+  if (is.na(r$pool) || !nzchar(as.character(r$pool)) || is.na(r$pct)) return(NULL)
+  list(pool  = as.character(r$pool),
+       pct   = as.numeric(r$pct),
+       param = if (!is.null(r$param) && !is.na(r$param) && nzchar(as.character(r$param)))
+                 as.character(r$param) else NULL)
 }

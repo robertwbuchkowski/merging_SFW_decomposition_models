@@ -15,21 +15,21 @@ models <- c("millennial")
 
 
 # ------------------------------------------------------------
-# EFFECT fitting. Effect targets now come from animal_fit_spec(), which
-# resolves a pool + target size PER model x scenario x animal from
-# effect_pool_overrides / animal_fit_defaults in R/fit_animals.R -- so you can
-# have a different effect pool for every model x scenario. Edit them there.
+# EFFECT fitting -- OPT-IN and EXPLICIT. Nothing happens in the background:
+# an effect is fit ONLY for animals that `effect_spec` gives a pool AND a
+# target size for. Pick ONE of:
 #
-#   fit_effects <- TRUE   also fit each animal's effect (pool + size) using
-#                         those per model x scenario defaults.
-#   fit_effects <- FALSE  biomass-only fitting (robust, always well-posed).
+#   effect_spec <- list()                    # biomass-only fitting (fast, robust)
+#   effect_spec <- load_effect_targets()     # ALSO fit effects, reading the saved
+#                                            #   sizes from config/effect_targets.csv
 #
-# `effect_spec` below still lets you FORCE an explicit pool/size for a given
-# animal, overriding the per-scenario default for every scenario (rarely
-# needed now; leave empty to use the per model x scenario table).
+# The CSV has one row per model x scenario x animal (model, scenario, animal,
+# pool, pct, param) -- edit it to change which pool and how big an effect to
+# fit. Blank/NA pool or pct = no effect fit for that animal. To (re)generate
+# the file from the built-in defaults, run once:  save_effect_targets()
 # ------------------------------------------------------------
-fit_effects <- F
 effect_spec <- list()
+# effect_spec <- load_effect_targets("Data/effect_targets.csv")
 
 animals_order <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")  # prey before predator
 tol_biomass   <- 0.02
@@ -63,13 +63,14 @@ for (model in models) {
     names(defaults) <- animals
 
     for (a in animals) {
-      # explicit effect_spec (if any) overrides the per model x scenario default;
-      # otherwise fit_animal_params() pulls pool + size from animal_fit_spec().
-      es  <- effect_spec[[a]]
+      # Effect target for THIS model x scenario x animal, straight from
+      # effect_spec. NULL (e.g. effect_spec <- list()) => biomass-only fit.
+      es  <- get_effect_target(effect_spec, model, scenario, a)
       fit <- tryCatch(
         fit_animal_params(pair$treatment, pair$baseline, animal = a, scenario = scenario,
-                          effect_pool = if (fit_effects) es$pool else NULL,
-                          target_effect_pct = if (fit_effects) es$pct else NULL,
+                          effect_pool       = es$pool,
+                          target_effect_pct = es$pct,
+                          effect_param      = es$param,
                           verbose = FALSE),
         error = function(e) { message("fit failed ", model, "/", scenario, "/", a,
                                       ": ", conditionMessage(e)); NULL })
@@ -138,86 +139,26 @@ print(wide, digits = 4)
 
 cat("\nSaved Results/animal_fit_summary_long.csv and Results/animal_fit_feeding_rate_by_model.csv\n")
 
-# ============================================================
-# PARAMETER-GRADIENT SCANS (manual-tuning aid)
-# ------------------------------------------------------------
-# For each model x scenario x animal, sweep the feeding rate over a grid that
-# BUFFERS around its default value (fit_param_grid) and record equilibrium
-# biomass + the effect on the per-model effect_pool (from animal_fit_defaults
-# via animal_fit_spec). Non-converged / unstable points are flagged, not fatal.
-# Saved to Results/animal_scan_long.csv so you can see biomass and effect along
-# the gradient and tune by hand where the automatic optimum lands in an
-# unstable region.
-# ============================================================
-do_scan      <- TRUE
-scan_buffer  <- 2       # grid spans default x 10^(-buffer) .. x 10^(+buffer)
-scan_n       <- 13      # points in the grid
-track_effect <- TRUE    # also record the effect on the per-model effect_pool
-
-if (do_scan) {
-  scan_rows <- list()
-  for (model in models) {
-    for (scenario in names(scen)) {
-
-      pair <- tryCatch(setup_scenario_pair(model, scen, scenario),
-                       error = function(e) NULL)
-      if (is.null(pair)) next
-      pair$baseline <- spinup_equilibrium(pair$baseline, verbose = FALSE)
-
-      animals <- animals_order[animals_order %in% pair$treatment$active]
-      for (a in animals) {
-        spec <- animal_fit_spec(a, model, scenario)   # per model x scenario effect_pool
-        bp   <- spec$biomass_param
-        if (is.na(bp)) next
-        # gradient buffered around the DEFAULT feeding rate
-        grid  <- fit_param_grid(pair$treatment$parms[[bp]], buffer = scan_buffer, n = scan_n)
-        epool <- if (track_effect && !is.na(spec$effect_pool)) spec$effect_pool else NULL
-
-        sc <- tryCatch(
-          scan_animal_param(pair$treatment, param = bp, values = grid, animal = a,
-                            baseline = pair$baseline, effect_pool = epool,
-                            verbose = FALSE),
-          error = function(e) { message("scan failed ", model, "/", scenario, "/", a,
-                                        ": ", conditionMessage(e)); NULL })
-        if (is.null(sc)) next
-
-        scan_rows[[length(scan_rows) + 1]] <- data.frame(
-          model = model, scenario = scenario, animal = a, param = bp,
-          effect_pool = if (is.null(epool)) NA_character_ else epool,
-          value = sc[[bp]], biomass = sc$biomass, effect_pct = sc$effect_pct,
-          converged = sc$converged, max_deriv = sc$max_deriv,
-          stringsAsFactors = FALSE)
-      }
-      cat("Scanned", scenario, "for", model, "\n")
-    }
-  }
-
-  if (length(scan_rows)) {
-    scan_long <- do.call(rbind, scan_rows)
-    write.csv(scan_long, "Results/animal_scan_long.csv", row.names = FALSE)
-    cat("\nSaved Results/animal_scan_long.csv (", nrow(scan_long), " rows ).\n", sep = "")
-  }
-}
-
 # ------------------------------------------------------------
 # Interactive single scan + plot (run by hand while tuning). scan_animal_param
 # returns an object plot_animal_scan() understands directly; the batch loop
 # above just flattens many such scans into one CSV.
 # ------------------------------------------------------------
 if (FALSE) {
-  model <- "millennial"; scenario <- "Earthworm"; a <- "Earthworm"
+  model <- "millennial"; scenario <- "RootHerbivore"; a <- "RootHerb"
   pair <- setup_scenario_pair(model, scen, scenario)
   pair$baseline <- spinup_equilibrium(pair$baseline, verbose = FALSE)
   spec <- animal_fit_spec(a, model, scenario)
-  grid <- fit_param_grid(pair$treatment$parms[[spec$biomass_param]], buffer = 3, n = 15)
-  grid <- seq(0.001, 0.01, length.out = 20)
+  grid <- fit_param_grid(pair$treatment$parms[[spec$biomass_param]], buffer = 2, n = 15)
   sc <- scan_animal_param(pair$treatment, param = spec$biomass_param, values = grid,
                           animal = a, baseline = pair$baseline,
                           effect_pool = spec$effect_pool)
   plot_animal_scan(sc, target_biomass = pair$treatment$working_state[a], log_x = TRUE)
   
   
-  grid <- fit_param_grid(pair$treatment$parms[[spec$effect_param]], buffer = 2, n = 15)
+  pair$treatment <- apply_fitted_params(pair$treatment, load_fitted_params("Results/fitted_animal_params.csv"), model, scenario)
+  
+  grid <- fit_param_grid(pair$treatment$parms[[spec$effect_param]], buffer = 2, n = 15, scale = "linear")
   sc <- scan_animal_param(pair$treatment, param = spec$effect_param, values = grid,
                           animal = a, baseline = pair$baseline,
                           effect_pool = spec$effect_pool)

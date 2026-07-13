@@ -57,7 +57,7 @@ for (model in models) {
     cat("\nAnimal effect on all state variables (treatment vs baseline):\n")
     print(compare_vectors(eq_t, pair$baseline$init_state_spin), digits = 4)
     
-    animal_eq_effect[[length(animal_eq_effect) + 1]] = cbind(compare_vectors(eq_t, pair$baseline$init_state_spin), model = model, scenario = scenario)
+    animal_eq_effect[[length(animal_eq_effect) + 1]] = cbind(compare_vectors(pair$baseline$init_state_spin,eq_t), model = model, scenario = scenario)
     
     if(do_spinup){
       # ------------------------------------------------------------
@@ -97,6 +97,73 @@ do.call("rbind",animal_eq_effect) %>% filter(!is.na(baseline)) %>%
   ggplot(aes(x = model, y = abs(difference), shape = scenario, color = scenario)) + geom_point() + facet_wrap(.~name, scales = "free") + scale_y_log10()
 
 
+name_lookup <- c(
+  C_leaf_herb = "Herbaceous Leaf C",
+  C_root_herb = "Herbaceous Root C",
+  C_leaf_tree = "Tree Leaf C",
+  C_wood_tree = "Tree Wood C",
+  C_root_tree = "Tree Root C",
+  Earthworm = "Earthworms",
+  Litter = "Litter",
+  CWD = "Coarse Woody Debris",
+  Organic = "Organic Matter",
+  DOM = "Dissolved Organic Matter",
+  MIC =   "Microbial Biomass (Organic horizon)",
+  P = "POC",
+  L = "LWMC",
+  A = "Aggregate C",
+  M = "MAOC",
+  B = "Microbial Biomass (Mineral Soil)",
+  Detritivore = "Detritivores",
+  RootHerb = "Root Herbivores"
+)
+
+plot_order <- c(
+  "Tree Leaf C",
+  "Tree Wood C",
+  "Tree Root C",
+  "Herbaceous Leaf C",
+  "Herbaceous Root C",
+  "Litter",
+  "Coarse Woody Debris",
+  "Dissolved Organic Matter",
+  "Organic Matter",
+  "Microbial Biomass (Organic horizon)",
+  "POC",
+  "LWMC",
+  "Aggregate C",
+  "MAOC",
+  "Microbial Biomass (Mineral Soil)",
+  "Earthworms",
+  "Detritivores",
+  "Root Herbivores"
+)
+
+keep_plot <- c(
+  "Tree Root C",
+  "Herbaceous Root C",
+  "Litter",
+  "Coarse Woody Debris",
+  "Dissolved Organic Matter",
+  "Organic Matter",
+  "Microbial Biomass (Organic horizon)",
+  "POC",
+  "LWMC",
+  "Aggregate C",
+  "MAOC",
+  "Microbial Biomass (Mineral Soil)"
+)
+
+
+png("Plots/total_effect.png", width = 4, height = 8, units = "in", res = 600)
 do.call("rbind",animal_eq_effect) %>% filter(!is.na(baseline)) %>%
-  ggplot(aes(x = model, y = percent_change, shape = scenario, color = scenario)) + 
-  geom_point() + facet_wrap(.~name, scales = "free")
+  mutate(pretty_name = name_lookup[name]) %>%
+  mutate(pretty_name = factor(pretty_name, levels = plot_order)) %>%
+  filter(pretty_name %in% keep_plot) %>%
+  ggplot(aes(x = pretty_name, y = percent_change)) + 
+  geom_col() + facet_wrap(.~scenario, ncol = 1, scales = "free_y") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) + ylab("Total Animal Effect (%)") + xlab("")
+dev.off()
+

@@ -5,9 +5,10 @@
 #   (B) DURING FOLLOW-UP: the ~100-yr seasonal trajectory after animals are
 #                         added, vs. the continued no-animal baseline.
 #
-# Also demonstrates the NO-INDIRECT-EFFECTS variant (all _pint parameters = 0,
-# so animals act only through direct feeding). Set indirect_effects <- FALSE
-# to reproduce every figure with indirect effects switched off.
+# Also demonstrates the NO-INDIRECT-EFFECTS variant: all animal-effect slopes
+# (the _pint params + k_exudate_slope, see indirect_effect_params in setup.R)
+# are set to 0, so animals act only through direct feeding. Set
+# indirect_effects <- FALSE to reproduce every figure with them switched off.
 #
 # Run from project root. (A) is self-contained (fast equilibria). (B) needs the
 # saved spin-ups + follow-up runs from Scripts/spinup_dynamic.R and
@@ -22,7 +23,7 @@ model  <- "millennial"
 scen   <- read_scenarios("Data/scenarios.xlsx")
 scen$MitePredator <- NULL
 
-indirect_effects <- TRUE          # FALSE => zero all _pint params (direct feeding only)
+indirect_effects <- TRUE          # FALSE => zero all animal-effect slopes (direct feeding only)
 use_fitted_params <- TRUE         # apply calibrated adj_*/effect params if available
 fig_dir <- "Results/figures"; dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 suffix  <- if (indirect_effects) "" else "_noindirect"
@@ -36,7 +37,7 @@ fitted_params <- if (use_fitted_params && file.exists("Results/fitted_animal_par
 eq_rows <- list()
 for (scenario in names(scen)) {
   pair <- setup_scenario_pair(model, scen, scenario)
-  if (!indirect_effects) pair <- zero_indirect_effects(pair)      # _pint = 0
+  if (!indirect_effects) pair <- zero_indirect_effects(pair)      # effect slopes = 0
   if (!is.null(fitted_params))
     pair$treatment <- apply_fitted_params(pair$treatment, fitted_params, model, scenario)
 
