@@ -28,7 +28,7 @@ models <- c("millennial")
 # animal, overriding the per-scenario default for every scenario (rarely
 # needed now; leave empty to use the per model x scenario table).
 # ------------------------------------------------------------
-fit_effects <- TRUE
+fit_effects <- F
 effect_spec <- list()
 
 animals_order <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")  # prey before predator
@@ -205,11 +205,11 @@ if (do_scan) {
 # above just flattens many such scans into one CSV.
 # ------------------------------------------------------------
 if (FALSE) {
-  model <- "millennial"; scenario <- "MitePredator"; a <- "DetPredator"
+  model <- "millennial"; scenario <- "Earthworm"; a <- "Earthworm"
   pair <- setup_scenario_pair(model, scen, scenario)
   pair$baseline <- spinup_equilibrium(pair$baseline, verbose = FALSE)
   spec <- animal_fit_spec(a, model, scenario)
-  grid <- fit_param_grid(pair$treatment$parms[[spec$biomass_param]], buffer = 2, n = 15)
+  grid <- fit_param_grid(pair$treatment$parms[[spec$biomass_param]], buffer = 3, n = 15)
   grid <- seq(0.001, 0.01, length.out = 20)
   sc <- scan_animal_param(pair$treatment, param = spec$biomass_param, values = grid,
                           animal = a, baseline = pair$baseline,
