@@ -10,7 +10,7 @@ compare_vectors <- function(treatment, baseline) {
   common <- intersect(names(treatment), names(baseline))
   
   # Calculations
-  diff <- baselinea - treatmenta
+  diff <- treatmenta - baselinea
   pct <- (diff / treatmenta) * 100
   
   # Set non-common to NA

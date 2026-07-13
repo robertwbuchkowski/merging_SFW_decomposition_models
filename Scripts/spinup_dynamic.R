@@ -54,10 +54,20 @@ for (model in models) {
                          names(eq_t))
     cat("\nEquilibrium animal biomass (", model, "/", scenario, "):\n", sep = "")
     print(round(eq_t[animals], 4))
-    cat("\nAnimal effect on all state variables (treatment vs baseline):\n")
-    print(compare_vectors(eq_t, pair$baseline$init_state_spin), digits = 4)
     
-    animal_eq_effect[[length(animal_eq_effect) + 1]] = cbind(compare_vectors(pair$baseline$init_state_spin,eq_t), model = model, scenario = scenario)
+    # ------------------------------------------------------------
+    # Calculate the animal direct effect
+    # ------------------------------------------------------------
+    
+    pair2 = pair
+    pair2 = zero_indirect_effects(pair2)
+    eq_direct <- spinup_equilibrium(pair2$treatment,
+                                    warm_start = pair2$baseline$init_state_spin)$init_state_spin
+    
+    animal_eq_effect[[length(animal_eq_effect) + 1]] = rbind(
+      cbind(compare_vectors(eq_t,pair$baseline$init_state_spin), model = model, scenario = scenario, type = "total"),
+      cbind(compare_vectors(eq_direct, pair$baseline$init_state_spin), model = model, scenario = scenario, type = "direct"))
+    rm(pair2, eq_direct)
     
     if(do_spinup){
       # ------------------------------------------------------------
@@ -160,10 +170,10 @@ do.call("rbind",animal_eq_effect) %>% filter(!is.na(baseline)) %>%
   mutate(pretty_name = name_lookup[name]) %>%
   mutate(pretty_name = factor(pretty_name, levels = plot_order)) %>%
   filter(pretty_name %in% keep_plot) %>%
-  ggplot(aes(x = pretty_name, y = percent_change)) + 
-  geom_col() + facet_wrap(.~scenario, ncol = 1, scales = "free_y") +
+  ggplot(aes(x = pretty_name, y = percent_change, fill = type)) +
+  geom_col(position = "dodge") + facet_wrap(.~scenario, ncol = 1, scales = "free_y") +
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1)
-  ) + ylab("Total Animal Effect (%)") + xlab("")
+  ) + ylab("Animal Effect (%)") + xlab("") + scale_fill_manual(values = c("blue","black"))
 dev.off()
 
