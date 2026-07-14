@@ -5,7 +5,7 @@
 # ---- Fragmentation (donor-controlled) ----
 k_frag_litter: 0.0021918     # 0.8/365
 k_frag_CWD: 0.00013699      # 0.05/365
-k_frag_organic: 0.0021918 # Higher for tropics #0.00021918  # 0.08/365
+k_frag_organic: 0.0002191781 # Higher for tropics #0.00021918  # 0.08/365
 
 # ---- Organic horizon microbial kinetics ----
 K_ol: 10
