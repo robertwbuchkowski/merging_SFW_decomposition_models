@@ -41,7 +41,11 @@ do.call("rbind", baseline_eq) %>% filter(!is.na(treatment)) %>%
   tibble() %>%
   mutate(pretty_name = name_lookup[name]) %>%
   mutate(pretty_name = factor(pretty_name, levels = plot_order)) %>%
-  ggplot(aes(x = scenario, y = treatment, fill = pretty_name)) + geom_col()
+  ggplot(aes(x = scenario, y = treatment/1000, fill = pretty_name)) + geom_col() + ylab("Stock (kg C m^-2)")
+ggsave("Plots/baseline_stocks.png",width = 6, height = 5, dpi = 150)
+
+do.call("rbind", baseline_eq) %>% filter(!is.na(treatment)) %>%
+  write_csv("Results/baseline_stocks_gCm2.csv")
 
 do.call("rbind", baseline_eq) %>% filter(!is.na(treatment)) %>%
   tibble() %>%
