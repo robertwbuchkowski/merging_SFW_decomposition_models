@@ -155,12 +155,19 @@ if (FALSE) {
                           effect_pool = spec$effect_pool)
   plot_animal_scan(sc, target_biomass = pair$treatment$working_state[a], log_x = TRUE)
   
-  
+  # Add in the fitted parameter:
   pair$treatment <- apply_fitted_params(pair$treatment, load_fitted_params("Results/fitted_animal_params.csv"), model, scenario)
   
   grid <- fit_param_grid(pair$treatment$parms[[spec$effect_param]], buffer = 2, n = 15, scale = "linear")
+  
+  grid <- seq(0, 1.3e-05, length = 10)
   sc <- scan_animal_param(pair$treatment, param = spec$effect_param, values = grid,
                           animal = a, baseline = pair$baseline,
                           effect_pool = spec$effect_pool)
+  plot_animal_scan(sc, target_biomass = pair$treatment$working_state[a], log_x = TRUE)
+  
+  sc <- scan_animal_param(pair$treatment, param = spec$effect_param, values = grid,
+                          animal = a, baseline = pair$baseline,
+                          effect_pool = "C_root_herb")
   plot_animal_scan(sc, target_biomass = pair$treatment$working_state[a], log_x = TRUE)
 }

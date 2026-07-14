@@ -150,7 +150,6 @@ plot_order <- c(
 )
 
 keep_plot <- c(
-  "Tree Root C",
   "Herbaceous Root C",
   "Litter",
   "Coarse Woody Debris",
