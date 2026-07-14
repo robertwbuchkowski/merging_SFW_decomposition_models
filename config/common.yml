@@ -32,12 +32,12 @@ NPP_tree: 1270           # Annual tree NPP (g C m-2 yr-1)
 theta_opt: 0.3           # Moisture optimum for the growing-season activity
 
 # ---- Biomass allocation (must sum to 1) ----
-a_leaf_tree: 0.075
-a_wood_tree: 0.675
+a_leaf_tree: 0.5
+a_wood_tree: 0.25
 a_root_tree: 0.25
 
 # Herbaceous root fraction
-a_root_herb: 0.5
+a_root_herb: 0.25
 
 # ---- Turnover and flux rates ----
 k_litterfall_ann: 0.35

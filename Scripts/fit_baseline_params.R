@@ -47,7 +47,7 @@ do.call("rbind", baseline_eq) %>% filter(!is.na(treatment)) %>%
   tibble() %>%
   mutate(pretty_name = name_lookup[name]) %>%
   mutate(pretty_name = factor(pretty_name, levels = plot_order)) %>%
-  ggplot(aes(x = scenario, y = percent_change, fill = pretty_name)) + geom_col(position = "dodge") + geom_hline(yintercept = c(-100,100), linetype = 2)
+  ggplot(aes(x = scenario, y = percent_change, fill = pretty_name)) + geom_col(position = "dodge") + geom_hline(yintercept = c(-100,100), linetype = 2) + facet_wrap(.~scenario, scales = "free")
 
 # ------------------------------------------------------------
 # WHICH PARAMETERS ARE "NOT ASSOCIATED WITH THE ANIMALS"
@@ -122,12 +122,43 @@ scan_baseline_param <- function(obj, param, values, warm = TRUE, verbose = TRUE)
 }
 
 # --- parameters to sweep (edit freely; must be in `fittable_params`) ---
-sweep_params <- c("NPP_tree", "k_frag_litter", "k_mort_wood_tree")
+sweep_params <- c(
+  "k_litterfall_ann",
+  "k_litterfall_herb_ann",
+  "k_mort_leaf_tree",
+  "k_mort_leaf_herb",
+  "k_mort_wood_tree",
+  "k_mort_root_tree",
+  "k_mort_root_herb",
+  "k_exudate_tree",
+  "k_exudate_herb",
+  "k_root_dormancy",
+  "root_to_organic",
+  "winter_root_act_prop",
+  "root_dormancy_temp",
+  "k_exudate_intercept",
+  "k_frag_litter",
+  "k_frag_CWD",
+  "k_frag_organic"
+)
+
+
+sweep_params <- c(
+  "k_litterfall_ann",
+  "k_mort_leaf_tree",
+  "k_mort_wood_tree",
+  "k_mort_root_tree",
+  "k_exudate_tree"
+)
 sweep_params <- intersect(sweep_params, fittable_params)
 
 n_points <- 9        # values per parameter
 buffer   <- 0.3      # +/- 30% of the default (linear); log grid if you prefer
 
+scenario <- "Earthworm" 
+base <- setup_scenario(model, scen, scenario, animals = FALSE)
+base <- spinup_equilibrium(base, verbose = FALSE)
+eq0  <- base$init_state_spin    
 scan_all <- list()
 for (p in sweep_params) {
   d0   <- base$parms[[p]]
@@ -139,7 +170,6 @@ for (p in sweep_params) {
   scan_all[[p]] <- s
 }
 scan <- bind_rows(scan_all)
-write_csv(scan, file.path(res_dir, "baseline_param_scan.csv"))
 
 # ------------------------------------------------------------
 # PLOT - all state variables over all swept parameters, in one clean figure.
@@ -171,9 +201,6 @@ p_all <- ggplot(plot_df, aes(rel_param, rel_state, colour = param)) +
        colour = "Parameter") +
   theme_minimal(base_size = 11) +
   theme(legend.position = "bottom", panel.grid.minor = element_blank())
-
-ggsave(file.path(fig_dir, "baseline_param_scan.png"), p_all,
-       width = 12, height = 8, dpi = 150)
 print(p_all)
 
 # Absolute-units version, one page per parameter (uncomment to also write these)
@@ -187,65 +214,3 @@ print(p_all)
 #   ggsave(file.path(fig_dir, paste0("baseline_scan_", p, ".png")), pp,
 #          width = 11, height = 7, dpi = 150)
 # }
-
-# ------------------------------------------------------------
-# PART 2 - FIT one non-animal parameter to a target.
-#   target_pool  a state variable name, or "SOC" for the summed soil pools
-#   target_value the equilibrium value you want it to take
-# Root-finds on the equilibrium; returns the fitted value and the achieved target.
-# ------------------------------------------------------------
-soil_pools <- setdiff(names(eq0),
-                      c("C_leaf_herb","C_root_herb","C_leaf_tree","C_wood_tree","C_root_tree"))
-
-fit_baseline_param <- function(obj, param, target_pool, target_value,
-                               buffer = 1, scale = c("log", "linear"), verbose = TRUE) {
-  scale <- match.arg(scale)
-  if (!param %in% fittable_params)
-    stop("'", param, "' is not a non-animal fittable parameter.")
-  x0 <- obj$parms[[param]]
-  ws <- obj$init_state_spin
-
-  value_of <- function(eq) if (identical(target_pool, "SOC"))
-    sum(eq[soil_pools], na.rm = TRUE) else unname(eq[target_pool])
-
-  f <- function(v) {
-    o <- tryCatch(spinup_equilibrium(set_param(obj, param, v),
-                                     warm_start = ws, verbose = FALSE),
-                  error = function(e) NULL)
-    if (is.null(o) || !isTRUE(o$spin_info$converged)) return(NA_real_)
-    value_of(o$init_state_spin) - target_value
-  }
-
-  step <- if (scale == "log") abs(x0) * 0.25 else max(abs(x0) * 0.25, 1e-8)
-  br   <- .bracket_root(f, x0, step)
-  if (is.null(br))
-    stop("Could not bracket a root for ", param, " -> ", target_pool, " = ", target_value,
-         ". Widen the range, or check the target is achievable (see the scan).")
-
-  r   <- uniroot(f, interval = br, tol = 1e-8)
-  fit <- spinup_equilibrium(set_param(obj, param, r$root), warm_start = ws, verbose = FALSE)
-  ach <- value_of(fit$init_state_spin)
-  if (verbose)
-    cat(sprintf("fit %s: %.6g -> %.6g   (%s: target %.4g, achieved %.4g)\n",
-                param, x0, r$root, target_pool, target_value, ach))
-  list(param = param, default = x0, fitted = r$root,
-       target_pool = target_pool, target = target_value, achieved = ach,
-       obj = fit)
-}
-
-# --- example: tune litter fragmentation so total SOC hits a measured value ---
-# (target here = 10% above the default SOC, just as a runnable demonstration)
-soc0 <- sum(eq0[soil_pools])
-cat("\ndefault baseline SOC =", signif(soc0, 5), "\n")
-
-fit1 <- fit_baseline_param(base, "k_frag_litter", "SOC", soc0 * 1.10)
-
-fit_tbl <- tibble(param = fit1$param, default = fit1$default, fitted = fit1$fitted,
-                  target_pool = fit1$target_pool, target = fit1$target,
-                  achieved = fit1$achieved)
-write_csv(fit_tbl, file.path(res_dir, "baseline_param_fit.csv"))
-print(fit_tbl)
-
-cat("\nWrote:\n  ", file.path(res_dir, "baseline_param_scan.csv"),
-    "\n  ", file.path(res_dir, "baseline_param_fit.csv"),
-    "\n  ", file.path(fig_dir, "baseline_param_scan.png"), "\n")
