@@ -77,7 +77,7 @@ print(pA)
 # Uses saved runs from followup_analysis.R if present; otherwise computes them
 # here from the saved spin-ups (Scripts/spinup_dynamic.R).
 # ============================================================
-followup_one <- function(scenario, n_years = 100, by = 30) {
+followup_one <- function(scenario, n_years = 100, by = 5) {
   add_file  <- sprintf("Data/followup/%s_%s_add.rds", model, scenario)
   ctrl_file <- sprintf("Data/followup/%s_%s_continue_baseline.rds", model, scenario)
   if (file.exists(add_file) && file.exists(ctrl_file))

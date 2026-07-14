@@ -100,18 +100,46 @@ save_trajectory_png <- function(out, file, ncol = 4, panel_px = 320, res = 110) 
 # excluded from the convergence decision (so a near-zero pool can't dominate).
 # Returns a table sorted by relative drift.
 # ------------------------------------------------------------
-check_stability <- function(out, period = 365, abs_floor = 1e-3) {
+# ------------------------------------------------------------
+# check_by(): the output step MUST divide the year, or the seasonal cycle is
+# sampled at a drifting phase and the annual-mean stability test never settles.
+# 365 = 5 x 73, so the only clean steps are 1, 5, 73 and 365. (check_stability()
+# now interpolates to a daily grid, so a bad `by` no longer breaks the test --
+# but it still costs seasonal resolution, hence the warning.)
+# ------------------------------------------------------------
+valid_by <- c(1, 5, 73, 365)
+check_by <- function(by) {
+  if (!isTRUE(365 %% by == 0))
+    warning("by = ", by, " does not divide 365 (365 = 5 x 73). The seasonal cycle ",
+            "will be sampled at a drifting phase and sharp pools (e.g. C_leaf_herb, ",
+            "whose litterfall pulse is ~30 d wide) will be poorly resolved. ",
+            "Use one of: ", paste(valid_by, collapse = ", "), ".", call. = FALSE)
+  invisible(by)
+}
+
+check_stability <- function(out, period = 365, abs_floor = 1e-3, dt = 1) {
   df   <- as.data.frame(out)
   tt   <- df[[1]]
   cols <- setdiff(names(df), c("time", "mass_balance_check"))
   tmax <- max(tt)
 
-  # time-weighted (trapezoidal) mean of a column over [t0, t1]
+  # ------------------------------------------------------------
+  # GRID-INDEPENDENT annual means. The raw output grid (seq(0, 365*n_years,
+  # by = by)) only lines up with the year when `by` divides 365 (i.e. by is
+  # 1, 5, 73 or 365). With, say, by = 30 (365/30 = 12.167) consecutive 365-day
+  # windows sample DIFFERENT phases of the seasonal cycle, so the annual mean
+  # wobbles forever and a perfectly converged limit cycle is reported as
+  # drifting -- worst for pools with a big, sharp seasonal swing (C_leaf_herb).
+  # Fix: interpolate every pool onto a uniform `dt`-day grid FIRST, then take
+  # the trapezoidal means. The metric is then correct for any `by`.
+  # ------------------------------------------------------------
   mean_over <- function(col, t0, t1) {
-    idx <- which(tt >= t0 - 1e-9 & tt <= t1 + 1e-9)
-    if (length(idx) < 2) return(NA_real_)
-    x <- tt[idx]; y <- df[[col]][idx]
-    sum(diff(x) * (utils::head(y, -1) + utils::tail(y, -1)) / 2) / (max(x) - min(x))
+    t0 <- max(t0, min(tt))
+    if (t1 - t0 <= 0 || sum(tt >= t0 - 1e-9 & tt <= t1 + 1e-9) < 2) return(NA_real_)
+    g <- seq(t0, t1, by = dt)                       # uniform, year-aligned grid
+    y <- stats::approx(tt, df[[col]], xout = g, rule = 2)$y
+    if (length(g) < 2 || anyNA(y)) return(NA_real_)
+    sum(diff(g) * (utils::head(y, -1) + utils::tail(y, -1)) / 2) / (max(g) - min(g))
   }
 
   if (tmax - min(tt) < 2 * period) {            # fallback: not two full periods yet
@@ -137,12 +165,13 @@ check_stability <- function(out, period = 365, abs_floor = 1e-3) {
 #   abs_floor  pools with mean below this (g C m-2) are ignored in the test
 # ------------------------------------------------------------
 spinup_until_stable <- function(init_state, parms, model_fn,
-                                n_years = 100, by = 30,
+                                n_years = 100, by = 5,
                                 max_iter = 10, tol = 1e-3, abs_floor = 1e-3,
                                 verbose = TRUE, plot_spinup = TRUE,
                                 plot_dir = "Data/spinup") {
   if (missing(model_fn) || is.null(model_fn))
     stop("spinup_until_stable(): supply model_fn (e.g. obj$wrapped_model).")
+  check_by(by)
   state <- init_state
   parms$climate_forcing <- make_climate_forcing(parms)
 

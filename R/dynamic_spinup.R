@@ -21,7 +21,7 @@
 #   n_years  length per attempt; lengthened automatically if still drifting
 # Returns list(out, final_state, converged, iterations).
 # ------------------------------------------------------------
-dynamic_spinup <- function(obj, from = NULL, n_years = 600, by = 30,
+dynamic_spinup <- function(obj, from = NULL, n_years = 600, by = 5,
                            max_iter = 6, tol = 1e-3, abs_floor = 1e-3, verbose = TRUE) {
   start <- if (!is.null(from)) from
            else if (!is.null(obj$init_state_spin)) obj$init_state_spin
@@ -55,8 +55,9 @@ load_spinup <- function(file) readRDS(file)
 # run_followup(): shorter SEASONAL simulation from a given starting state,
 # using a target setup object's model/parms/wrapper. Returns the deSolve out.
 # ------------------------------------------------------------
-run_followup <- function(start_state, target, n_years = 100, by = 30,
+run_followup <- function(start_state, target, n_years = 100, by = 5,
                          verbose = TRUE) {
+  check_by(by)
   parms <- target$parms
   parms$climate_forcing <- make_climate_forcing(parms)
   y0    <- start_state[names(target$working_state)]
@@ -77,7 +78,7 @@ run_followup <- function(start_state, target, n_years = 100, by = 30,
 # values from the treatment setup).
 # ------------------------------------------------------------
 followup_add_animals <- function(baseline_saved, treatment_setup,
-                                 seed = NULL, seed_mod = 0.01, n_years = 100, by = 30, verbose = TRUE) {
+                                 seed = NULL, seed_mod = 0.01, n_years = 100, by = 5, verbose = TRUE) {
   ws     <- treatment_setup$working_state
   shared <- intersect(names(ws), names(baseline_saved$state))
   ws[shared] <- baseline_saved$state[shared]               # carry over spun-up pools
@@ -97,7 +98,7 @@ followup_add_animals <- function(baseline_saved, treatment_setup,
 # the animal pools are simply dropped (instantaneous removal).
 # ------------------------------------------------------------
 followup_remove_animals <- function(treatment_saved, baseline_setup,
-                                     n_years = 100, by = 30, verbose = TRUE) {
+                                     n_years = 100, by = 5, verbose = TRUE) {
   ws     <- baseline_setup$working_state          # no animal pools here
   shared <- intersect(names(ws), names(treatment_saved$state))
   ws[shared] <- treatment_saved$state[shared]
@@ -114,7 +115,7 @@ followup_remove_animals <- function(treatment_saved, baseline_setup,
 # to plot against the add-animals result (see plot_followup_comparison()).
 # ------------------------------------------------------------
 followup_continue_baseline <- function(baseline_saved, baseline_setup,
-                                       n_years = 100, by = 30, verbose = TRUE) {
+                                       n_years = 100, by = 5, verbose = TRUE) {
   ws     <- baseline_setup$working_state
   shared <- intersect(names(ws), names(baseline_saved$state))
   ws[shared] <- baseline_saved$state[shared]
@@ -144,4 +145,93 @@ load_followup <- function(model, scenario, kind, dir = "Data/followup") {
   file <- file.path(dir, sprintf("%s_%s_%s.rds", model, scenario, kind))
   if (!file.exists(file)) stop("Follow-up file not found: ", file)
   readRDS(file)
+}
+
+# ============================================================
+# PARALLEL SCENARIO SPIN-UP
+# ------------------------------------------------------------
+# Scenarios are independent, so they can be spun up on separate cores. Needs
+# R/parallel_utils.R (par_lapply). Typical speed-up is close to linear in the
+# number of scenarios, since each one is a long single-threaded ODE solve.
+# ============================================================
+
+# ------------------------------------------------------------
+# spinup_one_scenario(): the unit of parallel work -- ONE scenario, start to
+# finish. SELF-CONTAINED on purpose: everything it needs arrives as an argument
+# (Windows PSOCK workers are fresh R sessions and see no global variables).
+# Runs the baseline equilibrium, applies saved fitted params, optionally does
+# the seasonal dynamic spin-ups, saves the .rds files, and returns a summary.
+# Each scenario writes its OWN files, so there is no write conflict.
+# ------------------------------------------------------------
+spinup_one_scenario <- function(scenario, model, scen,
+                                fitted_params = NULL,
+                                do_spinup     = TRUE,
+                                do_treatment  = TRUE,
+                                n_years = 600, by = 1, tol = 1e-4,
+                                dir = "Data/spinup",
+                                eq_effect = TRUE) {
+
+  pair <- setup_scenario_pair(model, scen, scenario)
+
+  # baseline equilibrium (the reference for every effect below)
+  pair$baseline <- spinup_equilibrium(pair$baseline, verbose = FALSE)
+
+  if (!is.null(fitted_params))
+    pair$treatment <- apply_fitted_params(pair$treatment, fitted_params,
+                                          model, scenario, verbose = FALSE)
+
+  pair$treatment <- spinup_equilibrium(pair$treatment,
+                                       warm_start = pair$baseline$init_state_spin,
+                                       verbose = FALSE)
+  eq_t <- pair$treatment$init_state_spin
+  eq_b <- pair$baseline$init_state_spin
+
+  # total vs direct-only animal effect at equilibrium
+  eff <- NULL
+  if (eq_effect) {
+    p2  <- zero_indirect_effects(pair, verbose = FALSE)
+    eqd <- spinup_equilibrium(p2$treatment, warm_start = eq_b,
+                              verbose = FALSE)$init_state_spin
+    eff <- rbind(
+      cbind(compare_vectors(eq_t, eq_b), model = model, scenario = scenario, type = "total"),
+      cbind(compare_vectors(eqd,  eq_b), model = model, scenario = scenario, type = "direct"))
+  }
+
+  # long seasonal dynamic spin-ups -> saved limit-cycle states
+  conv <- c(baseline = NA, treatment = NA)
+  if (do_spinup) {
+    dyn_b <- dynamic_spinup(pair$baseline, n_years = n_years, by = by,
+                            tol = tol, verbose = FALSE)
+    conv["baseline"] <- isTRUE(dyn_b$converged)
+    save_spinup(pair$baseline, dyn_b$final_state, scenario, "baseline", dir = dir)
+
+    if (do_treatment) {
+      dyn_t <- dynamic_spinup(pair$treatment, n_years = n_years, by = by,
+                              tol = tol, verbose = FALSE)
+      conv["treatment"] <- isTRUE(dyn_t$converged)
+      save_spinup(pair$treatment, dyn_t$final_state, scenario, "treatment", dir = dir)
+    }
+  }
+
+  list(model = model, scenario = scenario, converged = conv,
+       eq_treatment = eq_t, eq_baseline = eq_b, eq_effect = eff)
+}
+
+# ------------------------------------------------------------
+# spinup_scenarios_parallel(): run spinup_one_scenario() for every scenario, on
+# `ncores` cores. Returns the list of per-scenario results (failures reported,
+# not fatal). Set ncores = 1 to fall back to a plain sequential run.
+# ------------------------------------------------------------
+spinup_scenarios_parallel <- function(model, scen,
+                                      scenarios = names(scen),
+                                      ncores = NULL, ...) {
+  t0 <- Sys.time()
+  res <- par_lapply(scenarios, spinup_one_scenario,
+                    model = model, scen = scen, ...,
+                    ncores = ncores)
+  names(res) <- scenarios
+  el <- round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 2)
+  message("parallel spin-up finished in ", el, " min for ",
+          length(scenarios), " scenario(s).")
+  res
 }
