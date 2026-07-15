@@ -126,8 +126,8 @@ check_stability <- function(out, period = 365, abs_floor = 1e-3, dt = 1, use_old
   if(!use_old){
     abs_drift <- (df[tmax-period,] - df[(tmax-2*period),])[cols]
     rel_drift <- (df[tmax-period,] - df[(tmax-2*period),])[cols] / pmax(df[tmax-period,][cols], abs_floor)
-    res <- data.frame(pool = cols, abs_drift = as.numeric(abs_drift), rel_drift = as.numeric(rel_drift),
-                      above_floor = abs(as.numeric(abs_drift)) >= abs_floor)
+    res <- data.frame(pool = cols, abs_drift = abs(as.numeric(abs_drift)), rel_drift = abs(as.numeric(rel_drift)),
+                      above_floor = T)
   }else{
     # ------------------------------------------------------------
     # GRID-INDEPENDENT annual means. The raw output grid (seq(0, 365*n_years,
