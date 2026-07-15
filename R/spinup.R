@@ -117,44 +117,52 @@ check_by <- function(by) {
   invisible(by)
 }
 
-check_stability <- function(out, period = 365, abs_floor = 1e-3, dt = 1) {
+check_stability <- function(out, period = 365, abs_floor = 1e-3, dt = 1, use_old = FALSE) {
   df   <- as.data.frame(out)
   tt   <- df[[1]]
   cols <- setdiff(names(df), c("time", "mass_balance_check"))
   tmax <- max(tt)
 
-  # ------------------------------------------------------------
-  # GRID-INDEPENDENT annual means. The raw output grid (seq(0, 365*n_years,
-  # by = by)) only lines up with the year when `by` divides 365 (i.e. by is
-  # 1, 5, 73 or 365). With, say, by = 30 (365/30 = 12.167) consecutive 365-day
-  # windows sample DIFFERENT phases of the seasonal cycle, so the annual mean
-  # wobbles forever and a perfectly converged limit cycle is reported as
-  # drifting -- worst for pools with a big, sharp seasonal swing (C_leaf_herb).
-  # Fix: interpolate every pool onto a uniform `dt`-day grid FIRST, then take
-  # the trapezoidal means. The metric is then correct for any `by`.
-  # ------------------------------------------------------------
-  mean_over <- function(col, t0, t1) {
-    t0 <- max(t0, min(tt))
-    if (t1 - t0 <= 0 || sum(tt >= t0 - 1e-9 & tt <= t1 + 1e-9) < 2) return(NA_real_)
-    g <- seq(t0, t1, by = dt)                       # uniform, year-aligned grid
-    y <- stats::approx(tt, df[[col]], xout = g, rule = 2)$y
-    if (length(g) < 2 || anyNA(y)) return(NA_real_)
-    sum(diff(g) * (utils::head(y, -1) + utils::tail(y, -1)) / 2) / (max(g) - min(g))
+  if(!use_old){
+    abs_drift <- (df[tmax-period,] - df[(tmax-2*period),])[cols]
+    rel_drift <- (df[tmax-period,] - df[(tmax-2*period),])[cols] / pmax(df[tmax-period,][cols], abs_floor)
+    res <- data.frame(pool = cols, abs_drift = as.numeric(abs_drift), rel_drift = as.numeric(rel_drift),
+                      above_floor = abs(as.numeric(abs_drift)) >= abs_floor)
+  }else{
+    # ------------------------------------------------------------
+    # GRID-INDEPENDENT annual means. The raw output grid (seq(0, 365*n_years,
+    # by = by)) only lines up with the year when `by` divides 365 (i.e. by is
+    # 1, 5, 73 or 365). With, say, by = 30 (365/30 = 12.167) consecutive 365-day
+    # windows sample DIFFERENT phases of the seasonal cycle, so the annual mean
+    # wobbles forever and a perfectly converged limit cycle is reported as
+    # drifting -- worst for pools with a big, sharp seasonal swing (C_leaf_herb).
+    # Fix: interpolate every pool onto a uniform `dt`-day grid FIRST, then take
+    # the trapezoidal means. The metric is then correct for any `by`.
+    # ------------------------------------------------------------
+    mean_over <- function(col, t0, t1) {
+      t0 <- max(t0, min(tt))
+      if (t1 - t0 <= 0 || sum(tt >= t0 - 1e-9 & tt <= t1 + 1e-9) < 2) return(NA_real_)
+      g <- seq(t0, t1, by = dt)                       # uniform, year-aligned grid
+      y <- stats::approx(tt, df[[col]], xout = g, rule = 2)$y
+      if (length(g) < 2 || anyNA(y)) return(NA_real_)
+      sum(diff(g) * (utils::head(y, -1) + utils::tail(y, -1)) / 2) / (max(g) - min(g))
+    }
+    
+    if (tmax - min(tt) < 2 * period) {            # fallback: not two full periods yet
+      i2 <- which.min(abs(tt - tmax)); i1 <- which.min(abs(tt - (tmax - period)))
+      m_last <- as.numeric(df[i2, cols]); m_prev <- as.numeric(df[i1, cols])
+    } else {
+      m_last <- vapply(cols, mean_over, numeric(1), t0 = tmax - period,     t1 = tmax)
+      m_prev <- vapply(cols, mean_over, numeric(1), t0 = tmax - 2 * period, t1 = tmax - period)
+    }
+    
+    abs_drift <- abs(m_last - m_prev)
+    rel_drift <- abs_drift / pmax(abs(m_prev), abs_floor)
+    res <- data.frame(pool = cols, mean_prev = m_prev, mean_last = m_last,
+                      abs_drift = abs_drift, rel_drift = rel_drift,
+                      above_floor = abs(m_prev) >= abs_floor)
   }
 
-  if (tmax - min(tt) < 2 * period) {            # fallback: not two full periods yet
-    i2 <- which.min(abs(tt - tmax)); i1 <- which.min(abs(tt - (tmax - period)))
-    m_last <- as.numeric(df[i2, cols]); m_prev <- as.numeric(df[i1, cols])
-  } else {
-    m_last <- vapply(cols, mean_over, numeric(1), t0 = tmax - period,     t1 = tmax)
-    m_prev <- vapply(cols, mean_over, numeric(1), t0 = tmax - 2 * period, t1 = tmax - period)
-  }
-
-  abs_drift <- abs(m_last - m_prev)
-  rel_drift <- abs_drift / pmax(abs(m_prev), abs_floor)
-  res <- data.frame(pool = cols, mean_prev = m_prev, mean_last = m_last,
-                    abs_drift = abs_drift, rel_drift = rel_drift,
-                    above_floor = abs(m_prev) >= abs_floor)
   res[order(-res$rel_drift), ]
 }
 
