@@ -13,7 +13,7 @@ scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("millennial")
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)?
 do_treatment      <- F       # also spin up the treatment arm now?
-do_spinup         <- F
+do_spinup         <- T
 
 scen$MitePredator = NULL
 
@@ -74,7 +74,7 @@ for (model in models) {
       # (part 2) BASELINE FIRST: equilibrium -> seasonal dynamic spin-up -> save
       # ------------------------------------------------------------
       cat("\n--- Baseline dynamic spin-up ---\n")
-      dyn_b <- dynamic_spinup(pair$baseline, n_years = 600, by = 1, tol = 1e-4)
+      dyn_b <- dynamic_spinup(pair$baseline, n_years = 300, by = 1, tol = 1e-4)
       cat("baseline converged:", dyn_b$converged, "\n")
       save_spinup(pair$baseline, dyn_b$final_state, scenario, "baseline")
       
