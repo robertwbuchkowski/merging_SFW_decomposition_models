@@ -14,6 +14,8 @@ models <- c("millennial")
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)?
 do_treatment      <- F       # also spin up the treatment arm now?
 do_spinup         <- T
+use_newton        <- TRUE    # TRUE = Newton shooting for the limit cycle (fast,
+                             #        exact); FALSE = forward-integration spin-up
 
 scen$MitePredator = NULL
 
@@ -74,7 +76,8 @@ for (model in models) {
       # (part 2) BASELINE FIRST: equilibrium -> seasonal dynamic spin-up -> save
       # ------------------------------------------------------------
       cat("\n--- Baseline dynamic spin-up ---\n")
-      dyn_b <- dynamic_spinup(pair$baseline, n_years = 300, by = 1, tol = 1e-4)
+      dyn_b <- if (use_newton) dynamic_spinup_newton(pair$baseline)
+              else dynamic_spinup(pair$baseline, n_years = 600, by = 1, tol = 1e-4)
       cat("baseline converged:", dyn_b$converged, "\n")
       save_spinup(pair$baseline, dyn_b$final_state, scenario, "baseline")
       
@@ -86,7 +89,8 @@ for (model in models) {
         if (is.null(pair$treatment$init_state_spin))
           pair$treatment <- spinup_equilibrium(pair$treatment,
                                                warm_start = pair$baseline$init_state_spin)
-        dyn_t <- dynamic_spinup(pair$treatment, n_years = 600, by = 1, tol = 1e-4)
+        dyn_t <- if (use_newton) dynamic_spinup_newton(pair$treatment)
+                else dynamic_spinup(pair$treatment, n_years = 600, by = 1, tol = 1e-4)
         cat("treatment converged:", dyn_t$converged, "\n")
         save_spinup(pair$treatment, dyn_t$final_state, scenario, "treatment")
       }
@@ -108,7 +112,10 @@ do.call("rbind",animal_eq_effect) %>% filter(!is.na(baseline)) %>%
 
 
 name_lookup <- c(
+  C_leaf_herb = "Herbaceous Leaf C",
   C_root_herb = "Herbaceous Root C",
+  C_leaf_tree = "Tree Leaf C",
+  C_wood_tree = "Tree Wood C",
   C_root_tree = "Tree Root C",
   Earthworm = "Earthworms",
   Litter = "Litter",
@@ -126,7 +133,10 @@ name_lookup <- c(
 )
 
 plot_order <- c(
+  "Tree Leaf C",
+  "Tree Wood C",
   "Tree Root C",
+  "Herbaceous Leaf C",
   "Herbaceous Root C",
   "Litter",
   "Coarse Woody Debris",
@@ -143,11 +153,26 @@ plot_order <- c(
   "Root Herbivores"
 )
 
+keep_plot <- c(
+  "Herbaceous Root C",
+  "Litter",
+  "Coarse Woody Debris",
+  "Dissolved Organic Matter",
+  "Organic Matter",
+  "Microbial Biomass (Organic horizon)",
+  "POC",
+  "LWMC",
+  "Aggregate C",
+  "MAOC",
+  "Microbial Biomass (Mineral Soil)"
+)
+
 
 png("Plots/total_effect.png", width = 4, height = 8, units = "in", res = 600)
 do.call("rbind",animal_eq_effect) %>% filter(!is.na(baseline)) %>%
   mutate(pretty_name = name_lookup[name]) %>%
   mutate(pretty_name = factor(pretty_name, levels = plot_order)) %>%
+  filter(pretty_name %in% keep_plot) %>%
   ggplot(aes(x = pretty_name, y = percent_change, fill = type)) +
   geom_col(position = "dodge") + facet_wrap(.~scenario, ncol = 1, scales = "free_y") +
   theme(

@@ -1,78 +1,73 @@
 # Climate forcing function:
+#
+# All quantities are SMOOTH, continuous functions of `time` (no day-of-year
+# table lookups), so there are no artificial daily "kinks" for the ODE solver's
+# adaptive step controller to trip over. Temp/theta are sinusoids; the three
+# input-timing weights are closed-form functions of time, each divided by a
+# precomputed annual normaliser so they integrate to 1 over the year.
+
+# ------------------------------------------------------------
+# .forcing_norms(): precompute (once per parameter set) the annual normalising
+# constants for the growing-season and leaf-litter weights, by integrating
+# their UNNORMALISED shapes over a fine within-year grid. Attaching these to
+# `parms` avoids recomputing them on every derivative evaluation.
+# ------------------------------------------------------------
+.grow_shape <- function(doy, p) {
+  Temp  <- p$MAT + p$T_amp * sin(2 * pi * (doy - 110) / 365)
+  theta <- if (p$N_theta_peaks == 2) p$MAtheta + p$theta_amp * cos(4 * pi * (doy - 110) / 365)
+           else                      p$MAtheta + p$theta_amp * sin(2 * pi * (doy - 110) / 365)
+  fT  <- 1 / (1 + exp(-p$k_root_dormancy * (Temp - p$root_dormancy_temp)))
+  fth <- pmin(1, pmax(0, theta) / p$theta_opt)
+  fT * fth                                     # unnormalised growing-season activity, smooth in doy
+}
+# wrapped Gaussian litterfall pulse (smooth, periodic), unnormalised
+.litter_shape <- function(doy, p, K = 2) {
+  ks <- (-K):K
+  rowSums(sapply(ks, function(k) dnorm(doy - p$litter_peak_doy - k * 365, sd = p$litter_width_d)))
+}
+forcing_norms <- function(parms) {
+  p  <- as.list(parms)
+  gg <- 1:365
+  list(grow   = mean(.grow_shape(gg, p)) * 365,      # integral over the year of the grow shape
+       litter = mean(.litter_shape(gg, p)) * 365)    # integral over the year of the litter pulse
+}
 
 climate_forcing_function <- function(time, parms) {
-  parms <- as.list(parms)
+  p <- as.list(parms)
 
-  # Day-of-year (1..365): no leap years:
+  # Day-of-year as a CONTINUOUS value in [1, 366) (no floor -> no daily steps)
   doy <- (time %% 365) + 1
 
-  Temp  <- parms$MAT     + parms$T_amp     * sin(2 * pi * (doy - 110) / 365)
-  
-  if(parms$N_theta_peaks == 2){
-    theta <- parms$MAtheta + parms$theta_amp * cos(4 * pi * (doy - 110) / 365)
-  }else{
-    if(parms$N_theta_peaks == 1){
-      theta <- parms$MAtheta + parms$theta_amp * sin(2 * pi * (doy - 110) / 365)
-    }else{
-      stop("N_theta_peaks must be 1 or 2.")
-    }
-  }
-  
+  Temp  <- p$MAT + p$T_amp * sin(2 * pi * (doy - 110) / 365)
+  if (p$N_theta_peaks == 2) {
+    theta <- p$MAtheta + p$theta_amp * cos(4 * pi * (doy - 110) / 365)
+  } else if (p$N_theta_peaks == 1) {
+    theta <- p$MAtheta + p$theta_amp * sin(2 * pi * (doy - 110) / 365)
+  } else stop("N_theta_peaks must be 1 or 2.")
+
+  # annual normalisers (precomputed on parms if available, else compute now)
+  nrm <- if (!is.null(p$.forcing_norms)) p$.forcing_norms else forcing_norms(p)
 
   # --------------------------------------------------
-  # Seasonal litterfall (shoots & leaves): normalized to sum to 1 over a year
+  # ALLOCATION-SPECIFIC INPUT TIMING, evaluated continuously at `doy`. Each
+  # weight is a rate per day that integrates to 1 over the year:
+  #   root_input_weight   growing-season activity / (its annual integral)
+  #   wood_input_weight   uniform, 1/365
+  #   leaf_litter_weight  fall Gaussian pulse + small growing-season trickle,
+  #                       mixed by leaf_litter_summer_frac
   # --------------------------------------------------
-  wrapped_pdf <- function(t, mu, sigma, L = 365, K = 1) {
-    ks <- (-K):K
-    rowSums(sapply(ks, function(k)
-      dnorm(t - mu - k * L, sd = sigma)))
-  }
-
-  pdf_vals  <- wrapped_pdf(1:365, parms$litter_peak_doy, parms$litter_width_d)
-  prob_vals <- pdf_vals / sum(pdf_vals)
-
-  # --------------------------------------------------
-  # ALLOCATION-SPECIFIC INPUT TIMING. Instead of one seasonal NPP weight, each
-  # destination gets its OWN within-year weight (each sums to 1 over the year,
-  # so annual input = allocation x annual NPP regardless of shape):
-  #   root_input_weight   growing-season only (0 in dormancy) -> the activity
-  #                       index, normalized.
-  #   wood_input_weight   even over the whole year (uniform) -> CWD gets a
-  #                       steady drip (dead wood does not track phenology).
-  #   leaf_litter_weight  a big autumn peak PLUS a small growing-season trickle
-  #                       (green-leaf turnover): a blend of the fall litterfall
-  #                       pulse and the growing-season weight, mixed by
-  #                       leaf_litter_summer_frac (0 = all autumn, 1 = all
-  #                       growing-season).
-  # --------------------------------------------------
-  doy_all   <- 1:365
-  Temp_all  <- parms$MAT     + parms$T_amp     * sin(2 * pi * (doy_all - 110) / 365)
-  if(parms$N_theta_peaks == 2){
-    theta_all <- parms$MAtheta + parms$theta_amp * cos(4 * pi * (doy_all - 110) / 365)
-  }else{
-    if(parms$N_theta_peaks == 1){
-      theta_all <- parms$MAtheta + parms$theta_amp * sin(2 * pi * (doy_all - 110) / 365)
-    }else{
-      stop("N_theta_peaks must be 1 or 2.")
-    }
-  }
-  fT_all    <- 1 / (1 + exp(-parms$k_root_dormancy * (Temp_all - parms$root_dormancy_temp)))
-  fth_all   <- pmin(1, pmax(0, theta_all) / parms$theta_opt)
-  act_all   <- fT_all #* fth_all
-  grow_w    <- if (sum(act_all) > 0) act_all / sum(act_all) else rep(1/365, 365)   # growing season
-
-  wood_w    <- rep(1/365, 365)                                                     # uniform
-
-  sfrac     <- if (!is.null(parms$leaf_litter_summer_frac)) parms$leaf_litter_summer_frac else 0.2
-  leaf_w    <- (1 - sfrac) * prob_vals + sfrac * grow_w                            # fall peak + summer trickle
-  leaf_w    <- leaf_w / sum(leaf_w)                                                # (already ~1; normalize to be safe)
+  grow_w <- if (nrm$grow > 0) .grow_shape(doy, p) / nrm$grow else 1/365
+  wood_w <- 1/365
+  sfrac  <- if (!is.null(p$leaf_litter_summer_frac)) p$leaf_litter_summer_frac else 0.2
+  litter_pulse <- if (nrm$litter > 0) .litter_shape(doy, p) / nrm$litter else 1/365
+  leaf_w <- (1 - sfrac) * litter_pulse + sfrac * grow_w      # already integrates to 1
 
   c(
     Temp = Temp,
     theta = theta,
-    root_input_weight  = grow_w[doy],
-    wood_input_weight  = wood_w[doy],
-    leaf_litter_weight = leaf_w[doy]
+    root_input_weight  = unname(grow_w),
+    wood_input_weight  = unname(wood_w),
+    leaf_litter_weight = unname(leaf_w)
   )
 }
 
@@ -81,8 +76,10 @@ climate_forcing_function <- function(time, parms) {
 # Seasonal forcing (a function of time)
 # ------------------------------------------------------------
 make_climate_forcing <- function(parms) {
+  p <- as.list(parms)
+  p$.forcing_norms <- forcing_norms(p)          # precompute annual normalisers once
   function(time) {
-    forcing <- climate_forcing_function(time = time, parms = parms)
+    forcing <- climate_forcing_function(time = time, parms = p)
     stopifnot(is.numeric(forcing), !any(is.na(forcing)))
     forcing
   }

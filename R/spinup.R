@@ -228,3 +228,139 @@ final_state <- function(out) {
   v    <- as.numeric(df[nrow(df), cols])
   setNames(v, cols)
 }
+
+# ============================================================
+# LIMIT-CYCLE SPIN-UP BY SHOOTING / NEWTON  (option 3)
+# ------------------------------------------------------------
+# A periodically-forced ODE has a limit cycle y*(t) with period P (= 365 d).
+# Plain forward integration ("run for N years until it stops changing") can only
+# approach it at the rate of the SLOWEST eigenvalue of the year-map, so a system
+# with an ~18-yr mode needs many centuries to settle. Instead we solve directly
+# for the periodic orbit:
+#
+#   define the one-year (stroboscopic) map    Phi(y0) = state after 365 d,
+#   the limit cycle start satisfies           G(y0) = Phi(y0) - y0 = 0,
+#   solve G(y0)=0 by Newton:                   y0 <- y0 - (M - I)^{-1} G(y0),
+#   where M = dPhi/dy0 is the monodromy matrix (finite-differenced by
+#   integrating one year per perturbed coordinate).
+#
+# Convergence is Newton-quadratic and INDEPENDENT of the slow eigenvalue: a few
+# one-year integrations, not hundreds of years. Stability of the found cycle is
+# read off for free from the eigenvalues of M (all |lambda| < 1 => stable).
+# ============================================================
+
+# one-year map: integrate exactly one period and return the end state (ordered
+# to match names(y0)). `by` only sets output density; period end is exact.
+.year_map <- function(y0, parms, model_fn, period = 365, by = 5) {
+  times <- sort(unique(c(seq(0, period, by = by), period)))
+  out   <- deSolve::ode(y = y0, times = times, func = model_fn, parms = parms,
+                        atol = 1e-9, rtol = 1e-9)
+  fs <- final_state(out)              # drops time + mass_balance_check
+  fs[names(y0)]
+}
+
+# ------------------------------------------------------------
+# spinup_limit_cycle(): Newton shooting for the seasonal limit cycle.
+#   y0          starting guess for the cycle's t=0 state (e.g. an equilibrium
+#               from spinup_equilibrium(), or any reasonable state)
+#   model_fn    the derivative function (obj$wrapped_model)
+#   tol         stop when max|Phi(y0)-y0| / max(|y0|, floor) < tol
+#   max_newton  max Newton iterations (each costs length(y0)+1 one-year solves)
+#   damping     step is scaled by this if a full Newton step increases the
+#               residual or drives a pool negative (simple line-search safeguard)
+# Returns the cycle start state, the within-year trajectory, the residual, the
+# monodromy spectral radius (|lambda|max), and convergence flag.
+# ------------------------------------------------------------
+spinup_limit_cycle <- function(y0, parms, model_fn,
+                               period = 365, by = 5,
+                               tol = 1e-8, max_newton = 20,
+                               fd_rel = 1e-6, floor = 1e-6,
+                               damping = 0.5, verbose = TRUE) {
+  if (missing(model_fn) || is.null(model_fn))
+    stop("spinup_limit_cycle(): supply model_fn (e.g. obj$wrapped_model).")
+  parms$climate_forcing <- make_climate_forcing(parms)
+  y  <- y0
+  n  <- length(y)
+  I  <- diag(n)
+
+  resid_of <- function(v) .year_map(v, parms, model_fn, period, by) - v
+  rel_norm <- function(g, v) max(abs(g) / pmax(abs(v), floor))
+
+  G  <- resid_of(y)
+  rho <- NA_real_
+  for (it in seq_len(max_newton)) {
+    rn <- rel_norm(G, y)
+    if (verbose) cat(sprintf("  Newton %2d: max relative |Phi(y)-y| = %.3e\n", it, rn))
+    if (is.finite(rn) && rn < tol) {
+      if (verbose) cat("  Limit cycle found.\n")
+      break
+    }
+
+    # monodromy M = dPhi/dy0 by forward differences (one one-year solve per column)
+    Phi0 <- G + y                                  # Phi(y) = G + y
+    M <- matrix(0, n, n)
+    for (j in seq_len(n)) {
+      h  <- fd_rel * max(abs(y[j]), floor)
+      yj <- y; yj[j] <- yj[j] + h
+      M[, j] <- (.year_map(yj, parms, model_fn, period, by) - Phi0) / h
+    }
+    rho <- tryCatch(max(Mod(eigen(M, only.values = TRUE)$values)), error = function(e) NA_real_)
+
+    step <- tryCatch(solve(M - I, G), error = function(e) {           # (M-I) dy = G
+      solve(M - I + 1e-8 * I, G)                                      # tiny ridge if singular
+    })
+
+    # damped line search: shrink step until residual drops and stays feasible
+    lam <- 1
+    repeat {
+      y_new <- y - lam * step
+      if (all(is.finite(y_new)) && all(y_new > -floor)) {
+        G_new <- resid_of(y_new)
+        if (rel_norm(G_new, y_new) < rn || lam < 1e-3) break
+      }
+      lam <- lam * damping
+      if (lam < 1e-6) break
+    }
+    y <- pmax(y_new, 0)                             # clamp tiny negatives from FD
+    G <- resid_of(y)
+  }
+
+  out <- deSolve::ode(y = y, times = sort(unique(c(seq(0, period, by = by), period))),
+                      func = model_fn, parms = parms, atol = 1e-9, rtol = 1e-9)
+  list(final_state = y, out = out,
+       residual = rel_norm(G, y),
+       monodromy_rho = rho,
+       stable = is.finite(rho) && rho < 1 + 1e-6,
+       converged = is.finite(rel_norm(G, y)) && rel_norm(G, y) < tol,
+       iterations = it)
+}
+
+# ------------------------------------------------------------
+# dynamic_spinup_newton(): drop-in alternative to dynamic_spinup() that returns
+# the SAME shape (list with final_state / out / converged), but finds the limit
+# cycle by Newton shooting. Warm-starts from the constant-forcing equilibrium
+# (cheap and close), which makes Newton converge in a handful of iterations.
+# ------------------------------------------------------------
+dynamic_spinup_newton <- function(obj, from = NULL, by = 5,
+                                  tol = 1e-8, max_newton = 20, verbose = TRUE) {
+  y0 <- if (!is.null(from)) {
+    from[names(obj$working_state)]
+  } else if (!is.null(obj$init_state_spin)) {
+    obj$init_state_spin[names(obj$working_state)]         # constant-forcing equilibrium
+  } else {
+    obj$working_state
+  }
+  if (any(is.na(y0))) stop("dynamic_spinup_newton(): start state missing pools of the setup.")
+
+  res <- spinup_limit_cycle(y0, obj$parms, obj$wrapped_model,
+                            by = by, tol = tol, max_newton = max_newton, verbose = verbose)
+  if (verbose) {
+    cat(sprintf("Newton limit-cycle: residual %.2e, monodromy rho = %.4f (%s), %d iters\n",
+                res$residual, res$monodromy_rho,
+                if (isTRUE(res$stable)) "stable" else "UNSTABLE / check", res$iterations))
+  }
+  list(out = res$out, final_state = res$final_state,
+       converged = res$converged, stable = res$stable,
+       monodromy_rho = res$monodromy_rho, residual = res$residual,
+       iterations = res$iterations, method = "newton_shooting")
+}

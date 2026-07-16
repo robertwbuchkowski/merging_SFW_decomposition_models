@@ -167,6 +167,7 @@ spinup_one_scenario <- function(scenario, model, scen,
                                 fitted_params = NULL,
                                 do_spinup     = TRUE,
                                 do_treatment  = TRUE,
+                                use_newton    = TRUE,
                                 n_years = 600, by = 1, tol = 1e-4,
                                 dir = "Data/spinup",
                                 eq_effect = TRUE) {
@@ -200,14 +201,14 @@ spinup_one_scenario <- function(scenario, model, scen,
   # long seasonal dynamic spin-ups -> saved limit-cycle states
   conv <- c(baseline = NA, treatment = NA)
   if (do_spinup) {
-    dyn_b <- dynamic_spinup(pair$baseline, n_years = n_years, by = by,
-                            tol = tol, verbose = FALSE)
+    spin1 <- function(o) if (isTRUE(use_newton)) dynamic_spinup_newton(o, verbose = FALSE)
+                         else dynamic_spinup(o, n_years = n_years, by = by, tol = tol, verbose = FALSE)
+    dyn_b <- spin1(pair$baseline)
     conv["baseline"] <- isTRUE(dyn_b$converged)
     save_spinup(pair$baseline, dyn_b$final_state, scenario, "baseline", dir = dir)
 
     if (do_treatment) {
-      dyn_t <- dynamic_spinup(pair$treatment, n_years = n_years, by = by,
-                              tol = tol, verbose = FALSE)
+      dyn_t <- spin1(pair$treatment)
       conv["treatment"] <- isTRUE(dyn_t$converged)
       save_spinup(pair$treatment, dyn_t$final_state, scenario, "treatment", dir = dir)
     }
