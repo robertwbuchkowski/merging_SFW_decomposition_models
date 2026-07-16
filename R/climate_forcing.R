@@ -20,10 +20,15 @@
   fth <- pmin(1, pmax(0, theta) / p$theta_opt)
   fT * fth                                     # unnormalised growing-season activity, smooth in doy
 }
-# wrapped Gaussian litterfall pulse (smooth, periodic), unnormalised
+# wrapped Gaussian litterfall pulse (smooth, periodic), unnormalised.
+# Sum the Gaussian and its wrapped copies; works for scalar OR vector `doy`
+# (Reduce accumulates a numeric of the same length as `doy`, so there is no
+# sapply/rowSums shape ambiguity when doy has length 1).
 .litter_shape <- function(doy, p, K = 2) {
   ks <- (-K):K
-  rowSums(sapply(ks, function(k) dnorm(doy - p$litter_peak_doy - k * 365, sd = p$litter_width_d)))
+  Reduce(`+`, lapply(ks, function(k)
+    dnorm(doy - p$litter_peak_doy - k * 365, sd = p$litter_width_d)),
+    accumulate = FALSE)
 }
 forcing_norms <- function(parms) {
   p  <- as.list(parms)
