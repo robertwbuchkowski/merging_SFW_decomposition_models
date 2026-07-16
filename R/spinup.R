@@ -190,7 +190,7 @@ spinup_until_stable <- function(init_state, parms, model_fn,
 
     if (plot_spinup)
       save_trajectory_png(out, file.path(plot_dir,
-        sprintf("trajectory_%dpools_iter%d.png", length(state), i)))
+        sprintf("trajectory_%dpools_iter%d_%s_%s.png", length(state), i, model, scenario)))
 
     stab      <- check_stability(out, abs_floor = abs_floor)
     use       <- stab[stab$above_floor, ]
@@ -199,6 +199,8 @@ spinup_until_stable <- function(init_state, parms, model_fn,
     if (verbose)
       cat("Max annual-mean drift:", signif(max_drift, 3), "in", worst,
           "(", sum(!stab$above_floor), "negligible pools ignored )\n")
+    cat("Annual drift in all pools is: \n")
+    print(stab)
 
     if (is.finite(max_drift) && max_drift < tol) {
       if (verbose) cat("Seasonal limit cycle reached.\n")
