@@ -182,6 +182,8 @@ spinup_until_stable <- function(init_state, parms, model_fn,
   check_by(by)
   state <- init_state
   parms$climate_forcing <- make_climate_forcing(parms)
+  
+  # t(sapply(1:365, parms$climate_forcing)) %>% as.data.frame() %>% tibble() %>% mutate(doy = 1:365)  %>% pivot_longer(!doy) %>% ggplot(aes(x = doy, y = value)) + geom_point() + facet_wrap(.~name, scales = "free_y")
 
   for (i in seq_len(max_iter)) {
     if (verbose) cat("\n--- Seasonal spin-up iteration", i, "(", round(n_years), "yr ) ---\n")

@@ -1,10 +1,7 @@
 init_millennial_state <- function() {
   # Units: g C m^-2
   c(
-    C_leaf_herb = 200,
     C_root_herb = 200,
-    C_leaf_tree = 750,
-    C_wood_tree = 6750,
     C_root_tree = 2500,
     
     Earthworm = 0.48,

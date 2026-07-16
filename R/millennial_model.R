@@ -15,11 +15,10 @@
 
 
 .POOLS_MILLENNIAL <- c(
-  "C_leaf_herb", "C_root_herb", "C_leaf_tree", "C_wood_tree",
-  "C_root_tree", "Earthworm", "Detritivore", "DetPredator",
-  "RootHerb", "Litter", "CWD", "Organic",
-  "DOM", "MIC", "P", "L",
-  "A", "M", "B"
+  "C_root_herb", "C_root_tree",
+  "Earthworm", "Detritivore", "DetPredator", "RootHerb",
+  "Litter", "CWD", "Organic", "DOM", "MIC",
+  "P", "L", "A", "M", "B"
 )
 
 millennial_model_wplant <- function(time, state, parms){
@@ -83,14 +82,14 @@ millennial_model_wplant <- function(time, state, parms){
   k_frag_organic               <- parms[["k_frag_organic"]]
   k_l                          <- parms[["k_l"]]
   k_l_o                        <- parms[["k_l_o"]]
-  k_litterfall_ann             <- parms[["k_litterfall_ann"]]
-  k_litterfall_herb_ann        <- parms[["k_litterfall_herb_ann"]]
+  #   k_litterfall_ann             <- parms[["k_litterfall_ann"]]   # unused: aboveground tissue is now flow-through (see NPP block)
+  #   k_litterfall_herb_ann        <- parms[["k_litterfall_herb_ann"]]   # unused: aboveground tissue is now flow-through (see NPP block)
   k_ma                         <- parms[["k_ma"]]
-  k_mort_leaf_herb             <- parms[["k_mort_leaf_herb"]]
-  k_mort_leaf_tree             <- parms[["k_mort_leaf_tree"]]
+  #   k_mort_leaf_herb             <- parms[["k_mort_leaf_herb"]]   # unused: aboveground tissue is now flow-through (see NPP block)
+  #   k_mort_leaf_tree             <- parms[["k_mort_leaf_tree"]]   # unused: aboveground tissue is now flow-through (see NPP block)
   k_mort_root_herb             <- parms[["k_mort_root_herb"]]
   k_mort_root_tree             <- parms[["k_mort_root_tree"]]
-  k_mort_wood_tree             <- parms[["k_mort_wood_tree"]]
+  #   k_mort_wood_tree             <- parms[["k_mort_wood_tree"]]   # unused: aboveground tissue is now flow-through (see NPP block)
   k_pa                         <- parms[["k_pa"]]
   k_root_dormancy              <- parms[["k_root_dormancy"]]
   kinetics                     <- parms[["kinetics"]]
@@ -121,10 +120,7 @@ millennial_model_wplant <- function(time, state, parms){
   # the full state (via the wrapper) or on a scenario-specific reduced
   # state that omits inactive pools entirely.
   .ns <- names(state)
-  C_leaf_herb <- if ("C_leaf_herb" %in% .ns) state[["C_leaf_herb"]] else 0
   C_root_herb <- if ("C_root_herb" %in% .ns) state[["C_root_herb"]] else 0
-  C_leaf_tree <- if ("C_leaf_tree" %in% .ns) state[["C_leaf_tree"]] else 0
-  C_wood_tree <- if ("C_wood_tree" %in% .ns) state[["C_wood_tree"]] else 0
   C_root_tree <- if ("C_root_tree" %in% .ns) state[["C_root_tree"]] else 0
   Earthworm  <- if ("Earthworm" %in% .ns) state[["Earthworm"]] else 0
   Detritivore <- if ("Detritivore" %in% .ns) state[["Detritivore"]] else 0
@@ -161,8 +157,9 @@ millennial_model_wplant <- function(time, state, parms){
     forcing <- climate_forcing(time)
     T_t              <- forcing["Temp"] # °C
     theta_t          <- forcing["theta"] # m^3 m^-3
-    litterfall_prob_val        <- forcing["litterfall_prob_val"] # probability of litterfall
-    npp_weight_val             <- forcing["npp_weight_val"] # within-year NPP weight (sums to 1 over the year)
+    root_input_weight  <- forcing["root_input_weight"]   # growing-season only (sums to 1/yr)
+    wood_input_weight  <- forcing["wood_input_weight"]   # uniform over the year (sums to 1/yr)
+    leaf_litter_weight <- forcing["leaf_litter_weight"]  # autumn peak + summer trickle (sums to 1/yr)
 
     # --------------------------------------------------
     # Shared growing-season activity (temperature + moisture), in [0, 1].
@@ -176,50 +173,40 @@ millennial_model_wplant <- function(time, state, parms){
     activity <- f_T_act * f_theta
 
     # --------------------------------------------------
-    # NPP input (the system input). NPP_herb / NPP_tree are ANNUAL parameters
-    # (g C m-2 yr-1, from the scenarios file). npp_weight_val (from the climate
-    # forcing) sums to 1 over the year and is proportional to the same activity
-    # above, so the annual total delivered equals the parameter. No leaves ->
-    # no NPP, which keeps a group off when its pools are zeroed.
+    # INPUTS FROM ANNUAL NPP + ALLOCATION + TIMING FORCINGS.
+    # NPP_herb / NPP_tree are ANNUAL parameters (g C m-2 yr-1). We work directly
+    # from the annual value and route each allocation to its destination with
+    # its OWN within-year timing weight (each sums to 1 over the year, so the
+    # annual input equals allocation x annual NPP). A group is switched off by
+    # zeroing its ROOT pool (the remaining plant pool), which zeroes its NPP.
+    #   leaves (1 - a_root_herb)[herb] + a_leaf_tree[tree] -> Litter, autumn peak
+    #                                                         + summer trickle
+    #   wood   a_wood_tree[tree]                            -> CWD,    uniform
+    #   roots  a_root_herb[herb], a_root_tree[tree]         -> root pools,
+    #                                                         growing season only
     # --------------------------------------------------
-    NPP_herb_ann <- NPP_herb
-    NPP_tree_ann <- NPP_tree
-
-    if (C_leaf_herb > 0) {
-      NPP_herb <- NPP_herb_ann * npp_weight_val
-    } else {
-      NPP_herb <- 0
-    }
-
-    if (C_leaf_tree > 0) {
-      NPP_tree <- NPP_tree_ann * npp_weight_val
-    } else {
-      NPP_tree <- 0
-    }
-
-    leaf_growth_herb <- (1 - a_root_herb) * NPP_herb
-    root_growth_herb <- a_root_herb * NPP_herb
+    NPP_herb_ann <- if (C_root_herb > 0) NPP_herb else 0
+    NPP_tree_ann <- if (C_root_tree > 0) NPP_tree else 0
 
     if(abs(a_leaf_tree + a_wood_tree + a_root_tree - 1) > 1e-6) {stop("Tree allocation fractions must sum to 1")}
 
-    leaf_growth_tree <- a_leaf_tree * NPP_tree
-    wood_growth_tree <- a_wood_tree * NPP_tree
-    root_growth_tree <- a_root_tree * NPP_tree
+    # leaves -> Litter (autumn peak + small summer trickle)
+    leaf_litter_input <- ((1 - a_root_herb) * NPP_herb_ann + a_leaf_tree * NPP_tree_ann) * leaf_litter_weight
+
+    # wood -> CWD (evenly over the year)
+    cwd_input         <- (a_wood_tree * NPP_tree_ann) * wood_input_weight
+
+    # roots -> explicit root pools (growing season only)
+    root_growth_herb  <- a_root_herb * NPP_herb_ann * root_input_weight
+    root_growth_tree  <- a_root_tree * NPP_tree_ann * root_input_weight
+
+    # total plant C entering the tracked pools this instant (for mass balance)
+    total_plant_input <- leaf_litter_input + cwd_input + root_growth_herb + root_growth_tree
 
     # --------------------------------------------------
-    # Continuous plant losses
+    # Root winter dormancy: activity index with a winter floor.
     # --------------------------------------------------
-    litterfall_tree     <- k_litterfall_ann * litterfall_prob_val * C_leaf_tree
-    litterfall_herb     <- k_litterfall_herb_ann * litterfall_prob_val * C_leaf_herb
-
-    leaf_mortality_tree <- k_mort_leaf_tree * C_leaf_tree
-    leaf_mortality_herb <- k_mort_leaf_herb * C_leaf_herb
-
-    # Root and wood winter dormancy: same activity index that shapes NPP,
-    # with a winter floor (winter_root_act_prop) so some activity persists.
     act <- winter_root_act_prop + (1 - winter_root_act_prop) * activity
-
-    wood_mortality_tree <- k_mort_wood_tree * C_wood_tree*act
 
     root_mortality_herb <- k_mort_root_herb * C_root_herb*act
     root_mortality_tree <- k_mort_root_tree * C_root_tree*act
@@ -412,11 +399,8 @@ millennial_model_wplant <- function(time, state, parms){
     # Plant differential equations:
     # --------------------------------------------------
 
-    dC_leaf_herb <- leaf_growth_herb - litterfall_herb - leaf_mortality_herb
     dC_root_herb <- root_growth_herb - root_mortality_herb - exudates_herb - Fed_rootherb_herb
 
-    dC_leaf_tree <- leaf_growth_tree - litterfall_tree - leaf_mortality_tree
-    dC_wood_tree <- wood_growth_tree - wood_mortality_tree
     dC_root_tree <- root_growth_tree - root_mortality_tree - exudates_tree
 
     # --------------------------------------------------
@@ -445,9 +429,9 @@ millennial_model_wplant <- function(time, state, parms){
     # -------------------------------
 
     # Detritus pools
-    dLitter  <- litterfall_herb + leaf_mortality_herb + litterfall_tree + leaf_mortality_tree - F_Litter_DOM - fragmentation_litter - Fed_earthworm_litter - Fed_det_lit
+    dLitter  <- leaf_litter_input - F_Litter_DOM - fragmentation_litter - Fed_earthworm_litter - Fed_det_lit
 
-    dCWD     <- wood_mortality_tree - F_CWD_DOM - fragmentation_CWD
+    dCWD     <- cwd_input - F_CWD_DOM - fragmentation_CWD
 
     dOrganic <- fragmentation_litter + fragmentation_CWD +
       root_to_organic * (root_mortality_tree + root_mortality_herb) -
@@ -497,7 +481,7 @@ millennial_model_wplant <- function(time, state, parms){
     # MASS BALANCE CHECK:
     # --------------------#
     mass_balance_check <- (
-      dC_leaf_herb + dC_root_herb + dC_leaf_tree + dC_wood_tree + dC_root_tree +
+      dC_root_herb + dC_root_tree +
         dEarthworm + dDetritivore + dDetPredator + dRootHerb +
         dLitter + dCWD + dOrganic + dDOM + dMIC +
         dP + dL + dA + dM + dB
@@ -512,8 +496,8 @@ millennial_model_wplant <- function(time, state, parms){
       # add leaching losses back
       F_l
     ) - (
-      # subtract external inputs
-      NPP_herb + NPP_tree
+      # subtract external inputs (annual NPP delivered via the timing forcings)
+      total_plant_input
     )
 
     # browser()
@@ -522,11 +506,8 @@ millennial_model_wplant <- function(time, state, parms){
     # Return list for deSolve
     # ---------------------------
     .dvec <- c(
-        # Plant pools:
-        dC_leaf_herb,
+        # Plant pools (roots only; aboveground is flow-through):
         dC_root_herb,
-        dC_leaf_tree,
-        dC_wood_tree,
         dC_root_tree,
 
         # Animal pools:

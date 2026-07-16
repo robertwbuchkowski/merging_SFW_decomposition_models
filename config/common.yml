@@ -20,6 +20,7 @@ LigFrac: 0.2 # MIMICS and Century
 year_length_d: 365
 litter_peak_doy: 288
 litter_width_d: 30
+leaf_litter_summer_frac: 0.2   # fraction of leaf litter delivered as a growing-season trickle; the rest (0.8) is the autumn litterfall pulse at litter_peak_doy
 
 # Plant growth ------
 # NPP (g C m-2 yr-1) is now the SYSTEM INPUT (replaces the old GPP/Ra scheme).

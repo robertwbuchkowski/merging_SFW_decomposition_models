@@ -34,8 +34,8 @@ model_table <- list(
 
 # which state pools each flag controls
 flag_pools <- list(
-  Tree        = c("C_leaf_tree", "C_wood_tree", "C_root_tree", "CWD"),
-  Herb        = c("C_leaf_herb", "C_root_herb"),
+  Tree        = c("C_root_tree", "CWD"),        # aboveground tissue is flow-through
+  Herb        = c("C_root_herb"),               # aboveground tissue is flow-through
   earthworm   = "Earthworm",
   RootHerb    = "RootHerb",
   Detritivore = "Detritivore",
@@ -148,7 +148,7 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
   active        <- names(init_state)[init_state > 0]
   working_state <- init_state[active]
 
-  if (!any(c("C_leaf_herb","C_root_herb","C_leaf_tree","C_wood_tree","C_root_tree") %in% active))
+  if (!any(c("C_root_herb","C_root_tree") %in% active))
     warning("No plant pools active -> no litter input; soil will decay to ~0.")
 
   # scenario mode: call model_fn directly on the reduced working_state (pools
