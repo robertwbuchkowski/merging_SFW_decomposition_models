@@ -6,5 +6,5 @@ Plots/
 Results/
 *.pdf
 *.png
-Data/spinup/*
+Data/spinup/*.png
 Data/followup/*

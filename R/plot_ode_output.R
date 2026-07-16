@@ -86,7 +86,7 @@ plot_ode_output <- function(
 plot_followup_comparison <- function(control_out, treatment_out,
                                      control_label = "Continued baseline (no animals)",
                                      treatment_label = "Animals added",
-                                     variable_cols = NULL, title = NULL) {
+                                     variable_cols = NULL, title = NULL, by = NULL) {
   library(ggplot2); library(tidyr); library(dplyr)
 
   prep <- function(ode_out, run_label) {
@@ -102,6 +102,8 @@ plot_followup_comparison <- function(control_out, treatment_out,
 
   df_long <- bind_rows(prep(control_out, control_label),
                        prep(treatment_out, treatment_label))
+  
+  if(!is.null(by)) df_long <- df_long %>% filter(time %in% seq(0,max(df_long$time), by =by))
 
   ggplot(df_long, aes(x = time, y = value, color = run)) +
     geom_line() +
@@ -117,10 +119,10 @@ plot_followup_comparison <- function(control_out, treatment_out,
 # "continue_baseline" and "add" follow-ups for a model/scenario (as written by
 # save_followup() in Scripts/followup_analysis.R) and plots them together.
 # ------------------------------------------------------------
-plot_followup_add <- function(model, scenario, dir = "Data/followup", ...) {
+plot_followup_add <- function(model, scenario, dir = "Data/followup",by = NULL, ...) {
   control   <- load_followup(model, scenario, "continue_baseline", dir = dir)
   treatment <- load_followup(model, scenario, "add", dir = dir)
   plot_followup_comparison(control$out, treatment$out,
                            title = sprintf("%s / %s: baseline continued vs. animals added",
-                                           model, scenario), ...)
+                                           model, scenario), by = by,...)
 }

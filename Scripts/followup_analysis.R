@@ -22,7 +22,7 @@ use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R
 
 scen$MitePredator = NULL          # match the scenarios actually spun up
 
-n_years <- 4                    # length of every follow-up run below
+n_years <- 25                    # length of every follow-up run below
 by      <- 1
 
 # Fitted animal parameters saved by Scripts/fit_all_animals.R, keyed BY MODEL
@@ -118,7 +118,7 @@ for (model in models) {
 # this can be run later without re-running either loop above.
 # ------------------------------------------------------------
 # Example, one model/scenario:
-plot_followup_add("millennial", "RootHerbivore")
+plot_followup_add("millennial", "RootHerbivore", by = 365)
 
 pdf("Plots/output.pdf", width = 8, height = 8)
 # All model x scenario combos that have saved add + continue_baseline runs:
