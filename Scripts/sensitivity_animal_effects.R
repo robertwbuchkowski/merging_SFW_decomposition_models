@@ -106,10 +106,10 @@ sweep_param <- function(scenario, param, values) {
 #   buffer        +/- fractional range around each parameter's default (linear)
 #   scenarios     which animal scenarios to run
 # ============================================================
-sweep_params <- c("k_frag_litter", "k_frag_organic", "k_l", "k_b",
-                  "CUE_ref", "MAT", "pct_claysilt", "root_to_organic")
-
-sweep_params <- c("k_frag_litter", "k_frag_organic")
+sweep_params <- c("k_frag_litter", "k_frag_organic", "k_l_o", "k_l",
+                  "k_b", "k_pa", "k_ma", "pct_claysilt",
+                  "k_MICd", "k_bd", "root_to_organic", "a_root_herb",
+                  "MAT", "MAtheta")
 n_points  <- 7
 buffer    <- 0.5
 scenarios <- names(scen)
@@ -151,7 +151,7 @@ write_csv(summary_tbl, file.path(res_dir, "animal_effect_sensitivity_summary.csv
 # ------------------------------------------------------------
 overview <- sens %>%
   group_by(scenario, param, type, value, default) %>%
-  summarise(total_abs_effect = sum(abs(percent_change), na.rm = TRUE), .groups = "drop") %>%
+  summarise(total_abs_effect = sum(abs(difference), na.rm = TRUE), .groups = "drop") %>%
   mutate(rel_param = value / default)
 
 p_overview <- ggplot(overview,
@@ -159,11 +159,9 @@ p_overview <- ggplot(overview,
   geom_vline(xintercept = 1, linewidth = 0.3, colour = "grey70") +
   geom_line(linewidth = 0.7) + geom_point(size = 0.8) +
   facet_wrap(~scenario, scales = "free_y") +
-  scale_colour_brewer(palette = "Dark2") +
+  scale_colour_viridis_d() +
   scale_linetype_manual(values = c(total = "solid", direct = "dashed")) +
-  labs(title = "Sensitivity of the animal effect to model parameters (equilibrium)",
-       subtitle = "y = summed |% change| across soil pools; solid = total effect, dashed = direct-only",
-       x = "Parameter value (relative to default)", y = "Animal effect magnitude (sum |%|)",
+  labs(x = "Parameter value (relative to default)", y = "Animal effect on total C (g C m^-2)",
        colour = "Parameter", linetype = "Effect") +
   theme_minimal(base_size = 11) + theme(legend.position = "bottom")
 ggsave(file.path(fig_dir, "animal_effect_sensitivity_overview.png"),
@@ -175,21 +173,23 @@ print(p_overview)
 # parameter varies (one panel per parameter, one line per pool, total effect).
 # Change `focus_scenario` to inspect others.
 # ------------------------------------------------------------
-focus_scenario <- scenarios[1]
-detail <- sens %>% filter(scenario == focus_scenario, type == "total") %>%
-  mutate(rel_param = value / default)
-
-p_detail <- ggplot(detail, aes(rel_param, percent_change, colour = name)) +
-  geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey70") +
-  geom_line(linewidth = 0.6) +
-  facet_wrap(~param, scales = "free") +
-  labs(title = paste0("Animal effect per pool vs parameter -- ", focus_scenario, " (total effect)"),
-       x = "Parameter value (relative to default)", y = "Effect on pool (% change)",
-       colour = "Pool") +
-  theme_minimal(base_size = 10) + theme(legend.position = "right")
-ggsave(file.path(fig_dir, paste0("animal_effect_sensitivity_detail_", focus_scenario, ".png")),
-       p_detail, width = 12, height = 8, dpi = 150)
-print(p_detail)
+for(iii in 1:4){
+  focus_scenario <- scenarios[iii]
+  detail <- sens %>% filter(scenario == focus_scenario, type == "total") %>%
+    mutate(rel_param = value / default)
+  
+  p_detail <- ggplot(detail, aes(rel_param, percent_change, colour = name)) +
+    geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey70") +
+    geom_line(linewidth = 0.6) +
+    facet_wrap(.~param, scales = "free") +
+    labs(title = paste0("Animal effect per pool vs parameter -- ", focus_scenario, " (total effect)"),
+         x = "Parameter value (relative to default)", y = "Effect on pool (%)",
+         colour = "Pool") +
+    theme_minimal(base_size = 10) + theme(legend.position = "right")
+  ggsave(file.path(fig_dir, paste0("animal_effect_sensitivity_detail_", focus_scenario, ".png")),
+         p_detail, width = 12, height = 8, dpi = 150)
+  print(p_detail)
+}
 
 cat("\nWrote:\n  ", file.path(res_dir, "animal_effect_sensitivity.csv"),
     "\n  ", file.path(res_dir, "animal_effect_sensitivity_summary.csv"),

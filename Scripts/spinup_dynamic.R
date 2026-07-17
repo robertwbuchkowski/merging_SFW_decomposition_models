@@ -23,8 +23,8 @@ models <- c("millennial")
 
 # ---- toggles -------------------------------------------------------------
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)
-do_spinup         <- T       # run the seasonal dynamic spin-up (the slow part)
-do_treatment      <- F       # also spin up the treatment arm now (else baseline only)
+do_spinup         <- TRUE    # run the seasonal dynamic spin-up (the slow part)
+do_treatment      <- FALSE   # also spin up the treatment arm now (else baseline only)
 use_newton        <- TRUE    # TRUE = Newton shooting (fast, exact limit cycle);
                              # FALSE = forward-integration spin-up
 
@@ -103,11 +103,7 @@ write_csv(animal_eq_effect, "Results/animal_eq_effect.csv")
 
 # ---- equilibrium animal-effect figure ------------------------------------
 # Pools to show (soil + herbaceous root C); name_lookup / plot_order come from
-# R/compare_functions.R. Edit keep_plot to change which pools are drawn.
-keep_plot <- c(
-  "Herbaceous Root C", "Litter", "Coarse Woody Debris", "Dissolved Organic Matter",
-  "Organic Matter", "Microbial Biomass (Organic horizon)", "POC", "LWMC",
-  "Aggregate C", "MAOC", "Microbial Biomass (Mineral Soil)")
+# R/compare_functions.R.
 
 dir.create("Plots", showWarnings = FALSE)
 png("Plots/total_effect.png", width = 4, height = 8, units = "in", res = 600)
@@ -118,7 +114,8 @@ animal_eq_effect %>% filter(!is.na(baseline)) %>%
   ggplot(aes(x = pretty_name, y = percent_change, fill = type)) +
   geom_col(position = "dodge") +
   facet_wrap(. ~ scenario, ncol = 1, scales = "free_y") +
+  theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   ylab("Animal Effect (%)") + xlab("") +
-  scale_fill_manual(values = c("blue", "black"))
+  scale_fill_manual(name = "Type",values = c("black", "blue"))
 dev.off()

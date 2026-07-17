@@ -30,43 +30,52 @@ compare_vectors <- function(treatment, baseline) {
 
 # Name look ups:
 name_lookup <- c(
-  C_leaf_herb = "Herbaceous Leaf C",
   C_root_herb = "Herbaceous Root C",
-  C_leaf_tree = "Tree Leaf C",
-  C_wood_tree = "Tree Wood C",
   C_root_tree = "Tree Root C",
   Earthworm = "Earthworms",
   Litter = "Litter",
   CWD = "Coarse Woody Debris",
-  Organic = "Organic Matter",
+  Organic = "Fragmented Matter (Organic horizon)",
   DOM = "Dissolved Organic Matter",
   MIC =   "Microbial Biomass (Organic horizon)",
-  P = "POC",
-  L = "LWMC",
+  P = "Particulate Organic C",
+  L = "Low-weight Molecular C",
   A = "Aggregate C",
-  M = "MAOC",
-  B = "Microbial Biomass (Mineral Soil)",
+  M = "Mineral Associated Organic C",
+  B = "Microbial Biomass (Mineral horizon)",
   Detritivore = "Detritivores",
   RootHerb = "Root Herbivores"
 )
 
 plot_order <- c(
-  "Tree Leaf C",
-  "Tree Wood C",
   "Tree Root C",
-  "Herbaceous Leaf C",
   "Herbaceous Root C",
   "Litter",
   "Coarse Woody Debris",
   "Dissolved Organic Matter",
-  "Organic Matter",
+  "Fragmented Matter (Organic horizon)",
   "Microbial Biomass (Organic horizon)",
-  "POC",
-  "LWMC",
+  "Particulate Organic C",
+  "Low-weight Molecular C",
   "Aggregate C",
-  "MAOC",
-  "Microbial Biomass (Mineral Soil)",
+  "Mineral Associated Organic C",
+  "Microbial Biomass (Mineral horizon)",
   "Earthworms",
   "Detritivores",
   "Root Herbivores"
+)
+
+keep_plot <- c(
+  "Tree Root C",
+  "Herbaceous Root C",
+  "Litter",
+  "Coarse Woody Debris",
+  "Dissolved Organic Matter",
+  "Fragmented Matter (Organic horizon)",
+  "Microbial Biomass (Organic horizon)",
+  "Particulate Organic C",
+  "Low-weight Molecular C",
+  "Aggregate C",
+  "Mineral Associated Organic C",
+  "Microbial Biomass (Mineral horizon)"
 )
