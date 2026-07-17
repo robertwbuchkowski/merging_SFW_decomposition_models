@@ -144,17 +144,24 @@ followup_name_lookup <- c(
   Earthworm = "Earthworms", Litter = "Litter", CWD = "Coarse Woody Debris",
   Organic = "Organic Matter", DOM = "Dissolved Organic Matter",
   MIC = "Microbial Biomass (Organic horizon)", P = "POC", L = "LWMC",
-  A = "Aggregate C", M = "MAOC", B = "Microbial Biomass (Mineral Soil)",
+  A = "Aggregate C", M = "MAOC", B = "Microbial Biomass (Mineral horizon)",
   Detritivore = "Detritivores", RootHerb = "Root Herbivores")
 
 # default grouping of pools into stacked categories (by RAW pool name)
 followup_pool_groups <- list(
-  "Litter & CWD"        = c("Litter", "CWD"),
-  "Particulate & DOM"   = c("P", "DOM"),
-  "Organic & leached"   = c("Organic", "L"),
-  "Mineral-associated"  = c("A", "M"),
-  "Microbial biomass"   = c("MIC", "B"),
-  "Plant roots"         = c("C_root_herb", "C_root_tree"))
+  "Herbaceous Root C"                   = "C_root_herb",
+  "Tree Root C"                         = "C_root_tree",
+  "Litter"                              = "Litter",
+  "Coarse Woody Debris"                 = "CWD",
+  "Fragmented C (Organic horizon)"      = "Organic",
+  "Dissolved Organic Matter"            = "DOM",
+  "Microbial Biomass (Organic horizon)" = "MIC",
+  "Low-weight molecular C"              = "L",
+  "Particulate organic C"               = "P",
+  "Aggregate C"                         = "A",
+  "Mineral-associated Organic C"        = "M",
+  "Microbial Biomass (Mineral horizon)" = "B"
+)
 
 # ------------------------------------------------------------
 # followup_change_long(): change (added - continued baseline) per pool over
@@ -203,8 +210,7 @@ plot_followup_stacked <- function(model,
                                   dir = "Data/followup",
                                   by = 365,
                                   name_lookup = followup_name_lookup,
-                                  groups = followup_pool_groups,
-                                  title = NULL) {
+                                  groups = followup_pool_groups) {
   library(ggplot2); library(dplyr)
 
   if (is.null(scenarios)) {
@@ -236,12 +242,9 @@ plot_followup_stacked <- function(model,
     geom_line(data = net, aes(x = years, y = change),
               inherit.aes = FALSE, linewidth = 0.6, linetype = "dashed") +
     facet_wrap(~scenario, scales = "free_y") +
-    scale_fill_brewer(palette = "Set2") +
-    labs(title = if (is.null(title))
-           "Animal effect over the follow-up (added - continued baseline)" else title,
-         subtitle = "Stacked C change by pool group; dashed line = net change",
-         x = "Years after animals added", y = "Change in C (added - baseline)",
-         fill = "Pool group") +
+    scale_fill_viridis_d() +
+    labs(x = "Years after animals added", y = "Change in C (added - baseline; g C m^-2)",
+         fill = "Pool") +
     theme_minimal(base_size = 11) +
     theme(legend.position = "right")
 }
