@@ -12,7 +12,7 @@ source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 
 scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("millennial")
-
+do_effect_fitting = FALSE
 
 # ------------------------------------------------------------
 # EFFECT fitting -- OPT-IN and EXPLICIT. Nothing happens in the background:
@@ -28,8 +28,11 @@ models <- c("millennial")
 # fit. Blank/NA pool or pct = no effect fit for that animal. To (re)generate
 # the file from the built-in defaults, run once:  save_effect_targets()
 # ------------------------------------------------------------
-effect_spec <- list()
-# effect_spec <- load_effect_targets("Data/effect_targets.csv")
+if(do_effect_fitting){
+  effect_spec <- load_effect_targets("Data/effect_targets.csv")
+}else{
+  effect_spec <- list()
+}
 
 animals_order <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")  # prey before predator
 tol_biomass   <- 0.02

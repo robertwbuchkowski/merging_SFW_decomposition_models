@@ -1,8 +1,4 @@
 model,scenario,animal,pool,pct,param
-millennial,EarthwormTemperate,Earthworm,M,10,k_b_slope_pint
-millennial,Earthworm,Earthworm,M,10,k_b_slope_pint
-millennial,Isopod,Detritivore,Litter,-10,slope_pint_det_k_frag_litter
-millennial,Mite,Detritivore,Litter,-10,slope_pint_det_k_frag_litter
-millennial,MitePredator,Detritivore,Litter,-10,slope_pint_det_k_frag_litter
-millennial,MitePredator,DetPredator,,,
-millennial,RootHerbivore,RootHerb,DOM,10,k_exudate_slope
+millennial,Earthworm,Earthworm,A,56,k_b_slope_pint
+millennial,Isopod,Detritivore,Litter,-33,slope_pint_det_k_frag_litter
+millennial,Mite,Detritivore,Litter,-33,slope_pint_det_k_frag_litter

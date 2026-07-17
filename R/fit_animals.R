@@ -41,13 +41,13 @@ animal_fit_defaults <- list(
   Earthworm = list(
     biomass_param = "adj_earthworm",     # scales all earthworm feeding rates
     effect_param  = "k_b_slope_pint",                 # acts on desorb / binding / f_PASSIVE
-    effect_pool   = list(millennial = "M"),
-    effect_pct    = -10),
+    effect_pool   = list(millennial = "A"),
+    effect_pct    = 56), # Refernece Ross et al. 2024 SBB
   Detritivore = list(
     biomass_param = "adj_detritivores",  # scales all detritivore feeding rates
     effect_param  = "slope_pint_det_k_frag_litter",   # acts on FI / f_MetLitter / fragmentation
     effect_pool   = list(millennial = "Litter"),
-    effect_pct    = -15),
+    effect_pct    = -33), # Reference Seasteadt et al., 1983 and similar from de Smelt et al., 2018
   DetPredator = list(
     biomass_param = "adj_detpredator",   # scales predator feeding rate
     effect_param  = NA,                               # predator: no direct pool effect
@@ -254,7 +254,7 @@ fit_animal_params <- function(treatment, baseline,
         unname(effect_of(eq_now())) - target_effect_pct
       }
       e0 <- treatment$parms[[effect_param]]
-      step_e <- max(abs(e0), 1) * 0.5
+      step_e <- max(abs(e0), 0.1) * 0.5
       bre <- .bracket_root(fe, e0, step = step_e)
       if (is.null(bre)) {
         warning("Target effect ", target_effect_pct, "% on ", effect_pool,
