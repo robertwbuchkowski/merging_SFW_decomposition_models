@@ -62,8 +62,8 @@ animal_fit_defaults <- list(
 
 # ------------------------------------------------------------
 # PER model x scenario x animal OVERRIDES of the effect target (pool, param,
-# and/or size). This is the key knob you asked for: the effect pool no longer
-# has to be the same for a given animal across scenarios -- set a different
+# and/or size). The effect pool can differ for a given animal across
+# scenarios -- set a different
 # pool (and, if you like, a different target size or even a different effect
 # parameter) for any specific model x scenario x animal here. Anything left
 # out falls back to the per-MODEL default in animal_fit_defaults above.
@@ -422,7 +422,7 @@ plot_animal_scan <- function(scan, target_biomass = NULL, fitted_value = NULL,
 # SAVE / LOAD / APPLY fitted animal parameters
 # ------------------------------------------------------------
 # Fit once (Scripts/fit_all_animals.R), save to a tidy file keyed by MODEL, and
-# reuse elsewhere (e.g. Scripts/spinup_dynamic.R) instead of re-fitting.
+# reuse elsewhere (e.g. Scripts/spinup_dynamic.R) without re-fitting.
 # ============================================================
 
 # save_fitted_params(): write one row per model x scenario x fitted parameter.

@@ -87,17 +87,17 @@ make_model_wrapper <- function(model_fun, full_names, state_groups) {
 #   mode             "scenario" (default) or "wrapper" -- selects what
 #                    obj$wrapped_model points to (see note below).
 #
-# Every model function (millennial_model_wplant)
-# now reads pools it's missing as 0, so the SAME function works two ways:
+# The model function (millennial_model_wplant) reads any pool it is missing as
+# 0, so the SAME function works two ways:
 #   - obj$model_scenario  call it directly on the reduced `working_state`
 #                         (only the active pools) -- fastest; no wrapper
 #                         indirection or full-state reconstruction.
 #   - obj$model_wrapper   make_model_wrapper(...) reconstructs the FULL state
 #                         (inactive pools = 0) every call, then subsets the
-#                         derivative back down -- kept for cases where you
-#                         want the model called on the full pool set.
-# obj$wrapped_model is set to whichever `mode` you asked for, so existing
-# code that calls obj$wrapped_model (spinup_equilibrium, dynamic_spinup,
+#                         derivative back down -- use when you want the model
+#                         called on the full pool set.
+# obj$wrapped_model points to whichever `mode` you choose, so code that calls
+# obj$wrapped_model (spinup_equilibrium, dynamic_spinup,
 # run_followup, deSolve/rootSolve calls) picks up the chosen mode with no
 # changes at the call site. Both modes give IDENTICAL numerical results.
 # ------------------------------------------------------------
@@ -187,7 +187,7 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
 #        params = named numeric parameter overrides,
 #        init   = named numeric initial values overriding the model defaults)
 #
-# A legacy long-form .csv path still works (flags + params from the one sheet).
+# A long-form .csv path is also supported (flags + params from the one sheet).
 # ------------------------------------------------------------
 read_scenarios <- function(path = "Data/scenarios.xlsx",
                            sheet_params  = "scenarios",

@@ -23,8 +23,7 @@
 
 millennial_model_wplant <- function(time, state, parms){
 
-  # Direct parameter reads (replaces with(as.list(parms))) -- only the
-  # parameters this model actually uses.
+  # Read the parameters this model uses directly from the parms list.
   BD                           <- parms[["BD"]]
   CUE_T                        <- parms[["CUE_T"]]
   CUE_ref                      <- parms[["CUE_ref"]]
@@ -82,14 +81,9 @@ millennial_model_wplant <- function(time, state, parms){
   k_frag_organic               <- parms[["k_frag_organic"]]
   k_l                          <- parms[["k_l"]]
   k_l_o                        <- parms[["k_l_o"]]
-  #   k_litterfall_ann             <- parms[["k_litterfall_ann"]]   # unused: aboveground tissue is now flow-through (see NPP block)
-  #   k_litterfall_herb_ann        <- parms[["k_litterfall_herb_ann"]]   # unused: aboveground tissue is now flow-through (see NPP block)
   k_ma                         <- parms[["k_ma"]]
-  #   k_mort_leaf_herb             <- parms[["k_mort_leaf_herb"]]   # unused: aboveground tissue is now flow-through (see NPP block)
-  #   k_mort_leaf_tree             <- parms[["k_mort_leaf_tree"]]   # unused: aboveground tissue is now flow-through (see NPP block)
   k_mort_root_herb             <- parms[["k_mort_root_herb"]]
   k_mort_root_tree             <- parms[["k_mort_root_tree"]]
-  #   k_mort_wood_tree             <- parms[["k_mort_wood_tree"]]   # unused: aboveground tissue is now flow-through (see NPP block)
   k_pa                         <- parms[["k_pa"]]
   k_root_dormancy              <- parms[["k_root_dormancy"]]
   kinetics                     <- parms[["kinetics"]]
@@ -141,7 +135,7 @@ millennial_model_wplant <- function(time, state, parms){
     # ----------------------------------------------------------------
     # Feeding-rate adjustment factors: one knob per animal scales ALL of
     # that animal's feeding coefficients together (default 1 = no change).
-    # The animal fitting tunes these (adj_*) instead of the individual c_*
+    # The animal fitting tunes these (adj_*) rather than the individual c_*
     # rates, so an animal that feeds on several pools keeps its relative
     # food preferences while its overall feeding rate goes up or down.
     # ----------------------------------------------------------------
@@ -506,7 +500,7 @@ millennial_model_wplant <- function(time, state, parms){
     # Return list for deSolve
     # ---------------------------
     .dvec <- c(
-        # Plant pools (roots only; aboveground is flow-through):
+        # Plant pools (roots only):
         dC_root_herb,
         dC_root_tree,
 

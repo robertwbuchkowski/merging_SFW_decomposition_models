@@ -73,7 +73,7 @@ spinup_equilibrium <- function(obj, warm_start = NULL,
 
 # ------------------------------------------------------------
 # save_trajectory_png(): write ALL pools of a deSolve run to a single PNG,
-# sized for the number of panels (default 4 columns). Replaces the old PDF.
+# sized for the number of panels (default 4 columns).
 # ------------------------------------------------------------
 save_trajectory_png <- function(out, file, ncol = 4, panel_px = 320, res = 110) {
   df    <- as.data.frame(out)
@@ -95,7 +95,7 @@ save_trajectory_png <- function(out, file, ncol = 4, panel_px = 320, res = 110) 
 # ------------------------------------------------------------
 # check_stability(): is the seasonal limit cycle stationary? Compares the
 # ANNUAL MEAN of each pool over the last full period vs the previous one
-# (means are phase-independent, so an uneven `by` no longer creates spurious
+# (means are phase-independent, so an uneven `by` does not create spurious
 # drift). Pools whose mean is below `abs_floor` are flagged negligible and
 # excluded from the convergence decision (so a near-zero pool can't dominate).
 # Returns a table sorted by relative drift.
@@ -103,9 +103,9 @@ save_trajectory_png <- function(out, file, ncol = 4, panel_px = 320, res = 110) 
 # ------------------------------------------------------------
 # check_by(): the output step MUST divide the year, or the seasonal cycle is
 # sampled at a drifting phase and the annual-mean stability test never settles.
-# 365 = 5 x 73, so the only clean steps are 1, 5, 73 and 365. (check_stability()
-# now interpolates to a daily grid, so a bad `by` no longer breaks the test --
-# but it still costs seasonal resolution, hence the warning.)
+# 365 = 5 x 73, so the only clean steps are 1, 5, 73 and 365. check_stability()
+# interpolates to a daily grid so a bad `by` still gives a correct test, but it
+# costs seasonal resolution, hence the warning.
 # ------------------------------------------------------------
 valid_by <- c(1, 5, 73, 365)
 check_by <- function(by) {
@@ -230,7 +230,7 @@ final_state <- function(out) {
 }
 
 # ============================================================
-# LIMIT-CYCLE SPIN-UP BY SHOOTING / NEWTON  (option 3)
+# LIMIT-CYCLE SPIN-UP BY SHOOTING / NEWTON
 # ------------------------------------------------------------
 # A periodically-forced ODE has a limit cycle y*(t) with period P (= 365 d).
 # Plain forward integration ("run for N years until it stops changing") can only
@@ -336,9 +336,9 @@ spinup_limit_cycle <- function(y0, parms, model_fn,
 }
 
 # ------------------------------------------------------------
-# dynamic_spinup_newton(): drop-in alternative to dynamic_spinup() that returns
-# the SAME shape (list with final_state / out / converged), but finds the limit
-# cycle by Newton shooting. Warm-starts from the constant-forcing equilibrium
+# dynamic_spinup_newton(): finds the limit cycle by Newton shooting and returns
+# the same shape as dynamic_spinup() (list with final_state / out / converged).
+# Warm-starts from the constant-forcing equilibrium
 # (cheap and close), which makes Newton converge in a handful of iterations.
 # ------------------------------------------------------------
 dynamic_spinup_newton <- function(obj, from = NULL, by = 5,
