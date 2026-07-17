@@ -140,3 +140,15 @@ for (model in models) {
     print(plot_followup_add(model, scenario))
   }
 }
+
+# ------------------------------------------------------------
+# STACKED, GROUPED animal-effect graphic (added animals): net C change over the
+# follow-up, pools combined into groups and relabelled, one facet per scenario,
+# annual time steps (by = 365). Auto-detects scenarios with saved add +
+# continue_baseline runs.
+# ------------------------------------------------------------
+dir.create("Plots", showWarnings = FALSE)
+p_stacked <- plot_followup_stacked("millennial", by = 365)
+ggsave("Plots/followup_added_stacked.png", p_stacked,
+       width = 10, height = 7, dpi = 300)
+print(p_stacked)
