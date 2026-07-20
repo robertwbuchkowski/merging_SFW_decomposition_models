@@ -1,0 +1,365 @@
+---
+title: "`r paste0('Soil-fauna scenario report: ', params$scenario)`"
+subtitle: "Millennial soil-carbon model coupled to soil-food-web fauna"
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M')`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+geometry: margin=1cm
+params:
+  scenario: "Earthworm"
+  model: "millennial"
+  project_root: ".."
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,
+                      fig.width = 8, fig.height = 5, dpi = 110)
+library(tidyverse); library(knitr)
+
+# Resolve project root so the report can be knit from anywhere.
+root <- normalizePath(params$project_root, mustWork = TRUE)
+knitr::opts_knit$set(root.dir = root)
+```
+
+```{r sources, include=FALSE}
+setwd(root)
+suppressPackageStartupMessages({
+  library(deSolve); library(rootSolve); library(yaml); library(readxl)
+})
+source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
+source("R/setup.R");           source("R/compare_functions.R")
+source("R/fit_animals.R");     source("R/dynamic_spinup.R")
+source("R/report_metadata.R")
+
+model    <- params$model
+scenario <- params$scenario
+```
+
+```{r compute, include=FALSE}
+# ------------------------------------------------------------
+# Rebuild the scenario from the saved spun-up parameters so the report reflects
+# EXACTLY the run that produced the saved states. If a saved spin-up exists we
+# use its parms; otherwise we rebuild from the scenarios file.
+# ------------------------------------------------------------
+scen <- read_scenarios("Data/scenarios.xlsx")
+spin_file <- sprintf("Data/spinup/%s_%s_baseline.rds", model, scenario)
+have_spin <- file.exists(spin_file)
+saved <- if (have_spin) load_spinup(spin_file) else NULL
+
+# treatment + baseline setups (fresh); apply fitted animal params + saved parms
+fitted <- if (file.exists("Results/fitted_animal_params.csv"))
+  load_fitted_params("Results/fitted_animal_params.csv") else NULL
+
+pair <- setup_scenario_pair(model, scen, scenario)
+if (!is.null(fitted))
+  pair$treatment <- apply_fitted_params(pair$treatment, fitted, model, scenario, verbose = FALSE)
+
+# --- EQUILIBRIUM (constant-forcing) carbon, both arms ---
+pair$baseline  <- spinup_equilibrium(pair$baseline,  verbose = FALSE)
+pair$treatment <- spinup_equilibrium(pair$treatment,
+                                     warm_start = pair$baseline$init_state_spin, verbose = FALSE)
+eq_base <- pair$baseline$init_state_spin
+eq_trt  <- pair$treatment$init_state_spin
+
+# --- DIRECT effect: indirect (_pint + exudate) slopes zeroed ---
+pair_d  <- zero_indirect_effects(pair, verbose = FALSE)
+eq_dir  <- spinup_equilibrium(pair_d$treatment, warm_start = eq_base, verbose = FALSE)$init_state_spin
+
+eff_total  <- compare_vectors(eq_trt, eq_base); eff_total$type  <- "total"
+eff_direct <- compare_vectors(eq_dir, eq_base); eff_direct$type <- "direct"
+eq_effect  <- rbind(eff_total, eff_direct)
+
+# --- SPIN-UP (seasonal limit-cycle) baseline carbon ---
+# The saved state is the t = 0 point of the limit cycle. To report the ANNUAL
+# MEAN (the fairer number to compare with the equilibrium), integrate one
+# seasonal year from the saved state and take the time-weighted (trapezoidal)
+# mean of each pool over that year. `spin_t0` keeps the raw t = 0 snapshot for
+# reference.
+spin_t0   <- if (have_spin) saved$state else NULL
+spin_mean <- NULL
+if (have_spin) {
+  y0    <- pair$baseline$init_state_spin
+  y0[names(spin_t0)] <- spin_t0[names(y0)]          # start from the saved cycle state
+  pb    <- pair$baseline$parms
+  pb$climate_forcing <- make_climate_forcing(pb)     # full seasonal forcing
+  yr    <- deSolve::ode(y = y0[names(pair$baseline$working_state)],
+                        times = seq(0, 365, by = 1),
+                        func = pair$baseline$wrapped_model, parms = pb)
+  yr    <- as.data.frame(yr)
+  pcols <- setdiff(names(yr), c("time", "mass_balance_check"))
+  # time-weighted mean over the year (trapezoidal / uniform daily grid = colMeans)
+  spin_mean <- setNames(
+    vapply(pcols, function(cn) {
+      v <- yr[[cn]]; tt <- yr$time
+      sum(diff(tt) * (head(v, -1) + tail(v, -1)) / 2) / (max(tt) - min(tt))
+    }, numeric(1)), pcols)
+}
+
+# --- OVER-SIMULATION effect from saved follow-up runs (add vs continue) ---
+add_file  <- sprintf("Data/followup/%s_%s_add.rds", model, scenario)
+ctrl_file <- sprintf("Data/followup/%s_%s_continue_baseline.rds", model, scenario)
+have_follow <- file.exists(add_file) && file.exists(ctrl_file)
+if (have_follow) {
+  add  <- load_followup(model, scenario, "add")$out  |> as.data.frame()
+  ctrl <- load_followup(model, scenario, "continue_baseline")$out |> as.data.frame()
+  names(add)[1] <- names(ctrl)[1] <- "time"
+  keep_p <- setdiff(intersect(names(add), names(ctrl)), c("time", "mass_balance_check"))
+  tt <- intersect(add$time, ctrl$time)
+  A <- add[match(tt, add$time),  keep_p, drop = FALSE]
+  C <- ctrl[match(tt, ctrl$time), keep_p, drop = FALSE]
+  sim_change <- data.frame(time = tt, A - C)                    # absolute change (g C m-2)
+  sim_pct    <- data.frame(time = tt, 100 * (A - C) / C)        # percent change
+  # end-of-simulation snapshot
+  last <- nrow(sim_change)
+  sim_end <- tibble(pool = keep_p,
+                    abs_change = as.numeric(sim_change[last, keep_p]),
+                    pct_change = as.numeric(sim_pct[last, keep_p]),
+                    years = tt[last] / 365)
+}
+
+# helper: pretty pool label + soil-only filter
+lab <- function(x) ifelse(x %in% names(pool_label), pool_label[x], x)
+```
+
+# Overview {#overview}
+
+This report documents the **`r scenario`** scenario of the `r model` model so
+co-authors can vet the results. All carbon stocks are in **`r UNIT_POOL`**;
+all state-variable derivatives (dPool/dt) are in **`r UNIT_FLUX`**; one model
+year = 365 days. Rate constants are **`r UNIT_RATE_DAY`** and annual NPP inputs
+are **`r UNIT_NPP_ANNUAL`** unless noted otherwise in the parameter table.
+
+```{r overview-status}
+tibble(
+  Item = c("Model", "Scenario", "Active pools",
+           "Saved equilibrium", "Saved seasonal spin-up", "Saved follow-up (add/continue)"),
+  Value = c(model, scenario,
+            paste(names(pair$treatment$working_state), collapse = ", "),
+            "recomputed in this report",
+            ifelse(have_spin, basename(spin_file), "NOT FOUND"),
+            ifelse(have_follow, "found", "NOT FOUND"))
+) |> kable(caption = "Scenario setup and data availability.")
+```
+
+The **active animal(s)** in this scenario:
+
+```{r active-animals}
+act_an <- intersect(animal_pools, names(pair$treatment$working_state))
+if (length(act_an))
+  tibble(Animal = lab(act_an), Pool = act_an) |> kable() else
+  cat("No animal pools active (pure baseline scenario).")
+```
+
+# Baseline carbon {#baseline}
+
+## Equilibrium (constant-forcing) stocks
+
+Equilibrium is the steady state under constant annual-mean forcing
+(Temp = MAT, moisture = MAtheta). Units: **`r UNIT_POOL`**.
+
+```{r baseline-eq-table}
+tibble(Pool = lab(names(eq_base)), Raw = names(eq_base),
+       `Equilibrium (g C m-2)` = as.numeric(eq_base)) |>
+  filter(Raw %in% soil_pools) |>
+  arrange(desc(`Equilibrium (g C m-2)`)) |>
+  mutate(`Equilibrium (g C m-2)` = round(`Equilibrium (g C m-2)`, 2)) |>
+  select(-Raw) |>
+  kable(caption = "Baseline equilibrium carbon stocks (soil + plant-root pools).")
+
+tot_eq <- sum(eq_base[intersect(soil_pools, names(eq_base))])
+```
+
+**Total baseline equilibrium soil + root carbon: `r round(tot_eq, 1)` `r UNIT_POOL`.**
+
+## Seasonal spin-up stocks
+
+The seasonal spin-up is the limit cycle under the full within-year forcing. The
+values below are the **annual mean** of each pool over one year of that cycle
+(time-weighted over the seasonal trajectory), which is the fair number to
+compare with the equilibrium. Units: **`r UNIT_POOL`**.
+
+```{r baseline-spin-table}
+if (have_spin) {
+  ss <- spin_mean[intersect(soil_pools, names(spin_mean))]
+  tibble(Pool = lab(names(ss)), `Spin-up annual mean (g C m-2)` = round(as.numeric(ss), 2)) |>
+    arrange(desc(`Spin-up annual mean (g C m-2)`)) |>
+    kable(caption = "Baseline seasonal spin-up carbon (annual mean over the limit cycle, g C m-2).")
+  tot_spin <- sum(spin_mean[intersect(soil_pools, names(spin_mean))])
+} else {
+  cat("No saved seasonal spin-up for this scenario (run Scripts/spinup_dynamic.R).")
+}
+```
+
+`r if (have_spin) sprintf("**Total baseline seasonal spin-up soil + root carbon (annual mean): %.1f %s.**", tot_spin, UNIT_POOL) else ""`
+
+```{r baseline-eq-vs-spin, fig.height=5, fig.cap="Baseline carbon by pool: equilibrium vs. seasonal spin-up annual mean (g C m-2, log scale)."}
+if (have_spin) {
+  common <- intersect(names(eq_base), names(spin_mean))
+  common <- intersect(common, soil_pools)
+  df <- bind_rows(
+    tibble(Pool = lab(common), C = as.numeric(eq_base[common]),  kind = "Equilibrium"),
+    tibble(Pool = lab(common), C = as.numeric(spin_mean[common]), kind = "Seasonal spin-up (annual mean)"))
+  ggplot(df, aes(reorder(Pool, C), C, color = kind)) +
+    geom_point(position = "dodge") + coord_flip() + scale_y_log10() +
+    labs(x = NULL, y = "Carbon (g C m-2, log scale)", color = NULL) +
+    theme_minimal(base_size = 11) + theme(legend.position = "top")
+} else cat("(no spin-up to compare)")
+```
+
+# Animal effect at equilibrium {#eq-effect}
+
+The animal effect is the treatment (animals present) minus baseline (no animals)
+at equilibrium, reported as **absolute change (`r UNIT_POOL`)** and **percent
+change**. *Total* = all pathways; *Direct* = feeding fluxes only (the indirect
+`_pint` and exudation slopes set to zero).
+
+```{r eq-effect-table}
+eq_effect |>
+  filter(!is.na(baseline), name %in% soil_pools) |>
+  transmute(Pool = lab(name), Type = type,
+            `Baseline (g C m-2)` = round(baseline, 2),
+            `Treatment (g C m-2)` = round(treatment, 2),
+            `Abs change (g C m-2)` = round(difference, 3),
+            `% change` = round(percent_change, 3)) |>
+  arrange(Pool, Type) |>
+  kable(caption = "Equilibrium animal effect by pool (total and direct).")
+```
+
+```{r eq-effect-plot, fig.height=6, fig.cap="Equilibrium animal effect (% change vs. baseline) by pool; total vs. direct."}
+eq_effect |>
+  filter(!is.na(baseline), name %in% soil_pools) |>
+  mutate(Pool = lab(name)) |>
+  ggplot(aes(reorder(Pool, percent_change), percent_change, fill = type)) +
+  geom_col(position = "dodge") + coord_flip() +
+  geom_hline(yintercept = 0, linewidth = 0.3) +
+  labs(x = NULL, y = "Animal effect (% change vs. baseline)", fill = "Effect") +
+  scale_fill_manual(values = c(total = "#1b7837", direct = "#762a83")) +
+  theme_minimal(base_size = 11) + theme(legend.position = "top")
+```
+
+# Animal effect over the simulation {#sim-effect}
+
+Change through the follow-up = animals-added run minus the time-matched
+continued-baseline (no-animal) run, per pool. Absolute change in `r UNIT_POOL`;
+percent relative to the continued baseline.
+
+```{r sim-effect-table}
+if (have_follow) {
+  sim_end |>
+    filter(pool %in% soil_pools) |>
+    transmute(Pool = lab(pool),
+              `Abs change (g C m-2)` = round(abs_change, 3),
+              `% change` = round(pct_change, 3)) |>
+    arrange(desc(abs(`Abs change (g C m-2)`))) |>
+    kable(caption = sprintf("Animal effect at end of the %.0f-year follow-up.",
+                            sim_end$years[1]))
+} else cat("No saved follow-up runs (run Scripts/followup_analysis.R).")
+```
+
+```{r sim-effect-traj, fig.height=6, fig.cap="Animal effect trajectory (added - continued baseline) over the follow-up, by pool (g C m-2)."}
+if (have_follow) {
+  long <- sim_change |>
+    pivot_longer(-time, names_to = "pool", values_to = "change") |>
+    filter(pool %in% soil_pools) |>
+    mutate(Pool = lab(pool), years = time / 365)
+  ggplot(long, aes(years, change, colour = Pool)) +
+    geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey50") +
+    geom_line(linewidth = 0.6) +
+    labs(x = "Years after animals added", y = "Change in C (added - baseline, g C m-2)",
+         colour = "Pool") +
+    theme_minimal(base_size = 11)
+} else cat("(no follow-up trajectory to plot)")
+```
+
+# Parameters unique to this scenario {#params}
+
+Parameters whose value **differs from the model defaults** (common.yml +
+`r paste0(model, '.yml')`). These are what make this scenario distinct;
+shared defaults are omitted. Units and descriptions from the model metadata.
+
+```{r unique-params}
+defaults <- modifyList(yaml::read_yaml("config/common.yml"),
+                       yaml::read_yaml(sprintf("config/%s.yml", model)))
+p_used <- pair$treatment$parms
+cand   <- intersect(names(p_used), names(defaults))
+is_scalar_num <- function(x) is.numeric(x) && length(x) == 1 && is.finite(x)
+
+diff_rows <- lapply(cand, function(nm) {
+  a <- p_used[[nm]]; b <- defaults[[nm]]
+  if (!is_scalar_num(a) || !is_scalar_num(b)) return(NULL)
+  if (isTRUE(all.equal(a, b, tolerance = 1e-10))) return(NULL)
+  info <- param_info(nm)
+  tibble(Parameter = nm, Label = info$label, Unit = info$unit,
+         Default = b, `Scenario value` = a, Description = info$desc)
+})
+uniq <- bind_rows(diff_rows)
+if (nrow(uniq)) {
+  uniq |> arrange(Parameter) |> kable(caption = "Parameters unique to this scenario (differ from defaults).")
+} else {
+  cat("No parameter overrides: this scenario uses the model defaults, differing only in which animal pools are active (see Overview).")
+}
+```
+
+```{r animal-params}
+# animal parameters for the active fauna (the biological definition of the treatment)
+act_an <- intersect(animal_pools, names(pair$treatment$working_state))
+if (length(act_an)) {
+  # crude name match: parameters mentioning the animal or its known levers
+  levers <- c(Earthworm = "earthworm", Detritivore = "detritiv",
+              DetPredator = "detpredator", RootHerb = "rootherb|root_herb|exudate_slope")
+  pat <- paste(levers[act_an], collapse = "|")
+  anp <- names(p_used)[grepl(pat, names(p_used), ignore.case = TRUE)]
+  anp <- anp[vapply(anp, function(n) is_scalar_num(p_used[[n]]), logical(1))]
+  if (length(anp))
+    tibble(Parameter = anp,
+           Label = vapply(anp, function(n) param_info(n)$label, ""),
+           Value = round(vapply(anp, function(n) p_used[[n]], 0), 8),
+           Unit  = vapply(anp, function(n) param_info(n)$unit, ""),
+           Description = vapply(anp, function(n) param_info(n)$desc, "")) |>
+      kable(caption = "Animal parameters governing the active fauna in this scenario.")
+}
+```
+
+# Forcing functions {#forcing}
+
+The seasonal forcing supplies temperature, moisture, and three within-year
+input-timing weights (each integrates to 1 over the year, so annual input =
+allocation x annual NPP). The equilibrium uses the annual means
+(Temp = MAT = `r p_used$MAT` deg C, moisture = MAtheta = `r p_used$MAtheta` m3 m-3).
+
+```{r forcing-table}
+forcing_info |>
+  rename(Forcing = forcing, Unit = unit, Description = description) |>
+  kable(caption = "Forcing functions supplied to the model.")
+```
+
+```{r forcing-plot, fig.height=6, fig.cap="Seasonal forcing over one year: temperature, moisture, and the three NPP input-timing weights."}
+cf  <- make_climate_forcing(p_used)
+doy <- seq(0, 365, by = 1)
+fv  <- t(sapply(doy, cf))
+fd  <- as.data.frame(fv); fd$doy <- doy
+fd |>
+  pivot_longer(-doy, names_to = "forcing", values_to = "value") |>
+  left_join(forcing_info, by = "forcing") |>
+  mutate(facet = paste0(forcing, " (", unit, ")")) |>
+  ggplot(aes(doy, value)) + geom_line(linewidth = 0.6, colour = "#2166ac") +
+  facet_wrap(~facet, scales = "free_y") +
+  labs(x = "Day of year", y = NULL) + theme_minimal(base_size = 10)
+```
+
+# Reproducibility {#repro}
+
+```{r repro}
+tibble(Item = c("Report generated", "Model", "Scenario",
+                "Saved spin-up file", "Saved follow-up files", "R version"),
+       Value = c(format(Sys.time()), model, scenario,
+                 ifelse(have_spin, spin_file, "none"),
+                 ifelse(have_follow, paste(basename(add_file), basename(ctrl_file)), "none"),
+                 R.version.string)) |>
+  kable()
+```
+
+All stocks in `r UNIT_POOL`; derivatives in `r UNIT_FLUX`; rates in
+`r UNIT_RATE_DAY`; annual NPP in `r UNIT_NPP_ANNUAL`. One model year = 365 days.
