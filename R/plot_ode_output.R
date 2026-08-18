@@ -128,89 +128,54 @@ plot_followup_add <- function(model, scenario, dir = "Data/followup",by = NULL, 
 }
 
 # ============================================================
-# STACKED, GROUPED CHANGE-OVER-TIME PLOT (added animals)
+# STACKED CHANGE-OVER-TIME PLOT (added animals)
 # ------------------------------------------------------------
 # For each scenario, the animal EFFECT over the follow-up = the added-animals
 # run minus the time-matched continued-baseline (no-animal) run, per pool.
-# Pools are relabelled (via name_lookup) and COMBINED into a few groups, then
-# stacked so you see the net change and how each group contributes through time.
-# One facet per scenario. Annual time steps by default (by = 365).
+# Pools are relabelled and ordered from the shared pool_names vector (in
+# R/compare_functions.R) and stacked so you see the net change and how each
+# pool contributes through time. One facet per scenario. Annual steps (by = 365).
 # ============================================================
-
-# default relabelling key (same names as Scripts/spinup_dynamic.R)
-followup_name_lookup <- c(
-  C_leaf_herb = "Herbaceous Leaf C", C_root_herb = "Herbaceous Root C",
-  C_leaf_tree = "Tree Leaf C", C_wood_tree = "Tree Wood C", C_root_tree = "Tree Root C",
-  Earthworm = "Earthworms", Litter = "Litter", CWD = "Coarse Woody Debris",
-  Organic = "Organic Matter", DOM = "Dissolved Organic Matter",
-  MIC = "Microbial Biomass (Organic horizon)", P = "POC", L = "LWMC",
-  A = "Aggregate C", M = "MAOC", B = "Microbial Biomass (Mineral horizon)",
-  Detritivore = "Detritivores", RootHerb = "Root Herbivores")
-
-# default grouping of pools into stacked categories (by RAW pool name)
-followup_pool_groups <- list(
-  "Herbaceous Root C"                   = "C_root_herb",
-  "Tree Root C"                         = "C_root_tree",
-  "Litter"                              = "Litter",
-  "Coarse Woody Debris"                 = "CWD",
-  "Fragmented C (Organic horizon)"      = "Organic",
-  "Dissolved Organic Matter"            = "DOM",
-  "Microbial Biomass (Organic horizon)" = "MIC",
-  "Low-weight molecular C"              = "L",
-  "Particulate organic C"               = "P",
-  "Aggregate C"                         = "A",
-  "Mineral-associated Organic C"        = "M",
-  "Microbial Biomass (Mineral horizon)" = "B"
-)
 
 # ------------------------------------------------------------
 # followup_change_long(): change (added - continued baseline) per pool over
 # time, for ONE scenario, at annual (or `by`-day) steps. Returns a tidy frame
-# with raw `state`, relabelled `pretty`, and the assigned `group`.
+# with raw `state` and the relabelled `pretty` (from pool_names). Animal pools
+# are dropped so the stack shows only the soil/plant carbon they affect.
 # ------------------------------------------------------------
 followup_change_long <- function(model, scenario, dir = "Data/followup",
-                                 by = 365,
-                                 name_lookup = followup_name_lookup,
-                                 groups = followup_pool_groups) {
+                                 by = 365) {
   add  <- load_followup(model, scenario, "add", dir = dir)$out
   ctrl <- load_followup(model, scenario, "continue_baseline", dir = dir)$out
   a <- as.data.frame(add);  names(a)[1] <- "time"
   b <- as.data.frame(ctrl); names(b)[1] <- "time"
 
-  keep <- setdiff(intersect(names(a), names(b)), c("time", "mass_balance_check"))
+  drop <- c("time", "mass_balance_check", animal_pool_names)
+  keep <- setdiff(intersect(names(a), names(b)), drop)
   tt   <- intersect(a$time, b$time)
   if (!is.null(by)) tt <- tt[tt %in% seq(0, max(tt), by = by)]
   a <- a[a$time %in% tt, , drop = FALSE]
   b <- b[b$time %in% tt, , drop = FALSE]
 
-  # map each pool to a group; pools not in any group are dropped from the stack
-  pool2group <- unlist(lapply(names(groups), function(g)
-    setNames(rep(g, length(groups[[g]])), groups[[g]])))
-
   ch <- a[, keep, drop = FALSE] - b[match(a$time, b$time), keep, drop = FALSE]
-  long <- data.frame(
+  data.frame(
     time     = rep(a$time, times = length(keep)),
     state    = rep(keep, each = nrow(a)),
     change   = as.vector(as.matrix(ch)),
+    pretty   = rep(relabel_pools(keep), each = nrow(a)),
+    scenario = scenario,
     stringsAsFactors = FALSE)
-  long$pretty   <- ifelse(long$state %in% names(name_lookup),
-                          name_lookup[long$state], long$state)
-  long$group    <- pool2group[long$state]
-  long$scenario <- scenario
-  long[!is.na(long$group), , drop = FALSE]
 }
 
 # ------------------------------------------------------------
-# plot_followup_stacked(): the faceted stacked graphic. Aggregates the per-pool
-# change into the groups, stacks them (positive above 0, negative below), one
-# facet per scenario. `scenarios` defaults to every scenario with saved runs.
+# plot_followup_stacked(): the faceted stacked graphic. Stacks the per-pool
+# change (positive above 0, negative below), one facet per scenario.
+# `scenarios` defaults to every scenario with saved runs.
 # ------------------------------------------------------------
 plot_followup_stacked <- function(model,
                                   scenarios = NULL,
                                   dir = "Data/followup",
-                                  by = 365,
-                                  name_lookup = followup_name_lookup,
-                                  groups = followup_pool_groups) {
+                                  by = 365) {
   library(ggplot2); library(dplyr)
 
   if (is.null(scenarios)) {
@@ -222,14 +187,13 @@ plot_followup_stacked <- function(model,
   if (!length(scenarios)) stop("No scenarios with saved add + continue_baseline runs in ", dir)
 
   dat <- bind_rows(lapply(scenarios, function(s)
-    followup_change_long(model, s, dir = dir, by = by,
-                         name_lookup = name_lookup, groups = groups)))
+    followup_change_long(model, s, dir = dir, by = by)))
 
-  # sum change within each group x time x scenario for the stack
+  # sum change within each pool x time x scenario for the stack, ordered by pool_names
   stacked <- dat %>%
-    group_by(scenario, group, time) %>%
+    group_by(scenario, pretty, time) %>%
     summarise(change = sum(change, na.rm = TRUE), .groups = "drop") %>%
-    mutate(group = factor(group, levels = names(groups)),
+    mutate(group = factor(pretty, levels = pool_order),
            years = time / 365)
 
   # net line (total change across all grouped pools)

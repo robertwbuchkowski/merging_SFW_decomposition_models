@@ -100,8 +100,8 @@ animal_eq_effect <- do.call("rbind", animal_eq_effect)
 write_csv(animal_eq_effect, "Results/animal_eq_effect.csv")
 
 # ---- equilibrium animal-effect figure ------------------------------------
-# Pools to show (soil + herbaceous root C); name_lookup / plot_order come from
-# R/compare_functions.R.
+# Pools to show and their labels/order come from pool_names in
+# R/compare_functions.R (relabel_pools / pool_order / plot_pools).
 
 dir.create("Plots", showWarnings = FALSE)
 png("Plots/total_effect.png", width = 6, height = 5, units = "in", res = 600)
@@ -115,9 +115,9 @@ animal_eq_effect %>% filter(!is.na(baseline)) %>%
              difference = treatment - baseline,
              percent_change = 100*(treatment - baseline)/baseline)
   ) %>%
-  mutate(pretty_name = name_lookup[name]) %>%
-  mutate(pretty_name = factor(pretty_name, levels = plot_order)) %>%
-  filter(pretty_name %in% keep_plot) %>%
+  mutate(pretty_name = relabel_pools(name)) %>%
+  mutate(pretty_name = factor(pretty_name, levels = pool_order)) %>%
+  filter(pretty_name %in% plot_pools | pretty_name == "Total C") %>%
   ggplot(aes(x = pretty_name, y = difference, fill = type)) +
   geom_col(position = "dodge") +
   facet_wrap(. ~ scenario, ncol = 2, scales = "free_y") +
