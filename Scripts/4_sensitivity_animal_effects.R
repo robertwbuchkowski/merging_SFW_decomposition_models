@@ -18,10 +18,10 @@ library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R"); source("R/derive_millennial_parms.R");
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
+source("R/scenario_uncertainty.R")
 
 model   <- "millennial"
 scen    <- read_scenarios("Data/scenarios.xlsx")
-scen$MitePredator <- NULL
 
 use_fitted_params <- TRUE
 fitted_params <- if (use_fitted_params && file.exists("Results/fitted_animal_params.csv"))
@@ -114,6 +114,25 @@ n_points  <- 7
 buffer    <- 0.5
 scenarios <- names(scen)
 
+# ------------------------------------------------------------
+# PHYSICAL BOUNDS for the swept grid: parameters constrained to a fixed range
+# must not be evaluated outside it. the named fractions are in [0, 1]; pct_claysilt in [0, 100].
+# clamp_grid() trims the +/-buffer grid to these bounds (dropping duplicates).
+# ------------------------------------------------------------
+param_bounds <- function(param) {
+  switch(param,
+         pct_claysilt = c(0, 100),
+         LigFrac = , a_root_herb = , root_to_organic = ,
+         prop_feaces_earthworm_LMWC = c(0, 1),
+         c(-Inf, Inf))
+}
+clamp_grid <- function(vals, param) {
+  b <- param_bounds(param)
+  v <- vals[vals >= b[1] & vals <= b[2]]
+  if (!length(v)) v <- pmin(pmax(vals, b[1]), b[2])   # fallback: clip, keep points
+  unique(v)
+}
+
 # run the full sweep: scenario x parameter
 all_rows <- list()
 for (scenario in scenarios) {
@@ -122,6 +141,7 @@ for (scenario in scenarios) {
   for (param in avail) {
     d0   <- pair0$treatment$parms[[param]]
     vals <- fit_param_grid(d0, buffer = buffer, n = n_points, scale = "linear")
+    vals <- clamp_grid(vals, param)
     cat("sweeping", scenario, "/", param, "around", signif(d0, 4), "\n")
     s <- sweep_param(scenario, param, vals)
     if (!is.null(s)) all_rows[[paste(scenario, param)]] <- s
@@ -131,38 +151,104 @@ sens <- bind_rows(all_rows)
 write_csv(sens, file.path(res_dir, "animal_effect_sensitivity.csv"))
 
 # ------------------------------------------------------------
-# SENSITIVITY SUMMARY: for each scenario x parameter x effect-type, how much
-# does the animal effect (summed |% change| across pools) move across the swept
-# range? This is one clean overview number per (parameter, effect type).
+# SCENARIO UNCERTAINTY OVERLAY: where does each parameter's reported
+# uncertainty (SD, else Min/Max, else CV = 2) sit relative to the +/-50% sweep?
+# For parameters present in scenarios.xlsx we compute the reported lo/hi as a
+# FRACTION of the default, so it can be drawn on the same "relative to default"
+# axis as the sweep (1.0 = default; 0.5 / 1.5 = the sweep ends).
 # ------------------------------------------------------------
-summary_tbl <- sens %>%
+unc <- tryCatch(read_param_uncertainty("Data/scenarios.xlsx"),
+                error = function(e) { message("uncertainty read failed: ",
+                                              conditionMessage(e)); NULL })
+if (!is.null(unc)) {
+  defaults_by <- sens %>% distinct(scenario, param, default)
+  unc_rel <- unc %>%
+    rename(param = parameter) %>%
+    inner_join(defaults_by, by = c("scenario", "param")) %>%
+    mutate(rel_lo = lo / default, rel_hi = hi / default,
+           rel_value = value / default) %>%
+    select(scenario, param, unc_source, rel_lo, rel_hi, rel_value)
+  write_csv(unc_rel, file.path(res_dir, "animal_effect_sensitivity_uncertainty.csv"))
+}
+
+# ------------------------------------------------------------
+# SUMMARY: average magnitude of the animal effect at the +/-50% ends, per
+# scenario x parameter x effect type. `effect_at` = mean |effect on total C|
+# summed across pools, at the low and high sweep ends and at the default.
+# ------------------------------------------------------------
+per_value <- sens %>%
   group_by(scenario, param, type, value, default) %>%
-  summarise(total_abs_effect = sum(abs(percent_change), na.rm = TRUE), .groups = "drop") %>%
+  summarise(effect_totalC = sum(abs(difference), na.rm = TRUE), .groups = "drop") %>%
+  mutate(rel = value / default)
+
+summary_tbl <- per_value %>%
   group_by(scenario, param, type) %>%
-  summarise(effect_range = max(total_abs_effect) - min(total_abs_effect),
-            effect_at_default = total_abs_effect[which.min(abs(value - default))],
-            .groups = "drop")
+  summarise(
+    effect_lo50  = effect_totalC[which.min(abs(rel - 0.5))],
+    effect_hi50  = effect_totalC[which.min(abs(rel - 1.5))],
+    effect_at_default = effect_totalC[which.min(abs(rel - 1))],
+    mean_effect_pm50  = mean(c(effect_totalC[which.min(abs(rel - 0.5))],
+                               effect_totalC[which.min(abs(rel - 1.5))])),
+    effect_range = max(effect_totalC) - min(effect_totalC),
+    .groups = "drop")
 write_csv(summary_tbl, file.path(res_dir, "animal_effect_sensitivity_summary.csv"))
 
 # ------------------------------------------------------------
-# PLOT 1 - overview: sensitivity of the whole-soil animal effect to each
-# parameter. x = parameter relative to its default; y = summed |effect| across
-# pools; colour = parameter; solid = total, dashed = direct; facet by scenario.
+# PLOT 1 - HEAT MAP highlighting the most impactful parameters: parameters
+# (rows, ordered by impact) x scenario (columns), fill = mean |animal effect on
+# total C| at the +/-50% sweep ends (total effect). The hottest rows are the
+# parameters the animal effect is most sensitive to.
 # ------------------------------------------------------------
-overview <- sens %>%
-  group_by(scenario, param, type, value, default) %>%
-  summarise(total_abs_effect = sum(abs(difference), na.rm = TRUE), .groups = "drop") %>%
-  mutate(rel_param = value / default)
+heat <- summary_tbl %>% filter(type == "total") %>%
+  mutate(param = fct_reorder(param, mean_effect_pm50, .fun = max, .desc = FALSE))
 
-p_overview <- ggplot(overview,
-                     aes(rel_param, total_abs_effect, colour = param, linetype = type)) +
+p_heat <- ggplot(heat, aes(scenario, param, fill = mean_effect_pm50)) +
+  geom_tile(colour = "white", linewidth = 0.4) +
+  geom_text(aes(label = signif(mean_effect_pm50, 2)), size = 2.6, colour = "grey15") +
+  scale_fill_viridis_c(option = "magma", direction = -1, trans = "sqrt") +
+  labs(title = "Sensitivity of the animal effect to model parameters",
+       subtitle = "Fill = mean |effect on total C| at +/-50% of default (total effect)",
+       x = NULL, y = NULL, fill = expression("|effect| (g C m"^-2*")")) +
+  theme_minimal(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1),
+        panel.grid = element_blank())
+ggsave(file.path(fig_dir, "animal_effect_sensitivity_heatmap.png"),
+       p_heat, width = 9, height = 11, dpi = 150)
+print(p_heat)
+
+# ------------------------------------------------------------
+# PLOT 2 - overview curves WITH the reported-uncertainty range shaded. x =
+# parameter relative to default; y = |effect on total C|; solid = total,
+# dashed = direct; the grey band marks where scenarios.xlsx says the parameter
+# actually ranges (SD / Min-Max / CV2), so a reader sees whether the swept
+# range is realistic. Facet by scenario; too many params to colour, so this is
+# faceted per parameter in the detail plot below -- here we keep the top movers.
+# ------------------------------------------------------------
+top_params <- summary_tbl %>% filter(type == "total") %>%
+  group_by(param) %>% summarise(m = max(mean_effect_pm50), .groups = "drop") %>%
+  slice_max(m, n = 12) %>% pull(param)
+
+overview <- per_value %>% filter(param %in% top_params) %>%
+  rename(rel_param = rel)
+
+unc_layer <- if (!is.null(unc))
+  geom_rect(data = unc_rel %>% filter(param %in% top_params),
+            aes(xmin = pmax(rel_lo, 0.4), xmax = pmin(rel_hi, 1.6),
+                ymin = -Inf, ymax = Inf, fill = param),
+            inherit.aes = FALSE, alpha = 0.12) else NULL
+
+p_overview <- ggplot(overview, aes(rel_param, effect_totalC, colour = param)) +
+  unc_layer +
   geom_vline(xintercept = 1, linewidth = 0.3, colour = "grey70") +
-  geom_line(linewidth = 0.7) + geom_point(size = 0.8) +
+  geom_line(linewidth = 0.7) + geom_point(size = 0.7) +
   facet_wrap(~scenario, scales = "free_y") +
-  scale_colour_viridis_d() +
-  scale_linetype_manual(values = c(total = "solid", direct = "dashed")) +
-  labs(x = "Parameter value (relative to default)", y = "Animal effect on total C (g C m^-2)",
-       colour = "Parameter", linetype = "Effect") +
+  scale_colour_viridis_d(guide = guide_legend(ncol = 2)) +
+  scale_fill_viridis_d(guide = "none") +
+  labs(title = "Animal effect vs parameter (top movers), with reported range shaded",
+       subtitle = "Shaded band = reported uncertainty from scenarios.xlsx (SD / Min-Max / CV2)",
+       x = "Parameter value (relative to default)",
+       y = expression("Animal effect on total C (g C m"^-2*")"),
+       colour = "Parameter") +
   theme_minimal(base_size = 11) + theme(legend.position = "bottom")
 ggsave(file.path(fig_dir, "animal_effect_sensitivity_overview.png"),
        p_overview, width = 12, height = 8, dpi = 150)
@@ -193,5 +279,7 @@ for(iii in 1:4){
 
 cat("\nWrote:\n  ", file.path(res_dir, "animal_effect_sensitivity.csv"),
     "\n  ", file.path(res_dir, "animal_effect_sensitivity_summary.csv"),
+    "\n  ", file.path(res_dir, "animal_effect_sensitivity_uncertainty.csv"),
+    "\n  ", file.path(fig_dir, "animal_effect_sensitivity_heatmap.png"),
     "\n  ", file.path(fig_dir, "animal_effect_sensitivity_overview.png"),
-    "\n  ", file.path(fig_dir, paste0("animal_effect_sensitivity_detail_", focus_scenario, ".png")), "\n")
+    "\n  ", file.path(fig_dir, "animal_effect_sensitivity_detail_<scenario>.png"), "\n")
