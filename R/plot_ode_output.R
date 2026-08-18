@@ -243,7 +243,7 @@ plot_followup_stacked <- function(model,
               inherit.aes = FALSE, linewidth = 0.6, linetype = "dashed") +
     facet_wrap(~scenario, scales = "free_y") +
     scale_fill_viridis_d() +
-    labs(x = "Years after animals added", y = "Change in C (added - baseline; g C m^-2)",
+    labs(x = "Years after animals added", y = expression("Animal Effect (g C m"^-2*")"),
          fill = "Pool") +
     theme_minimal(base_size = 11) +
     theme(legend.position = "right")

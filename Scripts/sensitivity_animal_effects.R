@@ -109,7 +109,7 @@ sweep_param <- function(scenario, param, values) {
 sweep_params <- c("k_frag_litter", "k_frag_organic", "k_l_o", "k_l",
                   "k_b", "k_pa", "k_ma", "pct_claysilt",
                   "k_MICd", "k_bd", "root_to_organic", "a_root_herb",
-                  "MAT", "MAtheta")
+                  "MAT", "MAtheta", "NPP_herb", "NPP_tree", "k_exudate_tree", "k_exudate_herb", "k_frag_CWD", "K_ol","alpha_ol", "alpha_ob", "K_ob", "BD", "pH", "pc", "rho_p","psi_matric", "lambda_mat", "k_a_min", "alpha_pl", "alpha_lb", "K_pl", "K_lb", "p1", "p2", "K_ld", "CUE_T", "p_a", "p_b")
 n_points  <- 7
 buffer    <- 0.5
 scenarios <- names(scen)

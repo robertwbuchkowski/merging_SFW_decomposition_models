@@ -104,16 +104,28 @@ write_csv(animal_eq_effect, "Results/animal_eq_effect.csv")
 # R/compare_functions.R.
 
 dir.create("Plots", showWarnings = FALSE)
-png("Plots/total_effect.png", width = 4, height = 8, units = "in", res = 600)
+png("Plots/total_effect.png", width = 6, height = 5, units = "in", res = 600)
 animal_eq_effect %>% filter(!is.na(baseline)) %>%
+  bind_rows(
+    animal_eq_effect %>%
+      group_by(model, scenario, type) %>%
+      summarize(treatment = sum(treatment), # Includes animal C
+                baseline = sum(baseline, na.rm = T)) %>%
+      mutate(name = "TotalC",
+             difference = treatment - baseline,
+             percent_change = 100*(treatment - baseline)/baseline)
+  ) %>%
   mutate(pretty_name = name_lookup[name]) %>%
   mutate(pretty_name = factor(pretty_name, levels = plot_order)) %>%
   filter(pretty_name %in% keep_plot) %>%
-  ggplot(aes(x = pretty_name, y = percent_change, fill = type)) +
+  ggplot(aes(x = pretty_name, y = difference, fill = type)) +
   geom_col(position = "dodge") +
-  facet_wrap(. ~ scenario, ncol = 1, scales = "free_y") +
+  facet_wrap(. ~ scenario, ncol = 2, scales = "free_y") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  ylab("Animal Effect (%)") + xlab("") +
+  ylab(expression("Animal Effect (g C m"^-2*")")) + xlab("") +
   scale_fill_manual(name = "Type",values = c("black", "blue"))
 dev.off()
+
+
+

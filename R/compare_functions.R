@@ -35,16 +35,17 @@ name_lookup <- c(
   Earthworm = "Earthworms",
   Litter = "Litter",
   CWD = "Coarse Woody Debris",
-  Organic = "Fragmented Matter (Organic horizon)",
+  Organic = "Particulate Organic C (Organic horizon)",
   DOM = "Dissolved Organic Matter",
   MIC =   "Microbial Biomass (Organic horizon)",
   P = "Particulate Organic C",
-  L = "Low-weight Molecular C",
+  L = "Low Molecular Weight C",
   A = "Aggregate C",
   M = "Mineral Associated Organic C",
   B = "Microbial Biomass (Mineral horizon)",
   Detritivore = "Detritivores",
-  RootHerb = "Root Herbivores"
+  RootHerb = "Root Herbivores",
+  TotalC = "Net Change in Carbon"
 )
 
 plot_order <- c(
@@ -53,16 +54,17 @@ plot_order <- c(
   "Litter",
   "Coarse Woody Debris",
   "Dissolved Organic Matter",
-  "Fragmented Matter (Organic horizon)",
+  "Particulate Organic C (Organic horizon)",
   "Microbial Biomass (Organic horizon)",
   "Particulate Organic C",
-  "Low-weight Molecular C",
+  "Low Molecular Weight C",
   "Aggregate C",
   "Mineral Associated Organic C",
   "Microbial Biomass (Mineral horizon)",
   "Earthworms",
   "Detritivores",
-  "Root Herbivores"
+  "Root Herbivores",
+  "Net Change in Carbon"
 )
 
 keep_plot <- c(
@@ -71,11 +73,12 @@ keep_plot <- c(
   "Litter",
   "Coarse Woody Debris",
   "Dissolved Organic Matter",
-  "Fragmented Matter (Organic horizon)",
+  "Particulate Organic C (Organic horizon)",
   "Microbial Biomass (Organic horizon)",
   "Particulate Organic C",
-  "Low-weight Molecular C",
+  "Low Molecular Weight C",
   "Aggregate C",
   "Mineral Associated Organic C",
-  "Microbial Biomass (Mineral horizon)"
+  "Microbial Biomass (Mineral horizon)",
+  "Net Change in Carbon"
 )
