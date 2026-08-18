@@ -23,12 +23,10 @@ models <- c("millennial")
 
 # ---- toggles -------------------------------------------------------------
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)
-do_spinup         <- FALSE    # run the seasonal dynamic spin-up (the slow part)
+do_spinup         <- TRUE    # run the seasonal dynamic spin-up (the slow part)
 do_treatment      <- FALSE   # also spin up the treatment arm now (else baseline only)
 use_newton        <- TRUE    # TRUE = Newton shooting (fast, exact limit cycle);
                              # FALSE = forward-integration spin-up
-
-scen$MitePredator <- NULL    # drop scenarios you are not running
 
 # fitted animal parameters, keyed by model x scenario x param
 fitted_params <- if (use_fitted_params)

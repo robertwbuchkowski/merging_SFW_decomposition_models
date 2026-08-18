@@ -26,8 +26,6 @@ do_spinup         <- TRUE     # run the long seasonal dynamic spin-ups?
 do_treatment      <- TRUE     # also spin up the treatment arm?
 ncores            <- detect_cores()   # e.g. set to 4 to cap it; 1 = sequential
 
-scen$MitePredator <- NULL
-
 fitted_params <- if (use_fitted_params)
   load_fitted_params("Results/fitted_animal_params.csv") else NULL
 

@@ -20,8 +20,6 @@ scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("millennial")
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)?
 
-scen$MitePredator = NULL          # match the scenarios actually spun up
-
 n_years <- 25                    # length of every follow-up run below
 by      <- 1
 

@@ -37,8 +37,6 @@ if(do_effect_fitting){
 animals_order <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")  # prey before predator
 tol_biomass   <- 0.02
 
-scen$MitePredator = NULL
-
 rows <- list()
 for (model in models) {
   for (scenario in names(scen)) {

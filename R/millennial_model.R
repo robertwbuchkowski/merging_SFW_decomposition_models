@@ -406,7 +406,7 @@ millennial_model_wplant <- function(time, state, parms){
       p_earthworm*(
         a_earthworm*(Fed_earthworm_litter + Fed_earthworm_om) +
           a_earthworm_soil*(Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A)) -
-      d_earthworm*Earthworm^2 -
+      Carcass_earthworm_P -
       E_earthworm*Earthworm
 
     # Detritivore:
