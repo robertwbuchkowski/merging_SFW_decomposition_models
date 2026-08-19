@@ -203,7 +203,7 @@ heat <- summary_tbl %>% filter(type == "total") %>%
   mutate(param = fct_reorder(param, mean_effect_pm50, .fun = max, .desc = FALSE))
 
 p_heat <- ggplot(heat, aes(scenario, param, fill = mean_effect_pm50)) +
-  geom_tile(colour = "white", linewidth = 0.4) +
+  geom_tile(colour = "white", linewidth = 0.4, alpha = 0.5) +
   geom_text(aes(label = signif(mean_effect_pm50, 2)), size = 2.6, colour = "grey15") +
   scale_fill_viridis_c(option = "magma", direction = -1, trans = "sqrt") +
   labs(title = "Sensitivity of the animal effect to model parameters",
@@ -224,29 +224,25 @@ print(p_heat)
 # range is realistic. Facet by scenario; too many params to colour, so this is
 # faceted per parameter in the detail plot below -- here we keep the top movers.
 # ------------------------------------------------------------
-top_params <- summary_tbl %>% filter(type == "total") %>%
-  group_by(param) %>% summarise(m = max(mean_effect_pm50), .groups = "drop") %>%
-  slice_max(m, n = 12) %>% pull(param)
+top_params <- summary_tbl %>% filter(type == "total") %>% group_by(scenario) %>% slice_max(mean_effect_pm50, n = 10) %>%
+  select(scenario, param) %>% ungroup()
 
-overview <- per_value %>% filter(param %in% top_params) %>%
-  rename(rel_param = rel)
+overview <- per_value %>%
+  rename(rel_param = rel) %>%
+  filter(type == "total")
 
-unc_layer <- if (!is.null(unc))
-  geom_rect(data = unc_rel %>% filter(param %in% top_params),
-            aes(xmin = pmax(rel_lo, 0.4), xmax = pmin(rel_hi, 1.6),
-                ymin = -Inf, ymax = Inf, fill = param),
-            inherit.aes = FALSE, alpha = 0.12) else NULL
+overview2 <- per_value %>% right_join(top_params) %>%
+  rename(rel_param = rel) %>%
+  filter(type == "total")
 
-p_overview <- ggplot(overview, aes(rel_param, effect_totalC, colour = param)) +
-  unc_layer +
+p_overview <- ggplot(overview, aes(rel_param, effect_totalC, group = param)) +
   geom_vline(xintercept = 1, linewidth = 0.3, colour = "grey70") +
-  geom_line(linewidth = 0.7) + geom_point(size = 0.7) +
+  geom_line(linewidth = 0.7, colour = "grey50") +
+  geom_line(data = overview2, aes(colour = param), linewidth = 0.8) + 
   facet_wrap(~scenario, scales = "free_y") +
-  scale_colour_viridis_d(guide = guide_legend(ncol = 2)) +
+  scale_colour_viridis_d(guide = guide_legend(nrow = 2)) +
   scale_fill_viridis_d(guide = "none") +
-  labs(title = "Animal effect vs parameter (top movers), with reported range shaded",
-       subtitle = "Shaded band = reported uncertainty from scenarios.xlsx (SD / Min-Max / CV2)",
-       x = "Parameter value (relative to default)",
+  labs(x = "Parameter value (relative to default)",
        y = expression("Animal effect on total C (g C m"^-2*")"),
        colour = "Parameter") +
   theme_minimal(base_size = 11) + theme(legend.position = "bottom")
