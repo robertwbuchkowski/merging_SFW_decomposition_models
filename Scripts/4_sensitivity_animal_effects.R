@@ -109,19 +109,75 @@ sweep_param <- function(scenario, param, values) {
 sweep_params <- c("k_frag_litter", "k_frag_organic", "k_l_o", "k_l",
                   "k_b", "k_pa", "k_ma", "pct_claysilt",
                   "k_MICd", "k_bd", "root_to_organic", "a_root_herb",
-                  "MAT", "MAtheta", "NPP_herb", "NPP_tree", "k_exudate_tree", "k_exudate_herb", "k_frag_CWD", "K_ol","alpha_ol", "alpha_ob", "K_ob", "BD", "pH", "pc", "rho_p","psi_matric", "lambda_mat", "k_a_min", "alpha_pl", "alpha_lb", "K_pl", "K_lb", "p1", "p2", "K_ld", "CUE_T", "p_a", "p_b")
+                  "MAT", "MAtheta", "NPP_herb", "NPP_tree", "k_exudate_tree", "k_exudate_herb", "k_frag_CWD", "K_ol","alpha_ol", "alpha_ob", "K_ob", "BD", "pH", "p_c", "rho_p","psi_matric", "lambda_mat", "k_a_min", "alpha_pl", "alpha_lb", "K_pl", "K_lb", "p1", "p2", "K_ld", "CUE_T", "p_a", "p_b")
 n_points  <- 7
 buffer    <- 0.5
 scenarios <- names(scen)
 
 # ------------------------------------------------------------
+# Pretty display names for the swept parameters (code name -> figure label),
+# used to relabel the axes/legends in PLOT 1 (heat map) and PLOT 2 (overview).
+# pretty_param() falls back to the raw code for anything not listed.
+# ------------------------------------------------------------
+param_labels <- c(
+  k_frag_litter   = "Litter fragmentation",
+  k_frag_organic  = "Organic fragmentation",
+  k_frag_CWD      = "CWD fragmentation",
+  k_l_o           = "DOM -> POC turnover",
+  k_l             = "LMWC leaching",
+  k_b             = "Aggregate breakdown",
+  k_pa            = "POC -> aggregate",
+  k_ma            = "MAOC -> aggregate",
+  k_MICd          = "Microbial turnover (organic)",
+  k_bd            = "Microbial turnover (mineral)",
+  k_a_min         = "Min. aeration factor",
+  k_exudate_tree  = "Tree root exudation",
+  k_exudate_herb  = "Herb root exudation",
+  pct_claysilt    = "Clay + silt (%)",
+  root_to_organic = "Root death -> Organic",
+  a_root_herb     = "Herb root allocation",
+  MAT             = "Mean annual temperature",
+  MAtheta         = "Mean annual moisture",
+  NPP_herb        = "Herbaceous NPP",
+  NPP_tree        = "Tree NPP",
+  BD              = "Bulk density",
+  rho_p           = "Particle density",
+  pH              = "Soil pH",
+  psi_matric      = "Matric potential",
+  lambda_mat      = "Matric sensitivity",
+  CUE_T           = "CUE temperature slope",
+  K_ol            = "Organic->DOM half-saturation",
+  K_ob            = "DOM->microbe half-saturation",
+  K_pl            = "POC->LMWC half-saturation",
+  K_lb            = "LMWC->microbe half-saturation",
+  K_ld            = "LMWC->MAOC max sorption",
+  alpha_ol        = "Organic->DOM pre-exponential",
+  alpha_ob        = "DOM->microbe pre-exponential",
+  alpha_pl        = "POC->LMWC pre-exponential",
+  alpha_lb        = "LMWC->microbe pre-exponential",
+  p1              = "pH sorption coef. 1",
+  p2              = "pH sorption coef. 2",
+  p_a             = "Aggregate->POC partition",
+  p_b             = "Necromass->MAOC partition",
+  p_c             = "Clay+silt protection coef.")
+
+pretty_param <- function(x) ifelse(x %in% names(param_labels), param_labels[x], x)
+
+# ------------------------------------------------------------
 # PHYSICAL BOUNDS for the swept grid: parameters constrained to a fixed range
-# must not be evaluated outside it. the named fractions are in [0, 1]; pct_claysilt in [0, 100].
+# must not be evaluated outside it. a_*/p_* (assimilation / production
+# efficiencies) and the named fractions are in [0, 1]; pct_claysilt in [0, 100].
 # clamp_grid() trims the +/-buffer grid to these bounds (dropping duplicates).
 # ------------------------------------------------------------
 param_bounds <- function(param) {
+  # a_*/p_* ASSIMILATION / PRODUCTION efficiencies are in [0, 1]. The soil
+  # partition/scaling coefficients p_a, p_b, p_c are NOT efficiencies and are
+  # left unbounded here.
+  if (grepl("^(a_|p_)", param) && !param %in% c("p_a", "p_b", "p_c"))
+    return(c(0, 1))
   switch(param,
          pct_claysilt = c(0, 100),
+         p_a = , p_b = c(0, 1),                # partition fractions, still [0,1]
          LigFrac = , a_root_herb = , root_to_organic = ,
          prop_feaces_earthworm_LMWC = c(0, 1),
          c(-Inf, Inf))
@@ -200,17 +256,16 @@ write_csv(summary_tbl, file.path(res_dir, "animal_effect_sensitivity_summary.csv
 # parameters the animal effect is most sensitive to.
 # ------------------------------------------------------------
 heat <- summary_tbl %>% filter(type == "total") %>%
-  mutate(param = fct_reorder(param, mean_effect_pm50, .fun = max, .desc = FALSE))
+  mutate(param_pretty = pretty_param(param),
+         param_pretty = fct_reorder(param_pretty, mean_effect_pm50, .fun = max, .desc = FALSE))
 
-p_heat <- ggplot(heat, aes(scenario, param, fill = mean_effect_pm50)) +
+p_heat <- ggplot(heat, aes(scenario, param_pretty, fill = mean_effect_pm50)) +
   geom_tile(colour = "white", linewidth = 0.4, alpha = 0.5) +
   geom_text(aes(label = signif(mean_effect_pm50, 2)), size = 2.6, colour = "grey15") +
-  scale_fill_viridis_c(option = "magma", direction = -1, trans = "sqrt") +
-  labs(title = "Sensitivity of the animal effect to model parameters",
-       subtitle = "Fill = mean |effect on total C| at +/-50% of default (total effect)",
-       x = NULL, y = NULL, fill = expression("|effect| (g C m"^-2*")")) +
+  scale_fill_viridis_c(option = "magma", direction = -1, trans = "sqrt", alpha = 0.5) +
+  labs(x = NULL, y = NULL, fill = expression("|effect| (g C m"^-2*")")) +
   theme_minimal(base_size = 11) +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1),
+  theme(
         panel.grid = element_blank())
 ggsave(file.path(fig_dir, "animal_effect_sensitivity_heatmap.png"),
        p_heat, width = 9, height = 11, dpi = 150)
@@ -224,23 +279,23 @@ print(p_heat)
 # range is realistic. Facet by scenario; too many params to colour, so this is
 # faceted per parameter in the detail plot below -- here we keep the top movers.
 # ------------------------------------------------------------
-top_params <- summary_tbl %>% filter(type == "total") %>% group_by(scenario) %>% slice_max(mean_effect_pm50, n = 10) %>%
+top_params <- summary_tbl %>% filter(type == "total") %>%
+  group_by(scenario) %>%
+  slice_max(mean_effect_pm50, n = 10) %>%
   select(scenario, param) %>% ungroup()
 
-overview <- per_value %>%
+overview <- per_value %>% 
+  right_join(top_params) %>%
   rename(rel_param = rel) %>%
-  filter(type == "total")
+  filter(is.finite(rel_param)) %>%
+  filter(type == "total") %>%
+  mutate(param_pretty = pretty_param(param))
 
-overview2 <- per_value %>% right_join(top_params) %>%
-  rename(rel_param = rel) %>%
-  filter(type == "total")
-
-p_overview <- ggplot(overview, aes(rel_param, effect_totalC, group = param)) +
+p_overview <- ggplot(overview, aes(rel_param, effect_totalC, colour = param_pretty)) +
   geom_vline(xintercept = 1, linewidth = 0.3, colour = "grey70") +
-  geom_line(linewidth = 0.7, colour = "grey50") +
-  geom_line(data = overview2, aes(colour = param), linewidth = 0.8) + 
+  geom_line(linewidth = 0.7) + geom_point(size = 0.7) +
   facet_wrap(~scenario, scales = "free_y") +
-  scale_colour_viridis_d(guide = guide_legend(nrow = 2)) +
+  scale_colour_viridis_d(guide = guide_legend(nrow = 3)) +
   scale_fill_viridis_d(guide = "none") +
   labs(x = "Parameter value (relative to default)",
        y = expression("Animal effect on total C (g C m"^-2*")"),
@@ -258,12 +313,14 @@ print(p_overview)
 for(iii in 1:4){
   focus_scenario <- scenarios[iii]
   detail <- sens %>% filter(scenario == focus_scenario, type == "total") %>%
-    mutate(rel_param = value / default)
-  
-  p_detail <- ggplot(detail, aes(rel_param, percent_change, colour = name)) +
+    mutate(rel_param = value / default,
+           param_pretty = pretty_param(param),
+           pool_pretty  = relabel_pools(name))
+
+  p_detail <- ggplot(detail, aes(rel_param, percent_change, colour = pool_pretty)) +
     geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey70") +
     geom_line(linewidth = 0.6) +
-    facet_wrap(.~param, scales = "free") +
+    facet_wrap(.~param_pretty, scales = "free") +
     labs(title = paste0("Animal effect per pool vs parameter -- ", focus_scenario, " (total effect)"),
          x = "Parameter value (relative to default)", y = "Effect on pool (%)",
          colour = "Pool") +

@@ -212,3 +212,133 @@ plot_followup_stacked <- function(model,
     theme_minimal(base_size = 11) +
     theme(legend.position = "right")
 }
+
+# ============================================================
+# FOLLOW-UP TRAJECTORY + EQUILIBRIUM END-STATE (single combined figure)
+# ------------------------------------------------------------
+# Shows the stacked animal-effect trajectory over the follow-up AND the
+# equilibrium animal effect (from Scripts/2_spinup_dynamic.R ->
+# Results/animal_eq_effect.csv) as a stacked bar at the right, past a broken
+# x-axis. Pool fills match between the trajectory and the equilibrium bar; a
+# dashed horizontal line marks the NET equilibrium change per scenario. This
+# replaces the need for a separate equilibrium-effect figure.
+#
+#   eq_csv   the equilibrium effect table written by script 2. Columns used:
+#            name, difference (absolute change, g C m-2), scenario, type.
+#   eq_type  which effect to show at equilibrium ("total" or "direct").
+# ============================================================
+read_eq_change <- function(eq_csv = "Results/animal_eq_effect.csv",
+                           eq_type = "total") {
+  if (!file.exists(eq_csv)) {
+    warning("equilibrium effect file not found: ", eq_csv,
+            " -- run Scripts/2_spinup_dynamic.R. Equilibrium bar omitted.")
+    return(NULL)
+  }
+  e <- utils::read.csv(eq_csv, stringsAsFactors = FALSE)
+  e <- e[e$type == eq_type & !is.na(e$difference) &
+         !(e$name %in% animal_pool_names), , drop = FALSE]
+  data.frame(scenario = e$scenario,
+             pretty   = relabel_pools(e$name),
+             change   = e$difference,
+             stringsAsFactors = FALSE)
+}
+
+plot_followup_with_eq <- function(model,
+                                  scenarios = NULL,
+                                  dir = "Data/followup",
+                                  by = 365,
+                                  eq_csv = "Results/animal_eq_effect.csv",
+                                  eq_type = "total",
+                                  gap_frac = 0.06,   # x-gap width as frac of the time span
+                                  bar_frac = 0.14) { # eq-bar width as frac of the time span
+  library(ggplot2); library(dplyr)
+
+  if (is.null(scenarios)) {
+    fs <- list.files(dir, pattern = paste0("^", model, "_.*_add\\.rds$"))
+    scenarios <- sub(paste0("^", model, "_(.*)_add\\.rds$"), "\\1", fs)
+    scenarios <- scenarios[file.exists(file.path(dir,
+                     sprintf("%s_%s_continue_baseline.rds", model, scenarios)))]
+  }
+  if (!length(scenarios)) stop("No scenarios with saved add + continue_baseline runs in ", dir)
+
+  # --- trajectory (stacked area), reuse the shared grouping/relabelling ---
+  traj <- bind_rows(lapply(scenarios, function(s)
+    followup_change_long(model, s, dir = dir, by = by))) %>%
+    group_by(scenario, pretty, time) %>%
+    summarise(change = sum(change, na.rm = TRUE), .groups = "drop") %>%
+    mutate(years = time / 365)
+
+  tmax <- max(traj$years)
+  gap  <- gap_frac * tmax
+  barw <- bar_frac * tmax
+  x_bar_centre <- tmax + gap + barw / 2          # where the equilibrium bar sits
+
+  # --- equilibrium end-state (stacked bar) ---
+  eq <- read_eq_change(eq_csv, eq_type)
+  if (!is.null(eq)) eq <- eq %>% filter(scenario %in% scenarios)
+
+  # consistent factor levels / fill order across both layers
+  lv <- pool_order
+  lv <- lv[lv %in% unique(traj$pretty)]
+  traj$group <- factor(traj$pretty, levels = lv)
+
+  # net trajectory + net equilibrium (dashed reference line)
+  net_traj <- traj %>% group_by(scenario, years) %>%
+    summarise(change = sum(change), .groups = "drop")
+  net_eq <- if (!is.null(eq)) eq %>% group_by(scenario) %>%
+    summarise(net = sum(change), .groups = "drop") else NULL
+
+  p <- ggplot(traj, aes(years, change, fill = group)) +
+    geom_area(alpha = 0.9, colour = "white", linewidth = 0.1) +
+    geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey40") +
+    geom_line(data = net_traj, aes(years, change),
+              inherit.aes = FALSE, linewidth = 0.6, linetype = "dashed")
+
+  if (!is.null(eq) && nrow(eq)) {
+    eq$group <- factor(relabel_pools(eq$pretty), levels = lv)
+    eq$xmin  <- x_bar_centre - barw / 2
+    eq$xmax  <- x_bar_centre + barw / 2
+    # stack the equilibrium bar: cumulative positive and negative separately
+    eq <- eq %>% group_by(scenario) %>%
+      arrange(group, .by_group = TRUE) %>%
+      mutate(pos = pmax(change, 0), neg = pmin(change, 0),
+             ytop_pos = cumsum(pos), ybot_pos = ytop_pos - pos,
+             ybot_neg = cumsum(neg), ytop_neg = ybot_neg - neg) %>%
+      ungroup()
+
+    p <- p +
+      # positive segments
+      geom_rect(data = eq %>% filter(change > 0),
+                aes(xmin = xmin, xmax = xmax, ymin = ybot_pos, ymax = ytop_pos, fill = group),
+                inherit.aes = FALSE, colour = "white", linewidth = 0.1) +
+      # negative segments
+      geom_rect(data = eq %>% filter(change < 0),
+                aes(xmin = xmin, xmax = xmax, ymin = ytop_neg, ymax = ybot_neg, fill = group),
+                inherit.aes = FALSE, colour = "white", linewidth = 0.1)
+
+    if (!is.null(net_eq))
+      p <- p +
+        geom_segment(data = net_eq,
+                     aes(x = tmax + gap, xend = x_bar_centre + barw / 2,
+                         y = net, yend = net),
+                     inherit.aes = FALSE, linetype = "dashed", linewidth = 0.5,
+                     colour = "grey20")
+
+    # broken-axis cue: label the equilibrium bar, mark the gap
+    brk_lab <- data.frame(x = x_bar_centre, y = -Inf, lab = "Equilibrium")
+    p <- p +
+      geom_vline(xintercept = tmax + gap / 2, linetype = "dotted",
+                 colour = "grey60", linewidth = 0.3) +
+      scale_x_continuous(
+        breaks = c(pretty(c(0, tmax)), x_bar_centre),
+        labels = c(as.character(pretty(c(0, tmax))), "eq"),
+        expand = expansion(mult = c(0.01, 0.02)))
+  }
+
+  p + facet_wrap(~scenario, scales = "free_y") +
+    scale_fill_viridis_d(drop = FALSE) +
+    labs(x = "Years after animals added  (eq = equilibrium)",
+         y = expression("Animal Effect (g C m"^-2*")"), fill = "Pool") +
+    theme_minimal(base_size = 11) +
+    theme(legend.position = "right")
+}

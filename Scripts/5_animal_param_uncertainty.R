@@ -19,10 +19,11 @@ library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
-source("R/scenario_uncertainty.R"); source("R/derive_millennial_parms.R")
+source("R/scenario_uncertainty.R")
 
 model <- "millennial"
 scen  <- read_scenarios("Data/scenarios.xlsx")
+scen$MitePredator <- NULL
 
 fitted_params <- if (file.exists("Results/fitted_animal_params.csv"))
   load_fitted_params("Results/fitted_animal_params.csv") else NULL
@@ -30,7 +31,7 @@ fitted_params <- if (file.exists("Results/fitted_animal_params.csv"))
 fig_dir <- "Results/figures"; dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 res_dir <- "Results";         dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
 
-animal_pools <- c("Earthworm", "Detritivore", "RootHerb")
+animal_pools <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")
 derive_fn    <- match.fun(model_table[[model]]$derive)
 `%||%` <- function(a, b) if (is.null(a)) b else a
 

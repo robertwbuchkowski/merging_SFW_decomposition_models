@@ -96,9 +96,14 @@ read_param_uncertainty <- function(path = "Data/scenarios.xlsx",
     a_root_herb                = c(0, 1),
     root_to_organic            = c(0, 1),
     prop_feaces_earthworm_LMWC = c(0, 1),
+    p_a                        = c(0, 1),
+    p_b                        = c(0, 1),
     pct_claysilt               = c(0, 100))
-  # prefix-family bounds: assimilation (a_*) and production (p_*) efficiencies
-  in_unit_family <- grepl("^(a_|p_)", out$parameter)
+  # prefix-family bounds: assimilation (a_*) and production (p_*) efficiencies.
+  # The soil partition/scaling coefficients p_a, p_b (fractions, [0,1]) and p_c
+  # (an unbounded scaling coefficient) are handled by name below, not here.
+  in_unit_family <- grepl("^(a_|p_)", out$parameter) &
+                    !out$parameter %in% c("p_a", "p_b", "p_c")
 
   lo_bound <- rep(-Inf, nrow(out)); hi_bound <- rep(Inf, nrow(out))
   lo_bound[in_unit_family] <- 0;  hi_bound[in_unit_family] <- 1

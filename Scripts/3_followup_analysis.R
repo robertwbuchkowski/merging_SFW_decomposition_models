@@ -131,13 +131,15 @@ for (scenario in names(scen)) {
 dev.off()
 
 # ------------------------------------------------------------
-# STACKED, GROUPED animal-effect graphic (added animals): net C change over the
-# follow-up, pools combined into groups and relabelled, one facet per scenario,
-# annual time steps (by = 365). Auto-detects scenarios with saved add +
-# continue_baseline runs.
+# COMBINED animal-effect graphic: the stacked C-change trajectory over the
+# follow-up PLUS the equilibrium effect (from Scripts/2_spinup_dynamic.R ->
+# Results/animal_eq_effect.csv) as a stacked bar past a broken x-axis, with
+# matching pool colours and a dashed net-change line. One facet per scenario.
+# This single figure replaces the separate equilibrium-effect plot.
 # ------------------------------------------------------------
-dir.create("Plots", showWarnings = FALSE)
-p_stacked <- plot_followup_stacked("millennial", by = 365)
-ggsave("Plots/followup_added_stacked.png", p_stacked,
-       width = 10, height = 7, dpi = 300)
-print(p_stacked)
+p_combined <- plot_followup_with_eq("millennial", by = 365,
+                                    eq_csv = "Results/animal_eq_effect.csv",
+                                    eq_type = "total")
+ggsave("Plots/followup_added_with_equilibrium.png", p_combined,
+       width = 11, height = 7, dpi = 300)
+print(p_combined)
