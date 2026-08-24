@@ -207,6 +207,27 @@ for (scenario in scenarios) {
 sens <- bind_rows(all_rows)
 write_csv(sens, file.path(res_dir, "animal_effect_sensitivity.csv"))
 
+temp1 = read_csv("Results/animal_effect_sensitivity.csv") %>%
+  group_by(type, param, rel, scenario) %>%
+  summarize(difference = sum(difference)) %>%
+  filter(rel %in% c("0.5", "1.5", "1")) %>%
+  mutate(rel = ifelse(rel == "0.5", "Half", 
+                      ifelse(rel == "1", "Base", "Double"))) %>%
+  pivot_wider(names_from = rel, values_from = difference) %>%
+  filter(type == "total")
+
+temp1 %>%
+  ggplot(aes(y = param, x = Half, xend = Double, yend = param)) + geom_segment() + facet_wrap(.~scenario, scales = "free") +
+  geom_vline(aes(xintercept = Base), linetype = 2) + theme_minimal(base_size = 11) +
+  geom_point(aes(x = Half)) + geom_point(aes(x = Double))
+
+temp1 %>%
+  mutate(range = abs(Double-Half)) %>%
+  group_by(scenario) %>%
+  slice_max(range, n = 3) %>%
+  ungroup() %>%
+  select(param) %>% table()
+  
 # ------------------------------------------------------------
 # SCENARIO UNCERTAINTY OVERLAY: where does each parameter's reported
 # uncertainty (SD, else Min/Max, else CV = 2) sit relative to the +/-50% sweep?
