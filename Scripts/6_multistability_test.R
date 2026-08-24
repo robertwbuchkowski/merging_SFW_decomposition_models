@@ -158,8 +158,7 @@ cat("\n================= RESULT =================\n")
 print(as.data.frame(summary_tbl), row.names = FALSE)
 if (any(summary_tbl$multistable))
   cat("\nALTERNATIVE STABLE STATES found in:",
-      paste(summary_tbl$scenario[summary_tbl$multistable], collapse = ", "), "\n")
-else
+      paste(summary_tbl$scenario[summary_tbl$multistable], collapse = ", "), "\n") else
   cat("\nNo multistability detected: every scenario converged to a single stable",
       "state from all", unique(summary_tbl$n_tested), "seeds.\n")
 
