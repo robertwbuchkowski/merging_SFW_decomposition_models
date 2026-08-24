@@ -292,7 +292,7 @@ plot_followup_with_eq <- function(model,
     geom_area(alpha = 0.9, colour = "white", linewidth = 0.1) +
     geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey40") +
     geom_line(data = net_traj, aes(years, change),
-              inherit.aes = FALSE, linewidth = 0.6, linetype = "dashed")
+              inherit.aes = FALSE, linewidth = 0.6, linetype = "dashed", color = "white")
 
   if (!is.null(eq) && nrow(eq)) {
     eq$group <- factor(relabel_pools(eq$pretty), levels = lv)
@@ -322,7 +322,7 @@ plot_followup_with_eq <- function(model,
                      aes(x = tmax + gap, xend = x_bar_centre + barw / 2,
                          y = net, yend = net),
                      inherit.aes = FALSE, linetype = "dashed", linewidth = 0.5,
-                     colour = "grey20")
+                     color = "white")
 
     # broken-axis cue: label the equilibrium bar, mark the gap
     brk_lab <- data.frame(x = x_bar_centre, y = -Inf, lab = "Equilibrium")
