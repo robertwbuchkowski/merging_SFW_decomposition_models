@@ -99,6 +99,26 @@ for (model in models) {
 animal_eq_effect <- do.call("rbind", animal_eq_effect)
 write_csv(animal_eq_effect, "Results/animal_eq_effect.csv")
 
+# ---- summary table: total vs direct animal effect, one row per scenario ----
+# For each scenario the animal effect on TOTAL soil + root C is the net change
+# summed over the shared pools (difference = treatment - baseline; animal
+# biomass pools have no baseline so are NA and excluded). "direct" repeats this
+# with the indirect (_pint / exudate) slopes zeroed. pct_direct is the share of
+# the total effect delivered through direct feeding alone.
+animal_effect_summary <- animal_eq_effect %>%
+  filter(!is.na(difference)) %>%                       # shared soil/root pools only
+  group_by(model, scenario, type) %>%
+  summarise(effect = sum(difference), .groups = "drop") %>%
+  pivot_wider(names_from = type, values_from = effect) %>%
+  transmute(model, scenario,
+            total_effect_gCm2  = round(total, 2),
+            direct_effect_gCm2 = round(direct, 2),
+            pct_direct_of_total = round(100 * direct / total, 1))
+
+write_csv(animal_effect_summary, "Results/animal_effect_summary.csv")
+cat("\nAnimal effect on total soil + root C (g C m-2), by scenario:\n")
+print(as.data.frame(animal_effect_summary), row.names = FALSE)
+
 # ---- equilibrium animal-effect figure ------------------------------------
 # Pools to show and their labels/order come from pool_names in
 # R/compare_functions.R (relabel_pools / pool_order / plot_pools).
