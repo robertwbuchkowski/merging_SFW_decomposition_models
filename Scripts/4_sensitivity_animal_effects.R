@@ -22,6 +22,7 @@ source("R/scenario_uncertainty.R")
 
 model   <- "millennial"
 scen    <- read_scenarios("Data/scenarios.xlsx")
+scen$MitePredator <- NULL
 
 use_fitted_params <- TRUE
 fitted_params <- if (use_fitted_params && file.exists("Results/fitted_animal_params.csv"))
@@ -254,18 +255,51 @@ write_csv(summary_tbl, file.path(res_dir, "animal_effect_sensitivity_summary.csv
 # (rows, ordered by impact) x scenario (columns), fill = mean |animal effect on
 # total C| at the +/-50% sweep ends (total effect). The hottest rows are the
 # parameters the animal effect is most sensitive to.
+#
+# Each tile is annotated with a SYMBOL showing which uncertainty source
+# scenarios.xlsx provides for that parameter IN THAT SCENARIO (the source can
+# differ across scenarios). Axis labels flag parameters with no reported
+# uncertainty at all. Symbols (explain in the caption):
+#     *   SD reported            (range = value +/- SD)
+#     []  Min/Max reported       (range = [Min, Max])
+#     ~   CV = 2 placeholder     (no SD/Min-Max; range = value +/- 2|value|)
+#   (blank) parameter absent from scenarios.xlsx -> swept on +/-50% only; its
+#           axis label is marked with a leading dot.
 # ------------------------------------------------------------
+# source per scenario x parameter (unc read earlier; may be NULL)
+src_tbl <- if (!is.null(unc))
+  unc %>% transmute(scenario, param = parameter, unc_source) else
+  data.frame(scenario = character(), param = character(), unc_source = character())
+src_sym <- c(SD = "*", MinMax = "[]", CV2 = "~")
+
 heat <- summary_tbl %>% filter(type == "total") %>%
-  mutate(param_pretty = pretty_param(param),
+  left_join(src_tbl, by = c("scenario", "param")) %>%
+  mutate(sym = ifelse(is.na(unc_source), "", src_sym[unc_source]))
+
+# parameters that appear NOWHERE in scenarios.xlsx (no uncertainty reported)
+params_no_unc <- setdiff(unique(heat$param), unique(src_tbl$param))
+axis_lab <- function(p) ifelse(p %in% params_no_unc,
+                               paste0("\u00b7 ", pretty_param(p)),  # leading middle dot
+                               pretty_param(p))
+
+heat <- heat %>%
+  mutate(param_pretty = axis_lab(param),
          param_pretty = fct_reorder(param_pretty, mean_effect_pm50, .fun = max, .desc = FALSE))
 
 p_heat <- ggplot(heat, aes(scenario, param_pretty, fill = mean_effect_pm50)) +
-  geom_tile(colour = "white", linewidth = 0.4, alpha = 0.5) +
-  geom_text(aes(label = signif(mean_effect_pm50, 2)), size = 2.6, colour = "grey15") +
-  scale_fill_viridis_c(option = "magma", direction = -1, trans = "sqrt", alpha = 0.5) +
-  labs(x = NULL, y = NULL, fill = expression("|effect| (g C m"^-2*")")) +
+  geom_tile(colour = "white", linewidth = 0.4) +
+  geom_text(aes(label = signif(mean_effect_pm50, 2)), size = 2.4,
+            colour = "grey15", nudge_y = 0.14) +
+  geom_text(aes(label = sym), size = 3.0, colour = "grey15",
+            fontface = "bold", nudge_y = -0.2) +
+  scale_fill_viridis_c(option = "magma", direction = -1, trans = "sqrt") +
+  labs(title = "Sensitivity of the animal effect to model parameters",
+       subtitle = paste0("Fill = mean |effect on total C| at +/-50% of default (total effect).\n",
+                         "Uncertainty source per cell:  * = SD,  [] = Min/Max,  ~ = CV=2 placeholder;",
+                         "  leading dot = not in scenarios.xlsx."),
+       x = NULL, y = NULL, fill = expression("|effect| (g C m"^-2*")")) +
   theme_minimal(base_size = 11) +
-  theme(
+  theme(axis.text.x = element_text(angle = 30, hjust = 1),
         panel.grid = element_blank())
 ggsave(file.path(fig_dir, "animal_effect_sensitivity_heatmap.png"),
        p_heat, width = 9, height = 11, dpi = 150)
@@ -280,24 +314,30 @@ print(p_heat)
 # faceted per parameter in the detail plot below -- here we keep the top movers.
 # ------------------------------------------------------------
 top_params <- summary_tbl %>% filter(type == "total") %>%
-  group_by(scenario) %>%
-  slice_max(mean_effect_pm50, n = 10) %>%
-  select(scenario, param) %>% ungroup()
+  group_by(param) %>% summarise(m = max(mean_effect_pm50), .groups = "drop") %>%
+  slice_max(m, n = 12) %>% pull(param)
 
-overview <- per_value %>% 
-  right_join(top_params) %>%
+overview <- per_value %>% filter(param %in% top_params) %>%
   rename(rel_param = rel) %>%
-  filter(is.finite(rel_param)) %>%
-  filter(type == "total") %>%
   mutate(param_pretty = pretty_param(param))
 
+unc_layer <- if (!is.null(unc))
+  geom_rect(data = unc_rel %>% filter(param %in% top_params) %>%
+                     mutate(param_pretty = pretty_param(param)),
+            aes(xmin = pmax(rel_lo, 0.4), xmax = pmin(rel_hi, 1.6),
+                ymin = -Inf, ymax = Inf, fill = param_pretty),
+            inherit.aes = FALSE, alpha = 0.12) else NULL
+
 p_overview <- ggplot(overview, aes(rel_param, effect_totalC, colour = param_pretty)) +
+  unc_layer +
   geom_vline(xintercept = 1, linewidth = 0.3, colour = "grey70") +
   geom_line(linewidth = 0.7) + geom_point(size = 0.7) +
   facet_wrap(~scenario, scales = "free_y") +
-  scale_colour_viridis_d(guide = guide_legend(nrow = 3)) +
+  scale_colour_viridis_d(guide = guide_legend(ncol = 2)) +
   scale_fill_viridis_d(guide = "none") +
-  labs(x = "Parameter value (relative to default)",
+  labs(title = "Animal effect vs parameter (top movers), with reported range shaded",
+       subtitle = "Shaded band = reported uncertainty from scenarios.xlsx (SD / Min-Max / CV2)",
+       x = "Parameter value (relative to default)",
        y = expression("Animal effect on total C (g C m"^-2*")"),
        colour = "Parameter") +
   theme_minimal(base_size = 11) + theme(legend.position = "bottom")
