@@ -138,7 +138,12 @@ animal_effect_totalC <- function(pair) {
   eq_b <- pair$baseline$init_state_spin
   eq_t <- pair$treatment$init_state_spin
   soil <- setdiff(intersect(names(eq_b), names(eq_t)), animal_pools)
-  sum(eq_t[soil]) - sum(eq_b[soil])
+  
+  if(pair$baseline$spin_info$converged & pair$treatment$spin_info$converged){
+    sum(eq_t[soil]) - sum(eq_b[soil])
+  }else{
+    NA
+  }
 }
 
 # build the scenario pair once per scenario (with fitted params applied)
@@ -222,6 +227,7 @@ for (scenario in scenarios) {
       rep_source = src, rep_lo_val = lo_r, rep_hi_val = hi_r,
       effect_rep_lo = e_lo_r, effect_rep_hi = e_hi_r)
   }
+  cat("Done", scenario, "for", model, "\n")
 }
 res <- bind_rows(records) %>%
   mutate(base_min = pmin(effect_base_lo, effect_base_hi),
@@ -281,7 +287,7 @@ p_range <- ggplot(plot_df, aes(y = lab)) +
   # mark guard-rail-truncated baseline points
   geom_point(data = clamp_df, aes(x = base_min), shape = 1, size = 2, colour = "grey30") +
   geom_point(data = clamp_df, aes(x = base_max), shape = 1, size = 2, colour = "grey30") +
-  facet_wrap(~scenario, nrow = 1, scales = "free_x") +
+  facet_wrap(~scenario, scales = "free", ncol = 1) +
   scale_colour_manual(values = c(SD = "#1b7837", MinMax = "#2166ac", CV2 = "#b2182b"),
                       name = "Reported uncertainty", na.translate = FALSE) +
   labs(
@@ -293,7 +299,7 @@ p_range <- ggplot(plot_df, aes(y = lab)) +
        x = expression("Animal effect on total soil + root C (g C m"^-2*")"), y = NULL) +
   theme_minimal(base_size = 10) + theme(legend.position = "bottom")
 ggsave(file.path(fig_dir, "animal_effect_sensitivity_range.png"),
-       p_range, width = 13, height = 10, dpi = 600)
+       p_range, width = 10, height = 20, dpi = 600)
 print(p_range)
 
 cat("\nWrote:\n  ", file.path(res_dir, "animal_effect_sensitivity.csv"),
