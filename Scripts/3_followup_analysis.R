@@ -137,6 +137,7 @@ dev.off()
 # matching pool colours and a dashed net-change line. One facet per scenario.
 # This single figure replaces the separate equilibrium-effect plot.
 # ------------------------------------------------------------
+dir.create("Plots", showWarnings = FALSE)
 p_combined <- plot_followup_with_eq("millennial", by = 365,
                                     eq_csv = "Results/animal_eq_effect.csv",
                                     eq_type = "total")

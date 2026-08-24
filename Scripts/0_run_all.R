@@ -12,6 +12,7 @@
 #       3 followup_analysis      -> Data/followup/*.rds, Plots/*
 #       4 sensitivity_animal_effects -> Results/animal_effect_sensitivity*.csv, figures
 #       5 animal_param_uncertainty    -> Results/animal_param_uncertainty_effect.csv, figure
+#       6 multistability_test         -> Results/multistability_*.csv, figure (diagnostic)
 #   * Each script sources the same R/ helpers and is self-contained; this
 #     wrapper just runs them in a clean environment and times each one.
 #   * The slow step is 2 (spin-up). Set run_step2 <- FALSE to reuse saved
@@ -25,14 +26,16 @@ run_step2 <- TRUE    # equilibrium + seasonal spin-up (slow)
 run_step3 <- TRUE    # follow-up add/remove experiments
 run_step4 <- TRUE    # parameter sensitivity of the animal effect
 run_step5 <- TRUE    # range of animal effects across animal-parameter uncertainty
+run_step6 <- FALSE   # multiple-stable-states test (diagnostic; off by default)
 
 steps <- c(
   "1" = "Scripts/1_fit_all_animals.R",
   "2" = "Scripts/2_spinup_dynamic.R",
   "3" = "Scripts/3_followup_analysis.R",
   "4" = "Scripts/4_sensitivity_animal_effects.R",
-  "5" = "Scripts/5_animal_param_uncertainty.R")
-run <- c(run_step1, run_step2, run_step3, run_step4, run_step5)
+  "5" = "Scripts/5_animal_param_uncertainty.R",
+  "6" = "Scripts/6_multistability_test.R")
+run <- c(run_step1, run_step2, run_step3, run_step4, run_step5, run_step6)
 
 run_one <- function(path) {
   message("\n", strrep("=", 60), "\n== RUN: ", path, "\n", strrep("=", 60))
