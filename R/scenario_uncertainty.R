@@ -98,6 +98,8 @@ read_param_uncertainty <- function(path = "Data/scenarios.xlsx",
     prop_feaces_earthworm_LMWC = c(0, 1),
     p_a                        = c(0, 1),
     p_b                        = c(0, 1),
+    pH                         = c(1, 14),
+    MAtheta                    = c(0, 1),
     pct_claysilt               = c(0, 100))
   # prefix-family bounds: assimilation (a_*) and production (p_*) efficiencies.
   # The soil partition/scaling coefficients p_a, p_b (fractions, [0,1]) and p_c

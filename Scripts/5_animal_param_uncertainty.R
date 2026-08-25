@@ -94,6 +94,7 @@ for (scenario in unique(unc$scenario)) {
       effect_max = max(e_lo, e_hi, na.rm = TRUE),
       stringsAsFactors = FALSE)
   }
+  cat("========= Done", scenario, "=========\n")
 }
 res <- bind_rows(rows) %>%
   mutate(effect_span = effect_max - effect_min) %>%
@@ -146,28 +147,37 @@ pretty_param <- function(x) {
 # parameter, ordered by span, with the all-default effect marked. Line-type /
 # colour flags where the bound came from (SD vs Min-Max vs CV2 placeholder).
 # ------------------------------------------------------------
+
 plot_df <- res %>%
-  group_by(scenario) %>%
   mutate(parameter = pretty_param(parameter)) %>%
   mutate(parameter = fct_reorder(parameter, effect_span)) %>%
   ungroup() %>%
-  mutate(unc_source = ifelse(unc_source == "CV2", "CV = 2", unc_source))
+  mutate(unc_source = ifelse(unc_source == "CV2", "CV = 2", unc_source))%>%
+  mutate(unc_source = ifelse(unc_source == "MinMax", "Min/Max", unc_source))
 
-p_range <- ggplot(plot_df, aes(y = parameter)) +
-  geom_vline(aes(xintercept = effect_default), linetype = "dotted", colour = "grey50") +
-  geom_segment(aes(x = effect_min, xend = effect_max,
-                   yend = parameter, colour = unc_source), linewidth = 1.1) +
-  geom_point(aes(x = effect_min, colour = unc_source), size = 1.6) +
-  geom_point(aes(x = effect_max, colour = unc_source), size = 1.6) +
-  facet_wrap(~scenario, scales = "free") +
-  scale_colour_manual(values = c(SD = "#1b7837", MinMax = "#2166ac", `CV = 2` = "#b2182b"),
-                      name = "Uncertainty source") +
-  labs(
-       x = expression("Animal effect on total soil + root C (g C m"^-2*")"),
-       y = NULL) +
-  theme_minimal(base_size = 11) + theme(legend.position = "bottom")
+plot_uncertainty <- function(sceno){
+  ggplot(plot_df %>% filter(scenario == sceno) %>% mutate(parameter = fct_reorder(parameter, effect_span)), aes(y = parameter)) +
+    geom_vline(aes(xintercept = effect_default), linetype = "dotted", colour = "grey50") +
+    geom_segment(aes(x = effect_min, xend = effect_max,
+                     yend = parameter, colour = unc_source), linewidth = 1.1) +
+    geom_point(aes(x = effect_min, colour = unc_source), size = 1.6) +
+    geom_point(aes(x = effect_max, colour = unc_source), size = 1.6) +
+    scale_colour_manual(values = c(SD = "#1b7837", `Min/Max` = "#2166ac", `CV = 2` = "#b2182b"),
+                        name = "Uncertainty source") +
+    labs(title = sceno,
+      x = expression("Animal effect on total soil + root C (g C m"^-2*")"),
+      y = NULL) +
+    theme_minimal(base_size = 11) + theme(legend.position = "bottom")
+}
+
+p1 <- plot_uncertainty("Earthworm")
+p2 <- plot_uncertainty("Isopod")
+p3 <- plot_uncertainty("Microarthropod")
+p4 <- plot_uncertainty("RootHerbivore")
+
+p_range <- ggpubr::ggarrange(p1,p2,p3,p4, common.legend = T)
 ggsave(file.path(fig_dir, "animal_param_uncertainty_range.png"),
-       p_range, width = 12, height = 8, dpi = 150)
+       p_range, width = 12, height = 8, dpi = 600)
 print(p_range)
 
 cat("\nWrote:\n  ", file.path(res_dir, "animal_param_uncertainty_effect.csv"),
