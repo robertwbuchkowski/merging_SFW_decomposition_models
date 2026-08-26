@@ -14,11 +14,12 @@
 # Nothing is spun up dynamically and nothing is saved to Data/spinup -- this is
 # a fast, equilibrium-only sensitivity sweep. Run from the project root.
 # ============================================================
-library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
+library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl, ggrepel, ggpubr)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R"); source("R/derive_millennial_parms.R");
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 source("R/scenario_uncertainty.R")
+source("R/morris_sensitivity.R")
 
 model   <- "millennial"
 scen    <- read_scenarios("Data/scenarios.xlsx")
@@ -239,3 +240,84 @@ sens %>%
   mutate(param = pretty_param(param)) %>%
   pivot_wider(names_from = scenario, values_from = change) %>%
   write_csv(file.path(res_dir, "animal_effect_sensitivity_MStable.csv"))
+
+# ============================================================
+# MORRIS ELEMENTARY-EFFECTS SCREENING (parameters varied in COMBINATION)
+# ------------------------------------------------------------
+# The one-at-a-time sweep above moves each parameter alone. Morris instead moves
+# the parameters together along random trajectories and reports, per parameter:
+#   mu_star = mean |elementary effect|  -> TOTAL sensitivity (rank on this)
+#   sigma   = sd of elementary effect   -> interactions / non-linearity
+# Ranges are the same +/- buffer around each default used by the sweep, clamped
+# to the physical guard rails. Output: Results/animal_effect_morris.csv.
+# ============================================================
+morris_r      <- 20     # number of trajectories (raise for stable estimates)
+morris_levels <- 4L     # grid levels p in the Morris design
+
+# scalar output: total animal effect on total soil + root C at equilibrium
+effect_scalar <- function(base_pair, scenario, pv) {
+  pair <- base_pair
+  for (nm in names(pv)) {
+    pair$treatment <- set_param(pair$treatment, nm, pv[[nm]])
+    pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
+  }
+  eff <- animal_effect_eq(pair)                 # long: shared soil pools, total+direct
+  tot <- eff[eff$type == "total", ]
+  sum(tot$difference, na.rm = TRUE)             # net effect on total soil C (g C m-2)
+}
+
+set.seed(20260826)
+morris_rows <- list()
+for (scenario in scenarios) {
+  base_pair <- setup_scenario_pair(model, scen, scenario)
+  if (!is.null(fitted_params))
+    base_pair$treatment <- apply_fitted_params(base_pair$treatment, fitted_params,
+                                               model, scenario, verbose = FALSE)
+  pnames <- intersect(sweep_params, names(base_pair$treatment$parms))
+
+  # per-parameter bounds = default +/- buffer, clamped to physical guard rails
+  lo <- hi <- setNames(numeric(length(pnames)), pnames)
+  for (p in pnames) {
+    d0 <- base_pair$treatment$parms[[p]]
+    b  <- param_bounds(p)
+    lo[p] <- max(d0 * (1 - buffer), b[1])
+    hi[p] <- min(d0 * (1 + buffer), b[2])
+    if (!is.finite(lo[p]) || !is.finite(hi[p]) || hi[p] <= lo[p]) { lo[p] <- hi[p] <- NA }
+  }
+  keep <- names(lo)[is.finite(lo) & is.finite(hi)]
+  lo <- lo[keep]; hi <- hi[keep]
+
+  cat("Morris:", scenario, "-", length(keep), "parameters,", morris_r, "trajectories\n")
+  trajs <- morris_trajectories(length(keep), morris_r, levels = morris_levels)
+  ee    <- morris_run(trajs, lo, hi,
+                      eval_fun = function(pv) effect_scalar(base_pair, scenario, pv),
+                      verbose = FALSE)
+  sm    <- morris_summary(ee)
+  sm$scenario <- scenario
+  morris_rows[[scenario]] <- sm
+}
+
+morris_tbl <- bind_rows(morris_rows) %>%
+  mutate(parameter_label = pretty_param(parameter)) %>%
+  group_by(scenario) %>% arrange(scenario, desc(mu_star)) %>%
+  mutate(rank = row_number()) %>% ungroup() %>%
+  select(scenario, parameter, parameter_label, mu_star, sigma, n_ee, rank)
+write_csv(morris_tbl, file.path(res_dir, "animal_effect_morris.csv"))
+
+# mu_star vs sigma diagnostic plot (interaction map), faceted by scenario
+p_morris <- ggplot(morris_tbl, aes(mu_star, sigma)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey70") +
+  geom_point(colour = "#2166ac", alpha = 0.8) +
+  ggrepel::geom_text_repel(aes(label = parameter)) +
+  facet_wrap(~scenario, scales = "free") +
+  labs(title = "Morris screening of model parameters (varied in combination)",
+       subtitle = "mu* = total sensitivity (mean |EE|); sigma = interactions / non-linearity",
+       x = expression(mu*"* (mean |elementary effect|, g C m"^-2*")"),
+       y = expression(sigma*" (sd of elementary effect)")) +
+  theme_minimal(base_size = 11)
+ggsave(file.path(fig_dir, "animal_effect_morris.png"), p_morris,
+       width = 12, height = 8, dpi = 150)
+print(p_morris)
+
+cat("\nWrote:\n  ", file.path(res_dir, "animal_effect_morris.csv"),
+    "\n  ", file.path(fig_dir, "animal_effect_morris.png"), "\n")

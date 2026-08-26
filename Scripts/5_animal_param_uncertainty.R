@@ -15,12 +15,13 @@
 #         Results/figures/animal_param_uncertainty_range.png
 # Run from the project root (or via Scripts/0_run_all.R).
 # ============================================================
-library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
+library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl, ggrepel, ggpubr)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 source("R/scenario_uncertainty.R")
 source("R/derive_millennial_parms.R")
+source("R/morris_sensitivity.R")
 
 model <- "millennial"
 scen  <- read_scenarios("Data/scenarios.xlsx")
@@ -182,3 +183,85 @@ print(p_range)
 
 cat("\nWrote:\n  ", file.path(res_dir, "animal_param_uncertainty_effect.csv"),
     "\n  ", file.path(fig_dir, "animal_param_uncertainty_range.png"), "\n")
+
+
+# ============================================================
+# MORRIS ELEMENTARY-EFFECTS SCREENING across the Excel-bounded parameters
+# ------------------------------------------------------------
+# The lo/hi loop above moves each parameter alone between its reported bounds.
+# Morris instead moves them together along random trajectories, so the reported
+# sensitivity reflects each parameter's influence in the presence of the others.
+# Bounds are the SAME reported lo/hi (SD -> Min/Max -> CV=2) from scenarios.xlsx.
+# Per parameter: mu_star (total sensitivity, rank on this) and sigma
+# (interactions / non-linearity). Output: Results/animal_param_morris.csv.
+# ============================================================
+morris_r      <- 20     # trajectories per scenario
+morris_levels <- 4L
+
+# scalar output for a named parameter vector: total animal effect on total C
+effect_scalar_vec <- function(scenario, base_pair, pv) {
+  pair <- base_pair
+  for (nm in names(pv)) {
+    pair$treatment <- set_param(pair$treatment, nm, pv[[nm]])
+    pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
+  }
+  animal_effect_totalC(pair)
+}
+
+set.seed(1)
+morris_rows <- list()
+for (scenario in unique(unc$scenario)) {
+  if (!scenario %in% names(scen)) next
+  base_pair <- setup_scenario_pair(model, scen, scenario)
+  if (!is.null(fitted_params))
+    base_pair$treatment <- apply_fitted_params(base_pair$treatment, fitted_params,
+                                               model, scenario, verbose = FALSE)
+  parms_here <- base_pair$treatment$parms
+
+  sub <- unc[unc$scenario == scenario, , drop = FALSE]
+  sub <- sub[sub$parameter %in% names(parms_here) &
+             is.finite(sub$lo) & is.finite(sub$hi) & sub$hi > sub$lo, , drop = FALSE]
+  sub <- sub[!duplicated(sub$parameter), , drop = FALSE]
+  if (nrow(sub) < 2) { cat("Morris: skip", scenario, "(need >=2 bounded params)\n"); next }
+
+  lo <- setNames(sub$lo, sub$parameter)
+  hi <- setNames(sub$hi, sub$parameter)
+
+  cat("Morris:", scenario, "-", nrow(sub), "parameters,", morris_r, "trajectories\n")
+  trajs <- morris_trajectories(nrow(sub), morris_r, levels = morris_levels)
+  ee    <- morris_run(trajs, lo, hi,
+                      eval_fun = function(pv) effect_scalar_vec(scenario, base_pair, pv),
+                      verbose = FALSE)
+  sm    <- morris_summary(ee)
+  sm$scenario <- scenario
+  # carry the uncertainty source of each parameter's bound
+  sm$unc_source <- sub$unc_source[match(sm$parameter, sub$parameter)]
+  morris_rows[[scenario]] <- sm
+}
+
+morris_tbl <- bind_rows(morris_rows) %>%
+  mutate(parameter_label = pretty_param(parameter)) %>%
+  group_by(scenario) %>% arrange(scenario, desc(mu_star)) %>%
+  mutate(rank = row_number()) %>% ungroup() %>%
+  select(scenario, parameter, parameter_label, unc_source,
+         mu_star, sigma, n_ee, rank)
+write_csv(morris_tbl, file.path(res_dir, "animal_param_morris.csv"))
+
+p_morris <- ggplot(morris_tbl, aes(mu_star, sigma, colour = unc_source)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey70") +
+  geom_point(alpha = 0.85) +
+  ggrepel::geom_text_repel(aes(label = parameter_label), size = 2.4, max.overlaps = 12) +
+  facet_wrap(~scenario, scales = "free") +
+  scale_colour_manual(values = c(SD = "#1b7837", MinMax = "#2166ac", CV2 = "#b2182b"),
+                      name = "Bound source") +
+  labs(title = "Morris screening of Excel-bounded parameters (varied in combination)",
+       subtitle = "mu* = total sensitivity (mean |EE|); sigma = interactions / non-linearity",
+       x = expression(mu*"* (mean |elementary effect|, g C m"^-2*")"),
+       y = expression(sigma*" (sd of elementary effect)")) +
+  theme_minimal(base_size = 11) + theme(legend.position = "bottom")
+ggsave(file.path(fig_dir, "animal_param_morris.png"), p_morris,
+       width = 12, height = 8, dpi = 150)
+print(p_morris)
+
+cat("\nWrote:\n  ", file.path(res_dir, "animal_param_morris.csv"),
+    "\n  ", file.path(fig_dir, "animal_param_morris.png"), "\n")
