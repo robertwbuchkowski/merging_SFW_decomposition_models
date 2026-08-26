@@ -1,28 +1,35 @@
 # ============================================================
-# SENSITIVITY OF ANIMAL EFFECTS TO MODEL PARAMETERS (at equilibrium)
+# MORRIS SENSITIVITY OF THE ANIMAL EFFECT TO ALL PARAMETERS (equilibrium)
 # ------------------------------------------------------------
-# Like Scripts/spinup_dynamic.R but WITHOUT the long dynamic spin-up: for each
-# scenario it only computes the equilibrium animal effect, and it repeats that
-# calculation while sweeping chosen model parameters, one at a time, over a
-# grid. For every parameter value it records:
-#   TOTAL  effect = treatment (animals, all pathways) - baseline (no animals)
-#   DIRECT effect = treatment with indirect (_pint / exudate) slopes zeroed
-#                   - baseline
-# (both as % change vs the no-animal baseline equilibrium, per pool), then plots
-# how those effects respond to each parameter.
+# One combined Morris elementary-effects screening over BOTH the general model
+# parameters AND the animal parameters (the latter only in the scenarios where
+# that animal is active). Parameters are varied in COMBINATION along random
+# Morris trajectories; per parameter it reports:
+#   mu_star  mean |elementary effect|  -> TOTAL sensitivity (rank on this)
+#   sigma    sd of elementary effect   -> interactions / non-linearity
 #
-# Nothing is spun up dynamically and nothing is saved to Data/spinup -- this is
-# a fast, equilibrium-only sensitivity sweep. Run from the project root.
+# ACCEPTABLE RANGE per parameter (one rule for everything):
+#   * If scenarios.xlsx reports SD or Min/Max for it -> use that range.
+#   * Otherwise (no reported uncertainty -- whether an animal parameter without
+#     SD/Min-Max, or a general model parameter absent from the sheet) -> use the
+#     BUFFER range [value x 0.5, value x 2] (half to double the current value).
+#   Both are clamped to the physical guard rails (efficiencies [0,1], etc.).
+#
+# The scalar output is the equilibrium animal effect on total soil + root C
+# (treatment - baseline). No dynamic spin-up. Run from the project root.
+# Output: Results/animal_effect_morris.csv, Results/figures/animal_effect_morris.png
 # ============================================================
-library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl, ggrepel, ggpubr)
-source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R"); source("R/derive_millennial_parms.R");
+library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl, ggrepel)
+source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
+source("R/derive_millennial_parms.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
-source("R/scenario_uncertainty.R")
-source("R/morris_sensitivity.R")
+source("R/scenario_uncertainty.R"); source("R/morris_sensitivity.R")
 
 model   <- "millennial"
 scen    <- read_scenarios("Data/scenarios.xlsx")
+scen$MitePredator <- NULL
+scenarios <- names(scen)
 
 use_fitted_params <- TRUE
 fitted_params <- if (use_fitted_params && file.exists("Results/fitted_animal_params.csv"))
@@ -31,14 +38,95 @@ fitted_params <- if (use_fitted_params && file.exists("Results/fitted_animal_par
 fig_dir <- "Results/figures"; dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 res_dir <- "Results";         dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
 
-# animal biomass pools (excluded from the "effect on pools" output)
 animal_pools <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")
 derive_fn    <- match.fun(model_table[[model]]$derive)
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
+# ---- Morris + range settings ---------------------------------------------
+morris_r      <- 20     # trajectories per scenario (raise for stable mu*/sigma)
+morris_levels <- 4L     # grid levels p in the Morris design
+buffer        <- 0.5    # no-uncertainty range = [value*buffer, value/buffer]
+                        #                       = [0.5*value, 2*value] (half..double)
 
 # ------------------------------------------------------------
-# set_param(): change ONE parameter on a setup object and rebuild everything
-# that depends on it (derived params + climate forcing), so a sweep over a
-# parameter that feeds phi_por / the forcing uses consistent values.
+# GENERAL model parameters to include (animal parameters are added per scenario
+# from scenarios.xlsx below). Only those present in a scenario's parms are used.
+# ------------------------------------------------------------
+sweep_params <- c("k_frag_litter", "k_frag_organic", "k_l_o", "k_l", "k_b", "k_pa",
+                  "k_ma", "k_litterfall_ann", "k_litterfall_herb_ann", "k_MICd",
+                  "k_bd", "root_to_organic", "a_root_herb", "k_exudate_tree",
+                  "k_exudate_herb", "k_frag_CWD", "K_ol", "alpha_ol", "alpha_ob",
+                  "K_ob", "p_c", "rho_p", "psi_matric", "lambda_mat", "k_a_min",
+                  "alpha_pl", "alpha_lb", "K_pl", "K_lb", "p1", "p2", "K_ld",
+                  "CUE_T", "p_a", "p_b", "k_mort_root_tree", "k_mort_root_herb")
+
+# ------------------------------------------------------------
+# Pretty display names (code -> label), general + animal parameters combined.
+# pretty_param() falls back to the raw code for anything not listed.
+# ------------------------------------------------------------
+param_labels <- c(
+  k_frag_litter = "Litter fragmentation", k_frag_organic = "Organic fragmentation",
+  k_frag_CWD = "CWD fragmentation", k_l_o = "DOM -> POC turnover",
+  k_l = "LMWC leaching", k_b = "Aggregate breakdown", k_pa = "POC -> aggregate",
+  k_ma = "MAOC -> aggregate", k_MICd = "Microbial turnover (organic)",
+  k_bd = "Microbial turnover (mineral)", k_a_min = "Min. aeration factor",
+  k_exudate_tree = "Tree root exudation", k_exudate_herb = "Herb root exudation",
+  pct_claysilt = "Clay + silt (%)", root_to_organic = "Root death -> Organic",
+  a_root_herb = "Herb root allocation", MAT = "Mean annual temperature",
+  MAtheta = "Mean annual soil moisture", NPP_herb = "Herbaceous NPP", NPP_tree = "Tree NPP",
+  BD = "Bulk density", rho_p = "Particle density", pH = "Soil pH",
+  psi_matric = "Matric potential", lambda_mat = "Matric sensitivity",
+  CUE_T = "CUE temperature slope", K_ol = "Organic->DOM half-saturation",
+  K_ob = "DOM->microbe half-saturation", K_pl = "POC->LMWC half-saturation",
+  K_lb = "LMWC->microbe half-saturation", K_ld = "LMWC->MAOC max sorption",
+  alpha_ol = "Organic->DOM pre-exponential", alpha_ob = "DOM->microbe pre-exponential",
+  alpha_pl = "POC->LMWC pre-exponential", alpha_lb = "LMWC->microbe pre-exponential",
+  p1 = "pH sorption coef. 1", p2 = "pH sorption coef. 2",
+  p_a = "Aggregate->POC partition", p_b = "Necromass->MAOC partition",
+  p_c = "Clay+silt protection coef.", k_litterfall_ann = "Tree annual litterfall prop.",
+  k_litterfall_herb_ann = "Herb. annual litterfall prop.",
+  k_mort_root_tree = "Tree root mortality", k_mort_root_herb = "Herb. root mortality",
+  T_amp = "Temperature amplitude", theta_amp = "Moisture amplitude",
+  fCLAY = "Clay fraction", LigFrac = "Lignin fraction",
+  # animal parameters
+  c_earthworm_om = "Earthworm organic matter consumption",
+  k_b_slope_pint = "Earthworm effect on aggregate stability (proportion)",
+  c_earthworm_soil = "Earthworm soil consumption", p_earthworm = "Earthworm production efficiency",
+  d_earthworm = "Earthworm mortality", prop_feaces_earthworm_LMWC = "Earthworm feces to LMWC fraction",
+  a_earthworm_soil = "Earthworm soil assimilation", c_earthworm_litter = "Earthworm litter consumption",
+  a_earthworm = "Earthworm litter assimilation efficiency",
+  d_detritivores = "Detritivore mortality",
+  slope_pint_det_k_frag_organic = "Detritivore effect of organic fragmentation (proportion)",
+  c_detritivores = "Detritivore consumption", p_detritivores = "Detritivore production efficiency",
+  a_detritivores = "Detritivore assimilation efficiency",
+  slope_pint_det_k_frag_litter = "Detritivore litter fragmentation response",
+  a_rootherb = "Root herbivore assimilation efficiency",
+  p_rootherb = "Root herbivore production efficiency", c_rootherb = "Root herbivore consumption",
+  k_exudate_intercept = "Root exudation intercept",
+  k_exudate_slope = "Root herbivore effect on exudation", d_rootherb = "Root herbivore mortality")
+
+pretty_param <- function(x) ifelse(x %in% names(param_labels), param_labels[x], x)
+
+# ------------------------------------------------------------
+# PHYSICAL GUARD RAILS. a_*/p_* efficiencies in [0,1] (except soil partition
+# coefficients p_a, p_b [0,1] and p_c unbounded); named fractions in [0,1];
+# pct_claysilt in [0,100]. clamp_to_bounds() pulls a value onto the nearest edge.
+# ------------------------------------------------------------
+param_bounds <- function(param) {
+  if (grepl("^(a_|p_)", param) && !param %in% c("p_a", "p_b", "p_c"))
+    return(c(0, 1))
+  switch(param,
+         winter_root_act_prop = , root_to_organic = ,
+         k_litterfall_ann = , k_litterfall_herb_ann = c(0, 1),
+         pct_claysilt = c(0, 100),
+         p_a = , p_b = c(0, 1),
+         LigFrac = , a_root_herb = , prop_feaces_earthworm_LMWC = c(0, 1),
+         c(-Inf, Inf))
+}
+clamp_to_bounds <- function(v, param) { b <- param_bounds(param); pmin(pmax(v, b[1]), b[2]) }
+
+# ------------------------------------------------------------
+# set_param(): change ONE parameter and rebuild derived params + forcing.
 # ------------------------------------------------------------
 set_param <- function(obj, param, value) {
   obj$parms[[param]]        <- value
@@ -47,253 +135,91 @@ set_param <- function(obj, param, value) {
   obj
 }
 
-# ------------------------------------------------------------
-# animal_effect_eq(): the core calculation (no dynamic spin-up). Given a
-# treatment/baseline pair, returns a long data frame of the TOTAL and DIRECT
-# animal effect on every shared pool, at equilibrium.
-# ------------------------------------------------------------
-animal_effect_eq <- function(pair) {
+# equilibrium TOTAL animal effect on total soil + root C (scalar, g C m-2)
+animal_effect_totalC <- function(pair) {
   pair$baseline  <- spinup_equilibrium(pair$baseline, verbose = FALSE)
   pair$treatment <- spinup_equilibrium(pair$treatment,
                                        warm_start = pair$baseline$init_state_spin,
                                        verbose = FALSE)
   eq_b <- pair$baseline$init_state_spin
   eq_t <- pair$treatment$init_state_spin
-
-  # direct-only: zero the indirect (_pint + exudate) slopes, re-equilibrate
-  pair_d <- zero_indirect_effects(pair, verbose = FALSE)
-  eq_d   <- spinup_equilibrium(pair_d$treatment,
-                               warm_start = eq_b, verbose = FALSE)$init_state_spin
-
-  tot <- compare_vectors(eq_t, eq_b); tot$type <- "total"
-  dir <- compare_vectors(eq_d, eq_b); dir$type <- "direct"
-  out <- rbind(tot, dir)
-  out[!is.na(out$baseline) & !(out$name %in% animal_pools), ]     # shared, non-animal pools
+  soil <- setdiff(intersect(names(eq_b), names(eq_t)), animal_pools)
+  sum(eq_t[soil]) - sum(eq_b[soil])
 }
 
-# ------------------------------------------------------------
-# sweep_param(): rebuild the scenario pair, apply fitted params, then vary ONE
-# parameter over `values` and recompute the equilibrium animal effect each time.
-# ------------------------------------------------------------
-sweep_param <- function(scenario, param, values) {
-  base_pair <- setup_scenario_pair(model, scen, scenario)
-  if (!is.null(fitted_params))
-    base_pair$treatment <- apply_fitted_params(base_pair$treatment, fitted_params,
-                                               model, scenario, verbose = FALSE)
-  default <- base_pair$treatment$parms[[param]]
-
-  rows <- list()
-  for (v in values) {
-    pair <- base_pair
-    pair$treatment <- set_param(pair$treatment, param, v)
-    pair$baseline  <- set_param(pair$baseline,  param, v)
-    eff <- tryCatch(animal_effect_eq(pair), error = function(e) {
-      message("  ", scenario, " ", param, "=", signif(v, 4), " failed: ", conditionMessage(e)); NULL })
-    if (is.null(eff)) next
-    eff$param    <- param
-    eff$value    <- v
-    eff$default  <- default
-    eff$scenario <- scenario
-    rows[[length(rows) + 1]] <- eff
-  }
-  if (!length(rows)) return(NULL)
-  do.call(rbind, rows)
-}
-
-# ============================================================
-# CHOOSE what to sweep.
-#   sweep_params  the model parameters to test (must exist in parms)
-#   n_points      grid points per parameter
-#   buffer        +/- fractional range around each parameter's default (linear)
-#   scenarios     which animal scenarios to run
-# ============================================================
-sweep_params <- c("k_frag_litter", "k_frag_organic", "k_l_o", "k_l",
-                  "k_b", "k_pa", "k_ma","k_litterfall_ann", "k_litterfall_herb_ann",
-                  "k_MICd", "k_bd", "root_to_organic", "a_root_herb", "k_exudate_tree", "k_exudate_herb", "k_frag_CWD", "K_ol","alpha_ol", "alpha_ob", "K_ob", "p_c", "rho_p","psi_matric", "lambda_mat", "k_a_min", "alpha_pl", "alpha_lb", "K_pl", "K_lb", "p1", "p2", "K_ld", "CUE_T", "p_a", "p_b", "k_mort_root_tree", "k_mort_root_herb", "root_to_organic")
-n_points  <- 3
-buffer    <- 0.1
-scenarios <- names(scen)
-
-# ------------------------------------------------------------
-# Pretty display names for the swept parameters (code name -> figure label),
-# used to relabel the axes/legends in PLOT 1 (heat map) and PLOT 2 (overview).
-# pretty_param() falls back to the raw code for anything not listed.
-# ------------------------------------------------------------
-param_labels <- c(
-  k_frag_litter   = "Litter fragmentation",
-  k_frag_organic  = "Organic fragmentation",
-  k_frag_CWD      = "CWD fragmentation",
-  k_l_o           = "DOM -> POC turnover",
-  k_l             = "LMWC leaching",
-  k_b             = "Aggregate breakdown",
-  k_pa            = "POC -> aggregate",
-  k_ma            = "MAOC -> aggregate",
-  k_MICd          = "Microbial turnover (organic)",
-  k_bd            = "Microbial turnover (mineral)",
-  k_a_min         = "Min. aeration factor",
-  k_exudate_tree  = "Tree root exudation",
-  k_exudate_herb  = "Herb root exudation",
-  pct_claysilt    = "Clay + silt (%)",
-  root_to_organic = "Root death -> Organic",
-  a_root_herb     = "Herb root allocation",
-  MAT             = "Mean annual temperature",
-  MAtheta         = "Mean annual moisture",
-  NPP_herb        = "Herbaceous NPP",
-  NPP_tree        = "Tree NPP",
-  BD              = "Bulk density",
-  rho_p           = "Particle density",
-  pH              = "Soil pH",
-  psi_matric      = "Matric potential",
-  lambda_mat      = "Matric sensitivity",
-  CUE_T           = "CUE temperature slope",
-  K_ol            = "Organic->DOM half-saturation",
-  K_ob            = "DOM->microbe half-saturation",
-  K_pl            = "POC->LMWC half-saturation",
-  K_lb            = "LMWC->microbe half-saturation",
-  K_ld            = "LMWC->MAOC max sorption",
-  alpha_ol        = "Organic->DOM pre-exponential",
-  alpha_ob        = "DOM->microbe pre-exponential",
-  alpha_pl        = "POC->LMWC pre-exponential",
-  alpha_lb        = "LMWC->microbe pre-exponential",
-  p1              = "pH sorption coef. 1",
-  p2              = "pH sorption coef. 2",
-  p_a             = "Aggregate->POC partition",
-  p_b             = "Necromass->MAOC partition",
-  p_c             = "Clay+silt protection coef.",
-  k_litterfall_ann= "Tree annual litterfall prop.",
-  k_litterfall_herb_ann = "Herb. annual litterfall prop.",
-  k_mort_root_tree= "Tree root mortality",
-  k_mort_root_herb= "Herb. root mortality")
-
-pretty_param <- function(x) ifelse(x %in% names(param_labels), param_labels[x], x)
-
-# ------------------------------------------------------------
-# PHYSICAL BOUNDS for the swept grid: parameters constrained to a fixed range
-# must not be evaluated outside it. a_*/p_* (assimilation / production
-# efficiencies) and the named fractions are in [0, 1]; pct_claysilt in [0, 100].
-# clamp_grid() trims the +/-buffer grid to these bounds (dropping duplicates).
-# ------------------------------------------------------------
-param_bounds <- function(param) {
-  # a_*/p_* ASSIMILATION / PRODUCTION efficiencies are in [0, 1]. The soil
-  # partition/scaling coefficients p_a, p_b, p_c are NOT efficiencies and are
-  # left unbounded here.
-  if (grepl("^(a_|p_)", param) && !param %in% c("p_a", "p_b", "p_c"))
-    return(c(0, 1))
-  switch(param,
-         winter_root_act_prop = c(0,1),
-         root_to_organic = c(0,1),
-         pct_claysilt = c(0, 100),
-         k_litterfall_ann = c(0,1),
-         k_litterfall_herb_ann = c(0,1),
-         p_a = , p_b = c(0, 1),                # partition fractions, still [0,1]
-         LigFrac = , a_root_herb = , root_to_organic = ,
-         prop_feaces_earthworm_LMWC = c(0, 1),
-         c(-Inf, Inf))
-}
-
-clamp_grid <- function(vals, param) {
-  b <- param_bounds(param)
-  v <- vals[vals >= b[1] & vals <= b[2]]
-  if (!length(v)) v <- pmin(pmax(vals, b[1]), b[2])   # fallback: clip, keep points
-  unique(v)
-}
-
-# run the full sweep: scenario x parameter
-all_rows <- list()
-for (scenario in scenarios) {
-  pair0 <- setup_scenario_pair(model, scen, scenario)
-  avail <- intersect(sweep_params, names(pair0$treatment$parms))
-  for (param in avail) {
-    d0   <- pair0$treatment$parms[[param]]
-    vals <- fit_param_grid(d0, buffer = buffer, n = n_points, scale = "linear")
-    vals <- clamp_grid(vals, param)
-    cat("sweeping", scenario, "/", param, "around", signif(d0, 4), "\n")
-    s <- sweep_param(scenario, param, vals)
-    if (!is.null(s)) all_rows[[paste(scenario, param)]] <- s
-  }
-}
-sens <- bind_rows(all_rows)
-write_csv(sens, file.path(res_dir, "animal_effect_sensitivity.csv"))
-
-
-sens %>%
-  tibble() %>%
-  mutate(rel = signif((value-default)/default),1) %>%
-  filter(type == "total") %>%
-  select(name, difference, param, scenario, rel) %>%
-  group_by(param, scenario, rel) %>%
-  summarize(difference = sum(difference)) %>%
-  left_join(
-    tibble(rel = c(-0.1, 0, 0.1),
-           rel2 = c("L", "B", "U"))
-  ) %>%
-  select(-rel) %>%
-  pivot_wider(names_from = rel2, values_from = difference) %>%
-  mutate(Lchange = (L-B)/B,
-         Uchange = (U-B)/B) %>%
-  mutate(Uchange = replace_na(Uchange)) %>%
-  mutate(change = (abs(Lchange) + abs(Uchange))/2) %>%
-  filter(change >= 0.1) %>%
-  select(param, scenario, change) %>%
-  mutate(change = round(100*change)) %>%
-  arrange(-change) %>%
-  mutate(param = pretty_param(param)) %>%
-  pivot_wider(names_from = scenario, values_from = change) %>%
-  write_csv(file.path(res_dir, "animal_effect_sensitivity_MStable.csv"))
-
-# ============================================================
-# MORRIS ELEMENTARY-EFFECTS SCREENING (parameters varied in COMBINATION)
-# ------------------------------------------------------------
-# The one-at-a-time sweep above moves each parameter alone. Morris instead moves
-# the parameters together along random trajectories and reports, per parameter:
-#   mu_star = mean |elementary effect|  -> TOTAL sensitivity (rank on this)
-#   sigma   = sd of elementary effect   -> interactions / non-linearity
-# Ranges are the same +/- buffer around each default used by the sweep, clamped
-# to the physical guard rails. Output: Results/animal_effect_morris.csv.
-# ============================================================
-morris_r      <- 20     # number of trajectories (raise for stable estimates)
-morris_levels <- 4L     # grid levels p in the Morris design
-
-# scalar output: total animal effect on total soil + root C at equilibrium
-effect_scalar <- function(base_pair, scenario, pv) {
+# scalar output for a named parameter vector (set all, both arms, then evaluate)
+effect_scalar <- function(base_pair, pv) {
   pair <- base_pair
   for (nm in names(pv)) {
     pair$treatment <- set_param(pair$treatment, nm, pv[[nm]])
     pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
   }
-  eff <- animal_effect_eq(pair)                 # long: shared soil pools, total+direct
-  tot <- eff[eff$type == "total", ]
-  sum(tot$difference, na.rm = TRUE)             # net effect on total soil C (g C m-2)
+  animal_effect_totalC(pair)
 }
 
-set.seed(20260826)
+# ------------------------------------------------------------
+# ACCEPTABLE RANGE per (scenario, parameter): reported SD/Min-Max if available,
+# else the buffer range [value*buffer, value/buffer]. Returns lo, hi (clamped),
+# and the source label used ("SD", "MinMax", or "buffer").
+# ------------------------------------------------------------
+unc_all <- tryCatch(read_param_uncertainty("Data/scenarios.xlsx", warn_cv = FALSE),
+                    error = function(e) { message("uncertainty read failed: ",
+                                                  conditionMessage(e)); NULL })
+
+range_for <- function(scenario, param, default) {
+  src <- "buffer"; lo <- default * buffer; hi <- default / buffer
+  if (!is.null(unc_all)) {
+    r <- unc_all[unc_all$scenario == scenario & unc_all$parameter == param, , drop = FALSE]
+    if (nrow(r) && r$unc_source[1] %in% c("SD", "MinMax")) {
+      src <- r$unc_source[1]; lo <- r$lo[1]; hi <- r$hi[1]        # reported range
+    }
+  }
+  rng <- sort(c(clamp_to_bounds(lo, param), clamp_to_bounds(hi, param)))
+  list(lo = rng[1], hi = rng[2], source = src)
+}
+
+# animal parameters listed per scenario in scenarios.xlsx (Category Animal/Effect)
+animal_unc <- if (!is.null(unc_all))
+  unc_all[unc_all$category %in% c("Animal", "Effect"), , drop = FALSE] else NULL
+
+# ------------------------------------------------------------
+# MORRIS per scenario over the combined parameter set.
+# ------------------------------------------------------------
+set.seed(1)
 morris_rows <- list()
 for (scenario in scenarios) {
   base_pair <- setup_scenario_pair(model, scen, scenario)
   if (!is.null(fitted_params))
     base_pair$treatment <- apply_fitted_params(base_pair$treatment, fitted_params,
                                                model, scenario, verbose = FALSE)
-  pnames <- intersect(sweep_params, names(base_pair$treatment$parms))
+  parms_here <- base_pair$treatment$parms
 
-  # per-parameter bounds = default +/- buffer, clamped to physical guard rails
+  a_here <- if (!is.null(animal_unc)) {
+    a <- animal_unc[animal_unc$scenario == scenario, , drop = FALSE]
+    a$parameter[a$parameter %in% names(parms_here)]
+  } else character(0)
+  pnames <- unique(c(intersect(sweep_params, names(parms_here)), a_here))
+
   lo <- hi <- setNames(numeric(length(pnames)), pnames)
+  src <- setNames(character(length(pnames)), pnames)
   for (p in pnames) {
-    d0 <- base_pair$treatment$parms[[p]]
-    b  <- param_bounds(p)
-    lo[p] <- max(d0 * (1 - buffer), b[1])
-    hi[p] <- min(d0 * (1 + buffer), b[2])
-    if (!is.finite(lo[p]) || !is.finite(hi[p]) || hi[p] <= lo[p]) { lo[p] <- hi[p] <- NA }
+    d0 <- parms_here[[p]]
+    if (!is.finite(d0) || d0 == 0) { lo[p] <- hi[p] <- NA; next }
+    rg <- range_for(scenario, p, d0)
+    lo[p] <- rg$lo; hi[p] <- rg$hi; src[p] <- rg$source
   }
-  keep <- names(lo)[is.finite(lo) & is.finite(hi)]
-  lo <- lo[keep]; hi <- hi[keep]
+  keep <- names(lo)[is.finite(lo) & is.finite(hi) & (hi > lo)]
+  lo <- lo[keep]; hi <- hi[keep]; src <- src[keep]
 
   cat("Morris:", scenario, "-", length(keep), "parameters,", morris_r, "trajectories\n")
   trajs <- morris_trajectories(length(keep), morris_r, levels = morris_levels)
   ee    <- morris_run(trajs, lo, hi,
-                      eval_fun = function(pv) effect_scalar(base_pair, scenario, pv),
+                      eval_fun = function(pv) effect_scalar(base_pair, pv),
                       verbose = FALSE)
   sm    <- morris_summary(ee)
-  sm$scenario <- scenario
+  sm$scenario   <- scenario
+  sm$range_source <- src[sm$parameter]
+  sm$is_animal    <- sm$parameter %in% a_here
   morris_rows[[scenario]] <- sm
 }
 
@@ -301,22 +227,32 @@ morris_tbl <- bind_rows(morris_rows) %>%
   mutate(parameter_label = pretty_param(parameter)) %>%
   group_by(scenario) %>% arrange(scenario, desc(mu_star)) %>%
   mutate(rank = row_number()) %>% ungroup() %>%
-  select(scenario, parameter, parameter_label, mu_star, sigma, n_ee, rank)
+  select(scenario, parameter, parameter_label, is_animal, range_source,
+         mu_star, sigma, n_ee, rank)
 write_csv(morris_tbl, file.path(res_dir, "animal_effect_morris.csv"))
 
-# mu_star vs sigma diagnostic plot (interaction map), faceted by scenario
+# ------------------------------------------------------------
+# FIGURE: traditional Morris mu* vs sigma map, one facet per scenario. Colour =
+# how the range was set (reported SD / Min-Max, or the half-double buffer);
+# shape = general vs animal parameter.
+# ------------------------------------------------------------
 p_morris <- ggplot(morris_tbl, aes(mu_star, sigma)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey70") +
-  geom_point(colour = "#2166ac", alpha = 0.8) +
-  ggrepel::geom_text_repel(aes(label = parameter)) +
+  geom_point(aes(colour = range_source, shape = is_animal), alpha = 0.85, size = 2) +
+  ggrepel::geom_text_repel(aes(label = parameter_label), size = 2.2, max.overlaps = 14) +
   facet_wrap(~scenario, scales = "free") +
-  labs(title = "Morris screening of model parameters (varied in combination)",
-       subtitle = "mu* = total sensitivity (mean |EE|); sigma = interactions / non-linearity",
+  scale_colour_manual(values = c(SD = "#1b7837", MinMax = "#2166ac", buffer = "#b2182b"),
+                      name = "Range source") +
+  scale_shape_manual(values = c(`FALSE` = 16, `TRUE` = 17),
+                     labels = c(`FALSE` = "general", `TRUE` = "animal"),
+                     name = "Parameter type") +
+  labs(title = "Morris screening of the animal effect (all parameters, varied in combination)",
+       subtitle = "mu* = total sensitivity (mean |EE|); sigma = interactions / non-linearity.  buffer range = half to double.",
        x = expression(mu*"* (mean |elementary effect|, g C m"^-2*")"),
        y = expression(sigma*" (sd of elementary effect)")) +
-  theme_minimal(base_size = 11)
+  theme_minimal(base_size = 11) + theme(legend.position = "bottom")
 ggsave(file.path(fig_dir, "animal_effect_morris.png"), p_morris,
-       width = 12, height = 8, dpi = 150)
+       width = 13, height = 9, dpi = 150)
 print(p_morris)
 
 cat("\nWrote:\n  ", file.path(res_dir, "animal_effect_morris.csv"),

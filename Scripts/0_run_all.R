@@ -10,7 +10,8 @@
 #       1 fit_all_animals        -> Results/fitted_animal_params.csv
 #       2 spinup_dynamic         -> Data/spinup/*.rds, Results/animal_eq_effect.csv
 #       3 followup_analysis      -> Data/followup/*.rds, Plots/*
-#       4 sensitivity_animal_effects -> Results/animal_effect_sensitivity*.csv, range figure
+#       4 sensitivity_animal_effects -> Results/animal_effect_morris.csv, figure
+#                                      (Morris screening: general + animal params)
 #                                      (merged: soil + animal-parameter uncertainty)
 #       5 multistability_test         -> Results/multistability_*.csv, figure (diagnostic)
 #   * Each script sources the same R/ helpers and is self-contained; this
