@@ -28,7 +28,6 @@ source("R/scenario_uncertainty.R"); source("R/morris_sensitivity.R")
 
 model   <- "millennial"
 scen    <- read_scenarios("Data/scenarios.xlsx")
-scen$MitePredator <- NULL
 scenarios <- names(scen)
 
 use_fitted_params <- TRUE
@@ -185,7 +184,7 @@ animal_unc <- if (!is.null(unc_all))
 # ------------------------------------------------------------
 # MORRIS per scenario over the combined parameter set.
 # ------------------------------------------------------------
-set.seed(1)
+set.seed(27082026)
 morris_rows <- list()
 for (scenario in scenarios) {
   base_pair <- setup_scenario_pair(model, scen, scenario)
@@ -242,12 +241,14 @@ p_morris <- ggplot(morris_tbl, aes(mu_star, sigma)) +
   ggrepel::geom_text_repel(aes(label = parameter_label), size = 2.2, max.overlaps = 14) +
   facet_wrap(~scenario, scales = "free") +
   scale_colour_manual(values = c(SD = "#1b7837", MinMax = "#2166ac", buffer = "#b2182b"),
+                      labels = c(SD = "Standard deviation", MinMax = "Min/Max", buffer = "50% to 150%"),
                       name = "Range source") +
   scale_shape_manual(values = c(`FALSE` = 16, `TRUE` = 17),
                      labels = c(`FALSE` = "general", `TRUE` = "animal"),
                      name = "Parameter type") +
-  labs(title = "Morris screening of the animal effect (all parameters, varied in combination)",
-       subtitle = "mu* = total sensitivity (mean |EE|); sigma = interactions / non-linearity.  buffer range = half to double.",
+  labs(
+    # title = "Morris screening of the animal effect (all parameters, varied in combination)",
+    #    subtitle = "mu* = total sensitivity (mean |EE|); sigma = interactions / non-linearity.  buffer range = half to double.",
        x = expression(mu*"* (mean |elementary effect|, g C m"^-2*")"),
        y = expression(sigma*" (sd of elementary effect)")) +
   theme_minimal(base_size = 11) + theme(legend.position = "bottom")
@@ -255,5 +256,26 @@ ggsave(file.path(fig_dir, "animal_effect_morris.png"), p_morris,
        width = 13, height = 9, dpi = 150)
 print(p_morris)
 
+p_morris_animal <- ggplot(morris_tbl %>% filter(is_animal), aes(mu_star, sigma)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey70") +
+  geom_point(aes(colour = range_source, shape = is_animal), alpha = 0.85, size = 2) +
+  ggrepel::geom_text_repel(aes(label = parameter_label), size = 2.2, max.overlaps = 14) +
+  facet_wrap(~scenario, scales = "free") +
+  scale_colour_manual(values = c(SD = "#1b7837", MinMax = "#2166ac", buffer = "#b2182b"),
+                      labels = c(SD = "Standard deviation", MinMax = "Min/Max", buffer = "50% to 150%"),
+                      name = "Range source") +
+  scale_shape_manual(values = c(`FALSE` = 16, `TRUE` = 17),
+                     labels = c(`FALSE` = "general", `TRUE` = "animal"),
+                     name = "Parameter type") +
+  labs(
+    # title = "Morris screening of the animal effect (all parameters, varied in combination)",
+    #    subtitle = "mu* = total sensitivity (mean |EE|); sigma = interactions / non-linearity.  buffer range = half to double.",
+    x = expression(mu*"* (mean |elementary effect|, g C m"^-2*")"),
+    y = expression(sigma*" (sd of elementary effect)")) +
+  theme_minimal(base_size = 11) + theme(legend.position = "bottom")
+ggsave(file.path(fig_dir, "animal_effect_morris_animal.png"), p_morris_animal,
+       width = 13, height = 9, dpi = 150)
+
 cat("\nWrote:\n  ", file.path(res_dir, "animal_effect_morris.csv"),
-    "\n  ", file.path(fig_dir, "animal_effect_morris.png"), "\n")
+    "\n  ", file.path(fig_dir, "animal_effect_morris.png"),
+    "\n  ", file.path(fig_dir, "animal_effect_morris_animal.png"), "\n")
