@@ -135,6 +135,9 @@ set_param <- function(obj, param, value) {
 }
 
 # equilibrium TOTAL animal effect on total soil + root C (scalar, g C m-2)
+# equilibrium TOTAL animal effect on total soil + root C (scalar, g C m-2).
+# Attaches `converged` (TRUE only if BOTH arms reached a stable steady state) so
+# the Morris driver can flag evaluations that did not settle.
 animal_effect_totalC <- function(pair) {
   pair$baseline  <- spinup_equilibrium(pair$baseline, verbose = FALSE)
   pair$treatment <- spinup_equilibrium(pair$treatment,
@@ -142,18 +145,35 @@ animal_effect_totalC <- function(pair) {
                                        verbose = FALSE)
   eq_b <- pair$baseline$init_state_spin
   eq_t <- pair$treatment$init_state_spin
+  conv <- isTRUE(pair$baseline$spin_info$converged) &&
+          isTRUE(pair$treatment$spin_info$converged)
   soil <- setdiff(intersect(names(eq_b), names(eq_t)), animal_pools)
-  sum(eq_t[soil]) - sum(eq_b[soil])
+  val  <- sum(eq_t[soil]) - sum(eq_b[soil])
+  attr(val, "converged") <- conv
+  val
 }
 
-# scalar output for a named parameter vector (set all, both arms, then evaluate)
+# per-Morris-run counter of equilibrium evaluations that did NOT reach a stable
+# state. Reset before each morris_run() call; effect_scalar() increments it.
+.morris_nonconv <- new.env(parent = emptyenv())
+.morris_nonconv$n <- 0L; .morris_nonconv$total <- 0L
+
+# scalar output for a named parameter vector (set all, both arms, then evaluate).
+# Returns NA (dropped from the elementary effects) when an arm fails to reach a
+# stable equilibrium, and records that in .morris_nonconv.
 effect_scalar <- function(base_pair, pv) {
   pair <- base_pair
   for (nm in names(pv)) {
     pair$treatment <- set_param(pair$treatment, nm, pv[[nm]])
     pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
   }
-  animal_effect_totalC(pair)
+  val <- animal_effect_totalC(pair)
+  .morris_nonconv$total <- .morris_nonconv$total + 1L
+  if (!isTRUE(attr(val, "converged"))) {
+    .morris_nonconv$n <- .morris_nonconv$n + 1L
+    return(NA_real_)
+  }
+  as.numeric(val)
 }
 
 # ------------------------------------------------------------
@@ -177,9 +197,16 @@ range_for <- function(scenario, param, default) {
   list(lo = rng[1], hi = rng[2], source = src)
 }
 
-# animal parameters listed per scenario in scenarios.xlsx (Category Animal/Effect)
+# Parameter classes from scenarios.xlsx:
+#   * ANIMAL           - Category Animal/Effect (only where that animal is active)
+#   * SCENARIO-SPECIFIC- Category Environment/Productivity (non-animal, but still
+#                        scenario-specific because the sheet gives per-scenario
+#                        values/uncertainty). These were previously dropped.
+# Everything else in sweep_params is a GENERAL model parameter.
 animal_unc <- if (!is.null(unc_all))
   unc_all[unc_all$category %in% c("Animal", "Effect"), , drop = FALSE] else NULL
+scenspec_unc <- if (!is.null(unc_all))
+  unc_all[unc_all$category %in% c("Environment", "Productivity"), , drop = FALSE] else NULL
 
 # ------------------------------------------------------------
 # MORRIS per scenario over the combined parameter set.
@@ -193,11 +220,23 @@ for (scenario in scenarios) {
                                                model, scenario, verbose = FALSE)
   parms_here <- base_pair$treatment$parms
 
+  # animal parameters for this scenario (present in its parms)
   a_here <- if (!is.null(animal_unc)) {
     a <- animal_unc[animal_unc$scenario == scenario, , drop = FALSE]
     a$parameter[a$parameter %in% names(parms_here)]
   } else character(0)
-  pnames <- unique(c(intersect(sweep_params, names(parms_here)), a_here))
+  # scenario-specific non-animal parameters (Environment / Productivity)
+  s_here <- if (!is.null(scenspec_unc)) {
+    s <- scenspec_unc[scenspec_unc$scenario == scenario, , drop = FALSE]
+    s$parameter[s$parameter %in% names(parms_here)]
+  } else character(0)
+  # general model parameters = sweep_params that are NOT scenario-specific here
+  g_here <- setdiff(intersect(sweep_params, names(parms_here)), c(a_here, s_here))
+  pnames <- unique(c(g_here, s_here, a_here))
+
+  ptype <- setNames(rep("general", length(pnames)), pnames)
+  ptype[pnames %in% s_here] <- "scenario-specific"
+  ptype[pnames %in% a_here] <- "animal"
 
   lo <- hi <- setNames(numeric(length(pnames)), pnames)
   src <- setNames(character(length(pnames)), pnames)
@@ -211,14 +250,25 @@ for (scenario in scenarios) {
   lo <- lo[keep]; hi <- hi[keep]; src <- src[keep]
 
   cat("Morris:", scenario, "-", length(keep), "parameters,", morris_r, "trajectories\n")
+  .morris_nonconv$n <- 0L; .morris_nonconv$total <- 0L        # reset before this run
   trajs <- morris_trajectories(length(keep), morris_r, levels = morris_levels)
   ee    <- morris_run(trajs, lo, hi,
                       eval_fun = function(pv) effect_scalar(base_pair, pv),
                       verbose = FALSE)
+  n_bad <- .morris_nonconv$n; n_tot <- .morris_nonconv$total
+  if (n_bad > 0)
+    warning(sprintf("Morris %s: %d of %d equilibrium evaluations did NOT reach a stable state (%.1f%%).",
+                    scenario, n_bad, n_tot, 100 * n_bad / max(n_tot, 1)))
+  cat(sprintf("  stable-state check: %d/%d evaluations converged%s\n",
+              n_tot - n_bad, n_tot, if (n_bad > 0) "  <-- SEE WARNING" else ""))
+
   sm    <- morris_summary(ee)
-  sm$scenario   <- scenario
+  sm$scenario     <- scenario
   sm$range_source <- src[sm$parameter]
+  sm$param_type   <- ptype[sm$parameter]
   sm$is_animal    <- sm$parameter %in% a_here
+  sm$n_nonconverged <- n_bad
+  sm$n_evaluations  <- n_tot
   morris_rows[[scenario]] <- sm
 }
 
@@ -226,8 +276,8 @@ morris_tbl <- bind_rows(morris_rows) %>%
   mutate(parameter_label = pretty_param(parameter)) %>%
   group_by(scenario) %>% arrange(scenario, desc(mu_star)) %>%
   mutate(rank = row_number()) %>% ungroup() %>%
-  select(scenario, parameter, parameter_label, is_animal, range_source,
-         mu_star, sigma, n_ee, rank)
+  select(scenario, parameter, parameter_label, param_type, is_animal,
+         range_source, mu_star, sigma, n_ee, rank, n_nonconverged, n_evaluations)
 write_csv(morris_tbl, file.path(res_dir, "animal_effect_morris.csv"))
 
 # ------------------------------------------------------------
@@ -237,14 +287,13 @@ write_csv(morris_tbl, file.path(res_dir, "animal_effect_morris.csv"))
 # ------------------------------------------------------------
 p_morris <- ggplot(morris_tbl, aes(mu_star, sigma)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey70") +
-  geom_point(aes(colour = range_source, shape = is_animal), alpha = 0.85, size = 2) +
+  geom_point(aes(colour = range_source, shape = param_type), alpha = 0.85, size = 2) +
   ggrepel::geom_text_repel(aes(label = parameter_label), size = 2.2, max.overlaps = 14) +
   facet_wrap(~scenario, scales = "free") +
   scale_colour_manual(values = c(SD = "#1b7837", MinMax = "#2166ac", buffer = "#b2182b"),
                       labels = c(SD = "Standard deviation", MinMax = "Min/Max", buffer = "50% to 150%"),
                       name = "Range source") +
-  scale_shape_manual(values = c(`FALSE` = 16, `TRUE` = 17),
-                     labels = c(`FALSE` = "general", `TRUE` = "animal"),
+  scale_shape_manual(values = c(general = 16, `scenario-specific` = 15, animal = 17),
                      name = "Parameter type") +
   labs(
     # title = "Morris screening of the animal effect (all parameters, varied in combination)",
@@ -258,14 +307,13 @@ print(p_morris)
 
 p_morris_animal <- ggplot(morris_tbl %>% filter(is_animal), aes(mu_star, sigma)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey70") +
-  geom_point(aes(colour = range_source, shape = is_animal), alpha = 0.85, size = 2) +
+  geom_point(aes(colour = range_source, shape = param_type), alpha = 0.85, size = 2) +
   ggrepel::geom_text_repel(aes(label = parameter_label), size = 2.2, max.overlaps = 14) +
   facet_wrap(~scenario, scales = "free") +
   scale_colour_manual(values = c(SD = "#1b7837", MinMax = "#2166ac", buffer = "#b2182b"),
                       labels = c(SD = "Standard deviation", MinMax = "Min/Max", buffer = "50% to 150%"),
                       name = "Range source") +
-  scale_shape_manual(values = c(`FALSE` = 16, `TRUE` = 17),
-                     labels = c(`FALSE` = "general", `TRUE` = "animal"),
+  scale_shape_manual(values = c(general = 16, `scenario-specific` = 15, animal = 17),
                      name = "Parameter type") +
   labs(
     # title = "Morris screening of the animal effect (all parameters, varied in combination)",
