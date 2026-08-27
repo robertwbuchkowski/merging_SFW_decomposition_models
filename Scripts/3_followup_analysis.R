@@ -20,7 +20,7 @@ scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("millennial")
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)?
 
-n_years <- 25                    # length of every follow-up run below
+n_years <- 50                    # length of every follow-up run below
 by      <- 1
 
 # Fitted animal parameters saved by Scripts/fit_all_animals.R, keyed BY MODEL

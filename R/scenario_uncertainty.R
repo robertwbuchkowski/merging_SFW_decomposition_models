@@ -5,7 +5,7 @@
 # from the "scenarios" sheet of Data/scenarios.xlsx and turns it into a usable
 # +/- range for each scenario x parameter, following this precedence:
 #
-#   1. SD present (and > 0)     -> range = Value +/- SD          (source "SD")
+#   1. SD present (and > 0)     -> range = Value +/- 2* SD          (source "SD")
 #   2. else Min AND Max present -> range = [Min, Max]            (source "MinMax")
 #   3. else                     -> CV = 2 assumed: SD = 2*|Value|,
 #                                  range = Value +/- 2*|Value|,  (source "CV2")
@@ -59,8 +59,8 @@ read_param_uncertainty <- function(path = "Data/scenarios.xlsx",
   out$unc_source <- ifelse(has_sd, "SD", ifelse(has_mm, "MinMax", "CV2"))
   out$lo <- NA_real_; out$hi <- NA_real_
 
-  out$lo[has_sd] <- out$value[has_sd] - out$sd[has_sd]
-  out$hi[has_sd] <- out$value[has_sd] + out$sd[has_sd]
+  out$lo[has_sd] <- out$value[has_sd] - 2*out$sd[has_sd]
+  out$hi[has_sd] <- out$value[has_sd] + 2*out$sd[has_sd]
 
   mm <- has_mm & !has_sd
   out$lo[mm] <- out$min[mm]

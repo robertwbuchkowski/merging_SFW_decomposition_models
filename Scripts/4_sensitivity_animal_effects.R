@@ -291,7 +291,7 @@ p_morris <- ggplot(morris_tbl, aes(mu_star, sigma)) +
   ggrepel::geom_text_repel(aes(label = parameter_label), size = 2.2, max.overlaps = 14) +
   facet_wrap(~scenario, scales = "free") +
   scale_colour_manual(values = c(SD = "#1b7837", MinMax = "#2166ac", buffer = "#b2182b"),
-                      labels = c(SD = "Standard deviation", MinMax = "Min/Max", buffer = "50% to 150%"),
+                      labels = c(SD = "Two standard deviations", MinMax = "Min/Max", buffer = "50% to 150%"),
                       name = "Range source") +
   scale_shape_manual(values = c(general = 16, `scenario-specific` = 15, animal = 17),
                      name = "Parameter type") +
