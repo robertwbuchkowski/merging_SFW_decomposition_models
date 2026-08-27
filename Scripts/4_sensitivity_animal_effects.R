@@ -42,7 +42,7 @@ derive_fn    <- match.fun(model_table[[model]]$derive)
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 # ---- Morris + range settings ---------------------------------------------
-morris_r      <- 20     # trajectories per scenario (raise for stable mu*/sigma)
+morris_r      <- 50     # trajectories per scenario (raise for stable mu*/sigma)
 morris_levels <- 4L     # grid levels p in the Morris design
 buffer        <- 0.5    # no-uncertainty range = [value*buffer, value/buffer]
                         #                       = [0.5*value, 2*value] (half..double)
