@@ -23,7 +23,7 @@ models <- c("millennial")
 
 # ---- toggles -------------------------------------------------------------
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)
-do_spinup         <- TRUE    # run the seasonal dynamic spin-up (the slow part)
+do_spinup         <- FALSE    # run the seasonal dynamic spin-up (the slow part)
 do_treatment      <- FALSE   # also spin up the treatment arm now (else baseline only)
 use_newton        <- TRUE    # TRUE = Newton shooting (fast, exact limit cycle);
                              # FALSE = forward-integration spin-up
@@ -108,12 +108,14 @@ write_csv(animal_eq_effect, "Results/animal_eq_effect.csv")
 animal_effect_summary <- animal_eq_effect %>%
   filter(!is.na(difference)) %>%                       # shared soil/root pools only
   group_by(model, scenario, type) %>%
-  summarise(effect = sum(difference), .groups = "drop") %>%
+  summarise(effect = sum(difference),
+            baseline = sum(baseline), .groups = "drop") %>%
   pivot_wider(names_from = type, values_from = effect) %>%
   transmute(model, scenario,
-            total_effect_gCm2  = round(total, 2),
-            direct_effect_gCm2 = round(direct, 2),
-            pct_direct_of_total = round(100 * direct / total, 1))
+            total_effect_gCm2  = signif(total, 2),
+            direct_effect_gCm2 = signif(direct, 2),
+            pct_direct_of_total = signif(100 * direct / total, 2),
+            pct_total_of_baseline = signif(100 * total / baseline, 2))
 
 write_csv(animal_effect_summary, "Results/animal_effect_summary.csv")
 cat("\nAnimal effect on total soil + root C (g C m-2), by scenario:\n")

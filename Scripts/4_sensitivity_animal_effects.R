@@ -42,7 +42,7 @@ derive_fn    <- match.fun(model_table[[model]]$derive)
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 # ---- Morris + range settings ---------------------------------------------
-morris_r      <- 50     # trajectories per scenario (raise for stable mu*/sigma)
+morris_r      <- 200     # trajectories per scenario (raise for stable mu*/sigma)
 morris_levels <- 4L     # grid levels p in the Morris design
 buffer        <- 0.5    # no-uncertainty range = [value*buffer, value/buffer]
                         #                       = [0.5*value, 2*value] (half..double)
@@ -280,6 +280,10 @@ morris_tbl <- bind_rows(morris_rows) %>%
          range_source, mu_star, sigma, n_ee, rank, n_nonconverged, n_evaluations)
 write_csv(morris_tbl, file.path(res_dir, "animal_effect_morris.csv"))
 
+read_csv(file.path(res_dir, "animal_effect_morris.csv")) %>%
+  group_by(scenario) %>%
+  slice_max(mu_star, n = 5) %>% View()
+
 # ------------------------------------------------------------
 # FIGURE: traditional Morris mu* vs sigma map, one facet per scenario. Colour =
 # how the range was set (reported SD / Min-Max, or the half-double buffer);
@@ -291,7 +295,7 @@ p_morris <- ggplot(morris_tbl, aes(mu_star, sigma)) +
   ggrepel::geom_text_repel(aes(label = parameter_label), size = 2.2, max.overlaps = 14) +
   facet_wrap(~scenario, scales = "free") +
   scale_colour_manual(values = c(SD = "#1b7837", MinMax = "#2166ac", buffer = "#b2182b"),
-                      labels = c(SD = "Standard deviation", MinMax = "Min/Max", buffer = "50% to 150%"),
+                      labels = c(SD = "Two standard deviations", MinMax = "Min/Max", buffer = "50% to 150%"),
                       name = "Range source") +
   scale_shape_manual(values = c(general = 16, `scenario-specific` = 15, animal = 17),
                      name = "Parameter type") +
@@ -303,7 +307,7 @@ p_morris <- ggplot(morris_tbl, aes(mu_star, sigma)) +
   theme_minimal(base_size = 11) + theme(legend.position = "bottom")
 ggsave(file.path(fig_dir, "animal_effect_morris.png"), p_morris,
        width = 13, height = 9, dpi = 150)
-print(p_morris)
+# print(p_morris)
 
 p_morris_animal <- ggplot(morris_tbl %>% filter(is_animal), aes(mu_star, sigma)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey70") +
