@@ -42,7 +42,7 @@ derive_fn    <- match.fun(model_table[[model]]$derive)
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 # ---- Morris + range settings ---------------------------------------------
-morris_r      <- 50     # trajectories per scenario (raise for stable mu*/sigma)
+morris_r      <- 200     # trajectories per scenario (raise for stable mu*/sigma)
 morris_levels <- 4L     # grid levels p in the Morris design
 buffer        <- 0.5    # no-uncertainty range = [value*buffer, value/buffer]
                         #                       = [0.5*value, 2*value] (half..double)
@@ -303,7 +303,7 @@ p_morris <- ggplot(morris_tbl, aes(mu_star, sigma)) +
   theme_minimal(base_size = 11) + theme(legend.position = "bottom")
 ggsave(file.path(fig_dir, "animal_effect_morris.png"), p_morris,
        width = 13, height = 9, dpi = 150)
-print(p_morris)
+# print(p_morris)
 
 p_morris_animal <- ggplot(morris_tbl %>% filter(is_animal), aes(mu_star, sigma)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey70") +
