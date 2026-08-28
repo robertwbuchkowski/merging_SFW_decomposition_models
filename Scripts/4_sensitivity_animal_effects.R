@@ -280,6 +280,10 @@ morris_tbl <- bind_rows(morris_rows) %>%
          range_source, mu_star, sigma, n_ee, rank, n_nonconverged, n_evaluations)
 write_csv(morris_tbl, file.path(res_dir, "animal_effect_morris.csv"))
 
+read_csv(file.path(res_dir, "animal_effect_morris.csv")) %>%
+  group_by(scenario) %>%
+  slice_max(mu_star, n = 5) %>% View()
+
 # ------------------------------------------------------------
 # FIGURE: traditional Morris mu* vs sigma map, one facet per scenario. Colour =
 # how the range was set (reported SD / Min-Max, or the half-double buffer);
