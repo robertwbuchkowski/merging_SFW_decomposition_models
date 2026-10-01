@@ -29,7 +29,6 @@ source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 set.seed(1)                                   # reproducible initial-condition draws
 model     <- "millennial"
 scen      <- read_scenarios("Data/scenarios.xlsx")
-scen$MitePredator <- NULL
 scenarios <- names(scen)
 
 fig_dir <- "Results/figures"; dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
@@ -96,7 +95,7 @@ cluster_states <- function(states) {          # list of named numeric vectors
 # ------------------------------------------------------------
 # run one scenario: seed many starts, keep converged states, cluster them.
 # ------------------------------------------------------------
-soil_pools_of <- function(nm) setdiff(nm, c("Earthworm","Detritivore","DetPredator","RootHerb"))
+soil_pools_of <- function(nm) setdiff(nm, c("Earthworm","Detritivore","RootHerb"))
 
 test_scenario <- function(scenario) {
   obj <- setup_scenario(model, scen, scenario, animals = use_treatment)
@@ -169,6 +168,7 @@ else
 # multiple stable states.
 # ------------------------------------------------------------
 p <- ggplot(states_tbl, aes(scenario, total_soil_C, size = n_starts)) +
+  scale_x_discrete(labels = pretty_scenario) +
   geom_point(alpha = 0.7, colour = "#2166ac") +
   scale_size_area(max_size = 10, name = "Starts in basin") +
   labs(title = "Distinct stable states per scenario (constant forcing)",

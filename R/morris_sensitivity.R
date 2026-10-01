@@ -106,3 +106,61 @@ morris_summary <- function(ee_df) {
   rownames(out) <- NULL
   out[order(-out$mu_star), , drop = FALSE]
 }
+
+# ------------------------------------------------------------
+# morris_bootstrap(): convergence check for the Morris ranking. Resamples the r
+# trajectories with replacement B times and recomputes mu_star and sigma, giving
+# percentile confidence intervals and the stability of each parameter's rank.
+#   ee_df  elementary effects from morris_run() (parameter, trajectory, ee)
+#   B      bootstrap replicates
+#   top_k  report P(parameter ranks in the top_k by mu_star)
+#   conf   interval level
+# Returns one row per parameter: mu_star_lo/hi, sigma_lo/hi, rank_median,
+# rank_lo/hi, p_top_k. Narrow mu_star intervals and tight rank intervals mean
+# the number of trajectories was sufficient.
+# Implementation: per-trajectory sums of EE, |EE|, EE^2 and counts are combined
+# with multinomial resampling weights, so each replicate is a matrix product.
+# ------------------------------------------------------------
+morris_bootstrap <- function(ee_df, B = 1000, top_k = 5, conf = 0.95, seed = NULL) {
+  ee_df <- ee_df[is.finite(ee_df$ee), , drop = FALSE]
+  if (!nrow(ee_df)) return(NULL)
+  if (!is.null(seed)) set.seed(seed)
+
+  traj   <- sort(unique(ee_df$trajectory))
+  params <- sort(unique(ee_df$parameter))
+  ti <- match(ee_df$trajectory, traj); pj <- match(ee_df$parameter, params)
+  nt <- length(traj); np <- length(params)
+
+  acc <- function(v) { m <- matrix(0, nt, np); for (i in seq_along(v)) m[ti[i], pj[i]] <- m[ti[i], pj[i]] + v[i]; m }
+  S_abs <- acc(abs(ee_df$ee)); S <- acc(ee_df$ee); Q <- acc(ee_df$ee^2)
+  N     <- acc(rep(1, nrow(ee_df)))
+
+  # multinomial resampling weights: W[b, t] = times trajectory t was drawn
+  W <- t(vapply(seq_len(B), function(b) tabulate(sample.int(nt, nt, replace = TRUE), nt),
+                numeric(nt)))
+  if (nt == 1) W <- matrix(W, ncol = 1)
+
+  n_b    <- W %*% N
+  mustar <- (W %*% S_abs) / n_b
+  mean_b <- (W %*% S) / n_b
+  var_b  <- ((W %*% Q) / n_b - mean_b^2) * n_b / pmax(n_b - 1, 1)
+  sigma  <- sqrt(pmax(var_b, 0))
+  colnames(mustar) <- colnames(sigma) <- params
+
+  # rank within each replicate (1 = most sensitive); NA-safe
+  mustar_r <- mustar; mustar_r[!is.finite(mustar_r)] <- -Inf
+  ranks <- t(apply(mustar_r, 1, function(x) rank(-x, ties.method = "average")))
+  if (np == 1) ranks <- matrix(ranks, ncol = 1)
+  colnames(ranks) <- params
+
+  a  <- (1 - conf) / 2
+  qf <- function(m, p) apply(m, 2, stats::quantile, probs = p, na.rm = TRUE)
+  data.frame(
+    parameter   = params,
+    mu_star_lo  = qf(mustar, a), mu_star_hi = qf(mustar, 1 - a),
+    sigma_lo    = qf(sigma, a),  sigma_hi   = qf(sigma, 1 - a),
+    rank_median = qf(ranks, 0.5),
+    rank_lo     = qf(ranks, a),  rank_hi    = qf(ranks, 1 - a),
+    p_top_k     = colMeans(ranks <= top_k),
+    stringsAsFactors = FALSE, row.names = NULL)
+}

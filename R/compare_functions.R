@@ -65,3 +65,24 @@ pool_order <- unname(pool_names)
 
 # soil/plant pools to show in effect plots: everything except the animals
 plot_pools <- unname(pool_names[!names(pool_names) %in% animal_pool_names])
+
+# ============================================================
+# SCENARIO DISPLAY LABELS (figures only). Code names stay single words
+# (see scenario_name_map in R/setup.R); figures show these labels.
+#   pretty_scenario(x)   code name -> display label (unknown names unchanged)
+#   scenario_labeller    use in facet_wrap(~scenario, labeller = scenario_labeller)
+# ============================================================
+scenario_labels <- c(
+  Earthworm     = "Earthworm",
+  Macrofauna    = "Macrofauna",
+  Mesofauna     = "Mesofauna",
+  RootHerbivore = "Root Herbivore")
+
+pretty_scenario <- function(x)
+  ifelse(as.character(x) %in% names(scenario_labels),
+         scenario_labels[as.character(x)], as.character(x))
+
+scenario_labeller <- function(labels) {
+  lapply(labels, function(v) unname(pretty_scenario(v)))
+}
+class(scenario_labeller) <- c("function", "labeller")

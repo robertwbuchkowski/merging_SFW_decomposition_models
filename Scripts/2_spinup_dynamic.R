@@ -51,7 +51,7 @@ for (model in models) {
       pair$treatment <- spinup_equilibrium(pair$treatment,
                                            warm_start = pair$baseline$init_state_spin)
     eq_t    <- pair$treatment$init_state_spin
-    animals <- intersect(c("Earthworm", "Detritivore", "DetPredator", "RootHerb"),
+    animals <- intersect(c("Earthworm", "Detritivore", "RootHerb"),
                          names(eq_t))
     cat("\nEquilibrium animal biomass (", model, "/", scenario, "):\n", sep = "")
     print(round(eq_t[animals], 4))
@@ -142,7 +142,7 @@ animal_eq_effect %>% filter(!is.na(baseline)) %>%
   filter(pretty_name %in% plot_pools | pretty_name == "Total C") %>%
   ggplot(aes(x = pretty_name, y = difference, fill = type)) +
   geom_col(position = "dodge") +
-  facet_wrap(. ~ scenario, ncol = 2, scales = "free_y") +
+  facet_wrap(. ~ scenario, ncol = 2, scales = "free_y", labeller = scenario_labeller) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   ylab(expression("Animal Effect (g C m"^-2*")")) + xlab("") +

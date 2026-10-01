@@ -124,7 +124,7 @@ plot_followup_add <- function(model, scenario, dir = "Data/followup",by = NULL, 
   treatment <- load_followup(model, scenario, "add", dir = dir)
   plot_followup_comparison(control$out, treatment$out,
                            title = sprintf("%s / %s: baseline continued vs. animals added",
-                                           model, scenario), by = by,...)
+                                           model, pretty_scenario(scenario)), by = by,...)
 }
 
 # ============================================================
@@ -205,7 +205,7 @@ plot_followup_stacked <- function(model,
     geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey40") +
     geom_line(data = net, aes(x = years, y = change),
               inherit.aes = FALSE, linewidth = 0.6, linetype = "dashed") +
-    facet_wrap(~scenario, scales = "free_y") +
+    facet_wrap(~scenario, scales = "free_y", labeller = scenario_labeller) +
     scale_fill_viridis_d() +
     labs(x = "Years after animals added", y = expression("Animal Effect (g C m"^-2*")"),
          fill = "Pool") +
@@ -335,7 +335,7 @@ plot_followup_with_eq <- function(model,
         expand = expansion(mult = c(0.01, 0.02)))
   }
 
-  p + facet_wrap(~scenario, scales = "free_y") +
+  p + facet_wrap(~scenario, scales = "free_y", labeller = scenario_labeller) +
     scale_fill_viridis_d(drop = FALSE) +
     labs(x = "Years after animals added  (eq = equilibrium)",
          y = expression("Animal Effect (g C m"^-2*")"), fill = "Pool") +

@@ -34,7 +34,7 @@ if(do_effect_fitting){
   effect_spec <- list()
 }
 
-animals_order <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")  # prey before predator
+animals_order <- c("Earthworm", "Detritivore", "RootHerb")
 tol_biomass   <- 0.02
 
 rows <- list()

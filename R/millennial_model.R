@@ -16,7 +16,7 @@
 
 .POOLS_MILLENNIAL <- c(
   "C_root_herb", "C_root_tree",
-  "Earthworm", "Detritivore", "DetPredator", "RootHerb",
+  "Earthworm", "Detritivore", "RootHerb",
   "Litter", "CWD", "Organic", "DOM", "MIC",
   "P", "L", "A", "M", "B"
 )
@@ -39,7 +39,6 @@ millennial_model_wplant <- function(time, state, parms){
   NPP_tree                     <- parms[["NPP_tree"]]
   Rgas                         <- parms[["Rgas"]]
   T_ref                        <- parms[["T_ref"]]
-  a_detpredator                <- parms[["a_detpredator"]]
   a_detritivores               <- parms[["a_detritivores"]]
   a_earthworm                  <- parms[["a_earthworm"]]
   a_earthworm_soil             <- parms[["a_earthworm_soil"]]
@@ -48,7 +47,6 @@ millennial_model_wplant <- function(time, state, parms){
   a_root_tree                  <- parms[["a_root_tree"]]
   a_rootherb                   <- parms[["a_rootherb"]]
   a_wood_tree                  <- parms[["a_wood_tree"]]
-  adj_detpredator              <- parms[["adj_detpredator"]]
   adj_detritivores             <- parms[["adj_detritivores"]]
   adj_earthworm                <- parms[["adj_earthworm"]]
   adj_rootherb                 <- parms[["adj_rootherb"]]
@@ -56,14 +54,12 @@ millennial_model_wplant <- function(time, state, parms){
   alpha_ob                     <- parms[["alpha_ob"]]
   alpha_ol                     <- parms[["alpha_ol"]]
   alpha_pl                     <- parms[["alpha_pl"]]
-  c_detpredator                <- parms[["c_detpredator"]]
   c_detritivores               <- parms[["c_detritivores"]]
   c_earthworm_litter           <- parms[["c_earthworm_litter"]]
   c_earthworm_om               <- parms[["c_earthworm_om"]]
   c_earthworm_soil             <- parms[["c_earthworm_soil"]]
   c_rootherb                   <- parms[["c_rootherb"]]
   climate_forcing              <- parms[["climate_forcing"]]
-  d_detpredator                <- parms[["d_detpredator"]]
   d_detritivores               <- parms[["d_detritivores"]]
   d_earthworm                  <- parms[["d_earthworm"]]
   d_rootherb                   <- parms[["d_rootherb"]]
@@ -94,7 +90,6 @@ millennial_model_wplant <- function(time, state, parms){
   p_a                          <- parms[["p_a"]]
   p_b                          <- parms[["p_b"]]
   p_c                          <- parms[["p_c"]]
-  p_detpredator                <- parms[["p_detpredator"]]
   p_detritivores               <- parms[["p_detritivores"]]
   p_earthworm                  <- parms[["p_earthworm"]]
   p_rootherb                   <- parms[["p_rootherb"]]
@@ -118,7 +113,6 @@ millennial_model_wplant <- function(time, state, parms){
   C_root_tree <- if ("C_root_tree" %in% .ns) state[["C_root_tree"]] else 0
   Earthworm  <- if ("Earthworm" %in% .ns) state[["Earthworm"]] else 0
   Detritivore <- if ("Detritivore" %in% .ns) state[["Detritivore"]] else 0
-  DetPredator <- if ("DetPredator" %in% .ns) state[["DetPredator"]] else 0
   RootHerb   <- if ("RootHerb" %in% .ns) state[["RootHerb"]] else 0
   Litter     <- if ("Litter" %in% .ns) state[["Litter"]] else 0
   CWD        <- if ("CWD" %in% .ns) state[["CWD"]] else 0
@@ -143,7 +137,6 @@ millennial_model_wplant <- function(time, state, parms){
     c_earthworm_soil   <- adj_earthworm    * c_earthworm_soil
     c_earthworm_om     <- adj_earthworm    * c_earthworm_om
     c_detritivores     <- adj_detritivores * c_detritivores
-    c_detpredator      <- adj_detpredator  * c_detpredator
     c_rootherb         <- adj_rootherb     * c_rootherb
     # ----------------------------
     # ---- Get climate forcing ----
@@ -249,18 +242,6 @@ millennial_model_wplant <- function(time, state, parms){
     Waste_det_om = (1-a_detritivores)*(Fed_det_mic + Fed_det_om + Fed_det_lit)
 
     Respiration_detritivore = (1-p_detritivores)*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit)
-
-    # ----------------------------
-    # Predator rates
-    # ----------------------------
-
-    Fed_detpred_det = c_detpredator*Detritivore*DetPredator
-
-    Carcass_detpred_om = d_detpredator*DetPredator^2
-
-    Waste_detpred_om = (1-a_detpredator)*c_detpredator*Detritivore*DetPredator
-
-    Respiration_detpred = (1-p_detpredator)*a_detpredator*c_detpredator*Detritivore*DetPredator
 
     # --------------------------------------------------
     # Root herbivores
@@ -410,10 +391,7 @@ millennial_model_wplant <- function(time, state, parms){
       E_earthworm*Earthworm
 
     # Detritivore:
-    dDetritivore <- p_detritivores*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit) - Carcass_det_om - Fed_detpred_det
-
-    # DetPredator:
-    dDetPredator <- p_detpredator*a_detpredator*(Fed_detpred_det) - Carcass_detpred_om
+    dDetritivore <- p_detritivores*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit) - Carcass_det_om
 
     # Root herbivores:
     dRootHerb <- p_rootherb*a_rootherb*Fed_rootherb_herb - Carcass_rootherb_P
@@ -431,8 +409,7 @@ millennial_model_wplant <- function(time, state, parms){
       root_to_organic * (root_mortality_tree + root_mortality_herb) -
       F_Organic_DOM - fragmentation_organic -
       Fed_earthworm_om -
-      Fed_det_om + Carcass_det_om + Waste_det_om +
-      Carcass_detpred_om + Waste_detpred_om
+      Fed_det_om + Carcass_det_om + Waste_det_om
 
     dDOM <- F_Litter_DOM + F_CWD_DOM + F_Organic_DOM + F_MIC_mortality - F_DOM_MIC - F_l_organic
 
@@ -476,14 +453,13 @@ millennial_model_wplant <- function(time, state, parms){
     # --------------------#
     mass_balance_check <- (
       dC_root_herb + dC_root_tree +
-        dEarthworm + dDetritivore + dDetPredator + dRootHerb +
+        dEarthworm + dDetritivore + dRootHerb +
         dLitter + dCWD + dOrganic + dDOM + dMIC +
         dP + dL + dA + dM + dB
     ) + (
       # add respiration losses back
         Respiration_earthworm +
         Respiration_detritivore +
-        Respiration_detpred +
         Respiration_rootherb +
         F_mr + F_MIC_respiration
     ) + (
@@ -507,7 +483,6 @@ millennial_model_wplant <- function(time, state, parms){
         # Animal pools:
         dEarthworm,
         dDetritivore,
-        dDetPredator,
         dRootHerb,
 
         # Organic horizons:

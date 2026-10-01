@@ -38,7 +38,8 @@ read_param_uncertainty <- function(path = "Data/scenarios.xlsx",
   get <- function(nm) if (nm %in% names(d)) d[[nm]] else rep(NA, nrow(d))
 
   out <- data.frame(
-    scenario  = trimws(as.character(d$Scenario)),
+    scenario  = if (exists("rename_scenarios", mode = "function"))
+                  rename_scenarios(d$Scenario) else trimws(as.character(d$Scenario)),
     parameter = trimws(as.character(d$Parameter)),
     units     = as.character(get("Units")),
     category  = as.character(get("Category")),

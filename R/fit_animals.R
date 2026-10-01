@@ -48,11 +48,6 @@ animal_fit_defaults <- list(
     effect_param  = "slope_pint_det_k_frag_litter",   # acts on FI / f_MetLitter / fragmentation
     effect_pool   = list(millennial = "Litter"),
     effect_pct    = -33), # Reference Seasteadt et al., 1983 and similar from de Smelt et al., 2018
-  DetPredator = list(
-    biomass_param = "adj_detpredator",   # scales predator feeding rate
-    effect_param  = NA,                               # predator: no direct pool effect
-    effect_pool   = list(),
-    effect_pct    = NA),
   RootHerb = list(
     biomass_param = "adj_rootherb",      # scales root-herbivore feeding rate
     effect_param  = "k_exudate_slope",                # acts on root exudation
@@ -85,8 +80,8 @@ animal_fit_defaults <- list(
 #   (SOM_1 / ACTIVE / DOM, positive).
 effect_pool_overrides <- list(
   millennial = list(
-    Isopod        = list(Detritivore = list(pool = "Litter", pct = -10)),
-    Mite          = list(Detritivore = list(pool = "Litter", pct = -10)),
+    Macrofauna    = list(Detritivore = list(pool = "Litter", pct = -10)),
+    Mesofauna     = list(Detritivore = list(pool = "Litter", pct = -10)),
     RootHerbivore = list(RootHerb    = list(pool = "DOM",    pct = +10)),
     Earthworm     = list(Earthworm   = list(pool = "M",      pct = +10))
   )
@@ -182,7 +177,7 @@ fit_animal_params <- function(treatment, baseline,
                               max_time = 1e7, stol = 1e-8,
                               verbose = TRUE) {
 
-  animals_all    <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")
+  animals_all    <- c("Earthworm", "Detritivore", "RootHerb")
   active_animals <- intersect(animals_all, treatment$active)
   if (is.null(animal)) {
     if (length(active_animals) != 1)
@@ -335,7 +330,7 @@ scan_animal_param <- function(treatment, param, values,
   if (!param %in% names(treatment$parms))
     warning("Parameter '", param, "' is not currently in parms; it will be added.")
 
-  animals_all    <- c("Earthworm", "Detritivore", "DetPredator", "RootHerb")
+  animals_all    <- c("Earthworm", "Detritivore", "RootHerb")
   active_animals <- intersect(animals_all, treatment$active)
   if (is.null(animal)) {
     if (length(active_animals) != 1)
@@ -452,13 +447,18 @@ load_fitted_params <- function(file = "Results/fitted_animal_params.csv",
       message("'", file, "' not found; using ", fallback)
       d <- utils::read.csv(fallback, stringsAsFactors = FALSE)
       if ("fitted" %in% names(d)) names(d)[names(d) == "fitted"] <- "value"
+      if ("scenario" %in% names(d) && exists("rename_scenarios", mode = "function"))
+        d$scenario <- rename_scenarios(d$scenario)
       return(d[, intersect(c("model", "scenario", "animal", "param", "value", "role"),
                            names(d))])
     }
     stop("No fitted-parameter file found (looked for ", file, " and ", fallback,
          ")  -- run Scripts/fit_all_animals.R first.")
   }
-  utils::read.csv(file, stringsAsFactors = FALSE)
+  d <- utils::read.csv(file, stringsAsFactors = FALSE)
+  if ("scenario" %in% names(d) && exists("rename_scenarios", mode = "function"))
+    d$scenario <- rename_scenarios(d$scenario)        # old files keep working
+  d
 }
 
 # apply_fitted_params(): overwrite a setup object's parms with the fitted values
@@ -542,6 +542,8 @@ load_effect_targets <- function(file = "Data/effect_targets.csv") {
   need <- c("model", "scenario", "animal", "pool", "pct")
   if (!all(need %in% names(d)))
     stop("effect-target file needs columns: ", paste(need, collapse = ", "))
+  if (exists("rename_scenarios", mode = "function"))
+    d$scenario <- rename_scenarios(d$scenario)        # e.g. Isopod -> Macrofauna
   message("effect targets loaded from ", file, " (", nrow(d), " rows)")
   d
 }

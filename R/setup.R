@@ -11,7 +11,7 @@
 # Scenarios live in Data/scenarios.xlsx (see read_scenarios() for the sheet
 # layout): a "scenarios" sheet of per-scenario PARAMETER overrides, a
 # "state_variable_include" sheet of on/off FLAGS (Tree, Herb, earthworm,
-# RootHerb, Detritivore, DetPredator), and a "state_variables_value" sheet of
+# RootHerb, Detritivore), and a "state_variables_value" sheet of
 # initial pool values. There is a single Detritivore pool; isopod vs mite
 # scenarios turn it on and supply different detritivore parameters. Parameter
 # and pool names are matched case-insensitively; parameters or pools used by
@@ -38,10 +38,9 @@ flag_pools <- list(
   Herb        = c("C_root_herb"),               # aboveground tissue is flow-through
   earthworm   = "Earthworm",
   RootHerb    = "RootHerb",
-  Detritivore = "Detritivore",
-  DetPredator = "DetPredator"
+  Detritivore = "Detritivore"
 )
-animal_flags <- c("earthworm", "RootHerb", "Detritivore", "DetPredator")
+animal_flags <- c("earthworm", "RootHerb", "Detritivore")
 
 # ------------------------------------------------------------
 # make_model_wrapper(): run the model on the reduced (active) state.
@@ -172,7 +171,8 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
 #                            columns such as SD/Min/Max/Reference are ignored).
 #   "state_variable_include" inclusion FLAGS (1/0) per StateVariable x Scenario,
 #                            StateVariable being a flag group (Tree, Herb,
-#                            earthworm, RootHerb, Detritivore, DetPredator).
+#                            earthworm, RootHerb, Detritivore). Other
+#                            StateVariable rows are ignored.
 #   "state_variables_value"  INITIAL pool values: Model, Scenario, StateVariable,
 #                            InitialEq. Model is "All" (plants/animals) or a
 #                            model name (its soil pools); Scenario is "All" or a
@@ -183,12 +183,32 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
 # "Earthworm - Temperate" and "Earthworm-Temperate" refer to the same scenario.
 #
 # Returns a named list (one per scenario, in "scenarios"-sheet order) of:
-#   list(flags  = c(Tree=, Herb=, earthworm=, RootHerb=, Detritivore=, DetPredator=),
+#   list(flags  = c(Tree=, Herb=, earthworm=, RootHerb=, Detritivore=),
 #        params = named numeric parameter overrides,
 #        init   = named numeric initial values overriding the model defaults)
 #
 # A long-form .csv path is also supported (flags + params from the one sheet).
 # ------------------------------------------------------------
+# ============================================================
+# SCENARIO NAMES. scenarios.xlsx keeps its original names; on read-in they are
+# mapped to the names used throughout the code (single words, no spaces).
+# Display labels for figures live in R/compare_functions.R (pretty_scenario()).
+# Matching ignores case, spaces and punctuation. Unlisted names pass through.
+# ============================================================
+scenario_name_map <- c(
+  Earthworm      = "Earthworm",
+  Isopod         = "Macrofauna",
+  Microarthropod = "Mesofauna",
+  Mite           = "Mesofauna",
+  RootHerbivore  = "RootHerbivore")
+
+rename_scenarios <- function(x) {
+  key <- function(s) tolower(gsub("[^[:alnum:]]+", "", trimws(as.character(s))))
+  x   <- trimws(as.character(x))
+  i   <- match(key(x), key(names(scenario_name_map)))
+  ifelse(is.na(i), x, unname(scenario_name_map[i]))
+}
+
 read_scenarios <- function(path = "Data/scenarios.xlsx",
                            sheet_params  = "scenarios",
                            sheet_include = "state_variable_include",
@@ -208,7 +228,7 @@ read_scenarios <- function(path = "Data/scenarios.xlsx",
   if (!all(need %in% names(pr)))
     stop("Sheet '", sheet_params, "' needs columns: ", paste(need, collapse = ", "))
   pr$Parameter <- trimws(as.character(pr$Parameter))
-  pr$Scenario  <- trimws(as.character(pr$Scenario))
+  pr$Scenario  <- rename_scenarios(pr$Scenario)      # sheet name -> code name
   pr$Value     <- suppressWarnings(as.numeric(as.character(pr$Value)))
   pr <- pr[nzchar(pr$Parameter) & !is.na(pr$Parameter) &
            nzchar(pr$Scenario)  & !is.na(pr$Scenario), , drop = FALSE]
@@ -219,7 +239,7 @@ read_scenarios <- function(path = "Data/scenarios.xlsx",
   if (!all(need %in% names(inc)))
     stop("Sheet '", sheet_include, "' needs columns: ", paste(need, collapse = ", "))
   inc$sv  <- trimws(as.character(inc$StateVariable))
-  inc$key <- nrm(inc$Scenario)
+  inc$key <- nrm(rename_scenarios(inc$Scenario))
 
   # ---- initial values ----
   iv <- rd(sheet_init)
@@ -227,7 +247,7 @@ read_scenarios <- function(path = "Data/scenarios.xlsx",
   if (!all(need %in% names(iv)))
     stop("Sheet '", sheet_init, "' needs columns: ", paste(need, collapse = ", "))
   iv$sv        <- trimws(as.character(iv$StateVariable))
-  iv$key       <- nrm(iv$Scenario)
+  iv$key       <- nrm(rename_scenarios(iv$Scenario))
   iv$InitialEq <- suppressWarnings(as.numeric(as.character(iv$InitialEq)))
 
   flag_names <- names(flag_pools)
@@ -277,9 +297,6 @@ setup_scenario <- function(model, scenarios, scenario, animals = TRUE,
 
   flags <- sc$flags
   if (!animals) flags[animal_flags] <- 0L          # baseline: remove all fauna
-
-  if (animals && flags["DetPredator"] == 1L && flags["Detritivore"] == 0L)
-    warning("Scenario '", scenario, "': DetPredator on but Detritivore off (no prey).")
 
   off <- unlist(flag_pools[names(flags)[flags == 0L]], use.names = FALSE)
 
