@@ -1,6 +1,7 @@
-# ============================================================
+#------------------------------------------------------------------------#
+# dynamic_spinup.R ----
+#------------------------------------------------------------------------#
 # dynamic_spinup.R - seasonal spin-up + save/restore + follow-up experiments
-# ------------------------------------------------------------
 # WORKFLOW
 #   1. Spin up to the constant-forcing equilibrium (fast; spinup_equilibrium).
 #   2. From there, run the SEASONAL dynamic spin-up to the annual limit cycle
@@ -10,9 +11,10 @@
 #      (followup_add_animals / followup_remove_animals + run_followup).
 #
 # Requires setup.R, spinup.R, climate_forcing.R sourced.
-# ============================================================
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# dynamic_spinup() ----
+#------------------------------------------------------------------------#
 # dynamic_spinup(): SEASONAL integration to the limit cycle, started from an
 # equilibrium state (or the object's stored equilibrium, or its raw init).
 # This is the slow step -- save the result and reuse it.
@@ -20,7 +22,6 @@
 #   from     starting state (default: obj$init_state_spin, else working_state)
 #   n_years  length per attempt; lengthened automatically if still drifting
 # Returns list(out, final_state, converged, iterations).
-# ------------------------------------------------------------
 dynamic_spinup <- function(obj, from = NULL, n_years = 600, by = 5,
                            max_iter = 6, tol = 1e-3, abs_floor = 1e-3, verbose = TRUE) {
   start <- if (!is.null(from)) from
@@ -32,11 +33,12 @@ dynamic_spinup <- function(obj, from = NULL, n_years = 600, by = 5,
                       tol = tol, abs_floor = abs_floor, verbose = verbose)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# save_spinup() / load_spinup() ----
+#------------------------------------------------------------------------#
 # save_spinup() / load_spinup(): persist a spun-up state to Data/.
 # Stores the state vector PLUS metadata (model, scenario, arm, the parameter
 # list, and the active-pool names) so a follow-up can be rebuilt exactly.
-# ------------------------------------------------------------
 save_spinup <- function(obj, state, scenario, arm,
                         dir = "Data/spinup", tag = NULL) {
   dir.create(dir, showWarnings = FALSE, recursive = TRUE)
@@ -51,10 +53,11 @@ save_spinup <- function(obj, state, scenario, arm,
 
 load_spinup <- function(file) readRDS(file)
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# run_followup() ----
+#------------------------------------------------------------------------#
 # run_followup(): shorter SEASONAL simulation from a given starting state,
 # using a target setup object's model/parms/wrapper. Returns the deSolve out.
-# ------------------------------------------------------------
 run_followup <- function(start_state, target, n_years = 100, by = 5,
                          verbose = TRUE) {
   check_by(by)
@@ -70,13 +73,14 @@ run_followup <- function(start_state, target, n_years = 100, by = 5,
                func = target$wrapped_model, parms = parms)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# followup_add_animals() ----
+#------------------------------------------------------------------------#
 # followup_add_animals(): take a saved BASELINE (no-animal) spun-up state and
 # introduce animals. The target is the treatment setup (animals active, with
 # the calibrated parameters); shared plant/soil pools start from the baseline
 # limit cycle, the animal pools are seeded with `seed` (default: their input
 # values from the treatment setup).
-# ------------------------------------------------------------
 followup_add_animals <- function(baseline_saved, treatment_setup,
                                  seed = NULL, seed_mod = 0.01, n_years = 100, by = 5, verbose = TRUE) {
   ws     <- treatment_setup$working_state
@@ -91,12 +95,13 @@ followup_add_animals <- function(baseline_saved, treatment_setup,
        out = run_followup(ws, treatment_setup, n_years = n_years, by = by, verbose = verbose))
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# followup_remove_animals() ----
+#------------------------------------------------------------------------#
 # followup_remove_animals(): take a saved TREATMENT (with-animal) spun-up
 # state and remove the animals. The target is the baseline setup (animals
 # inactive); shared plant/soil pools start from the treatment limit cycle, and
 # the animal pools are simply dropped (instantaneous removal).
-# ------------------------------------------------------------
 followup_remove_animals <- function(treatment_saved, baseline_setup,
                                      n_years = 100, by = 5, verbose = TRUE) {
   ws     <- baseline_setup$working_state          # no animal pools here
@@ -107,13 +112,14 @@ followup_remove_animals <- function(treatment_saved, baseline_setup,
        out = run_followup(ws, baseline_setup, n_years = n_years, by = by, verbose = verbose))
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# followup_continue_baseline() ----
+#------------------------------------------------------------------------#
 # followup_continue_baseline(): CONTROL run for followup_add_animals() -- the
 # saved baseline (no-animal) limit cycle, continued forward on the SAME
 # baseline setup (animals stay off) for the same n_years/by as the add-animals
 # run. This gives a time-matched "what if animals were never added" trajectory
 # to plot against the add-animals result (see plot_followup_comparison()).
-# ------------------------------------------------------------
 followup_continue_baseline <- function(baseline_saved, baseline_setup,
                                        n_years = 100, by = 5, verbose = TRUE) {
   ws     <- baseline_setup$working_state
@@ -124,12 +130,13 @@ followup_continue_baseline <- function(baseline_saved, baseline_setup,
        out = run_followup(ws, baseline_setup, n_years = n_years, by = by, verbose = verbose))
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# save_followup() / load_followup() ----
+#------------------------------------------------------------------------#
 # save_followup() / load_followup(): persist a follow-up run (add / remove /
 # continue_baseline) keyed by model x scenario x kind, so the two loops in
 # Scripts/followup_analysis.R (add+control, remove) can run independently of
 # each other and of the plotting step.
-# ------------------------------------------------------------
 save_followup <- function(model, scenario, kind, result,
                           dir = "Data/followup", tag = NULL) {
   dir.create(dir, showWarnings = FALSE, recursive = TRUE)

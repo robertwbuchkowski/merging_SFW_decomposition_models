@@ -5,25 +5,25 @@ plot_ode_output <- function(
     start_time = NULL
 ) {
   
-  # --------------------------------------------------
-  # Load required packages
-  # --------------------------------------------------
+  #------------------------------------------------------------------------#
+  # Load required packages ----
+  #------------------------------------------------------------------------#
   library(ggplot2)
   library(tidyr)
   library(dplyr)
   
-  # --------------------------------------------------
-  # Convert to data frame
-  # --------------------------------------------------
+  #------------------------------------------------------------------------#
+  # Convert to data frame ----
+  #------------------------------------------------------------------------#
   df <- as.data.frame(ode_out)
   
   # Extract time variable
   time_name <- names(df)[time_col]
   names(df)[time_col] <- "time"
   
-  # --------------------------------------------------
-  # Identify state variables
-  # --------------------------------------------------
+  #------------------------------------------------------------------------#
+  # Identify state variables ----
+  #------------------------------------------------------------------------#
   if(is.null(variable_cols)){
     state_names <- names(df)[-time_col]
   }else{
@@ -34,9 +34,9 @@ plot_ode_output <- function(
     state_names <- subset(state_names, state_names != "mass_balance_check")
   }
   
-  # --------------------------------------------------
-  # Get starting values
-  # --------------------------------------------------
+  #------------------------------------------------------------------------#
+  # Get starting values ----
+  #------------------------------------------------------------------------#
   start_vals <- df[1, state_names, drop = FALSE] %>%
     pivot_longer(
       cols = everything(),
@@ -44,9 +44,9 @@ plot_ode_output <- function(
       values_to = "start_value"
     )
   
-  # --------------------------------------------------
-  # Convert to long format for ggplot
-  # --------------------------------------------------
+  #------------------------------------------------------------------------#
+  # Convert to long format for ggplot ----
+  #------------------------------------------------------------------------#
   df_long <- df %>%
     pivot_longer(
       cols = all_of(state_names),
@@ -54,9 +54,9 @@ plot_ode_output <- function(
       values_to = "value"
     )
   
-  # --------------------------------------------------
-  # Plot
-  # --------------------------------------------------
+  #------------------------------------------------------------------------#
+  # Plot ----
+  #------------------------------------------------------------------------#
   p <- ggplot(df_long, aes(x = time, y = value)) +
     geom_line() +
     geom_hline(
@@ -76,13 +76,14 @@ plot_ode_output <- function(
   return(p)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# plot_followup_comparison() ----
+#------------------------------------------------------------------------#
 # plot_followup_comparison(): overlay TWO deSolve runs on the same pools/time
 # axis -- built for comparing the continued no-animal baseline (control)
 # against the add-animals follow-up, but works for any two comparable runs.
 #   control_out, treatment_out   deSolve `ode()` output matrices/data frames
 #   control_label, treatment_label   legend labels for the two runs
-# ------------------------------------------------------------
 plot_followup_comparison <- function(control_out, treatment_out,
                                      control_label = "Continued baseline (no animals)",
                                      treatment_label = "Animals added",
@@ -114,11 +115,12 @@ plot_followup_comparison <- function(control_out, treatment_out,
     theme(legend.position = "top")
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# plot_followup_add() ----
+#------------------------------------------------------------------------#
 # plot_followup_add(): convenience wrapper -- loads the saved
 # "continue_baseline" and "add" follow-ups for a model/scenario (as written by
 # save_followup() in Scripts/followup_analysis.R) and plots them together.
-# ------------------------------------------------------------
 plot_followup_add <- function(model, scenario, dir = "Data/followup",by = NULL, ...) {
   control   <- load_followup(model, scenario, "continue_baseline", dir = dir)
   treatment <- load_followup(model, scenario, "add", dir = dir)
@@ -127,22 +129,22 @@ plot_followup_add <- function(model, scenario, dir = "Data/followup",by = NULL, 
                                            model, pretty_scenario(scenario)), by = by,...)
 }
 
-# ============================================================
-# STACKED CHANGE-OVER-TIME PLOT (added animals)
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# STACKED CHANGE-OVER-TIME PLOT (added animals) ----
+#------------------------------------------------------------------------#
 # For each scenario, the animal EFFECT over the follow-up = the added-animals
 # run minus the time-matched continued-baseline (no-animal) run, per pool.
 # Pools are relabelled and ordered from the shared pool_names vector (in
 # R/compare_functions.R) and stacked so you see the net change and how each
 # pool contributes through time. One facet per scenario. Annual steps (by = 365).
-# ============================================================
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# followup_change_long() ----
+#------------------------------------------------------------------------#
 # followup_change_long(): change (added - continued baseline) per pool over
 # time, for ONE scenario, at annual (or `by`-day) steps. Returns a tidy frame
 # with raw `state` and the relabelled `pretty` (from pool_names). Animal pools
 # are dropped so the stack shows only the soil/plant carbon they affect.
-# ------------------------------------------------------------
 followup_change_long <- function(model, scenario, dir = "Data/followup",
                                  by = 365) {
   add  <- load_followup(model, scenario, "add", dir = dir)$out
@@ -167,11 +169,12 @@ followup_change_long <- function(model, scenario, dir = "Data/followup",
     stringsAsFactors = FALSE)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# plot_followup_stacked() ----
+#------------------------------------------------------------------------#
 # plot_followup_stacked(): the faceted stacked graphic. Stacks the per-pool
 # change (positive above 0, negative below), one facet per scenario.
 # `scenarios` defaults to every scenario with saved runs.
-# ------------------------------------------------------------
 plot_followup_stacked <- function(model,
                                   scenarios = NULL,
                                   dir = "Data/followup",
@@ -213,9 +216,9 @@ plot_followup_stacked <- function(model,
     theme(legend.position = "right")
 }
 
-# ============================================================
-# FOLLOW-UP TRAJECTORY + EQUILIBRIUM END-STATE (single combined figure)
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# FOLLOW-UP TRAJECTORY + EQUILIBRIUM END-STATE (single combined figure) ----
+#------------------------------------------------------------------------#
 # Shows the stacked animal-effect trajectory over the follow-up AND the
 # equilibrium animal effect (from Scripts/2_spinup_dynamic.R ->
 # Results/animal_eq_effect.csv) as a stacked bar at the right, past a broken
@@ -226,7 +229,6 @@ plot_followup_stacked <- function(model,
 #   eq_csv   the equilibrium effect table written by script 2. Columns used:
 #            name, difference (absolute change, g C m-2), scenario, type.
 #   eq_type  which effect to show at equilibrium ("total" or "direct").
-# ============================================================
 read_eq_change <- function(eq_csv = "Results/animal_eq_effect.csv",
                            eq_type = "total") {
   if (!file.exists(eq_csv)) {
@@ -261,7 +263,9 @@ plot_followup_with_eq <- function(model,
   }
   if (!length(scenarios)) stop("No scenarios with saved add + continue_baseline runs in ", dir)
 
-  # --- trajectory (stacked area), reuse the shared grouping/relabelling ---
+  #------------------------------------------------------------------------#
+  # trajectory (stacked area), reuse the shared grouping/relabelling ----
+  #------------------------------------------------------------------------#
   traj <- bind_rows(lapply(scenarios, function(s)
     followup_change_long(model, s, dir = dir, by = by))) %>%
     group_by(scenario, pretty, time) %>%
@@ -273,7 +277,9 @@ plot_followup_with_eq <- function(model,
   barw <- bar_frac * tmax
   x_bar_centre <- tmax + gap + barw / 2          # where the equilibrium bar sits
 
-  # --- equilibrium end-state (stacked bar) ---
+  #------------------------------------------------------------------------#
+  # equilibrium end-state (stacked bar) ----
+  #------------------------------------------------------------------------#
   eq <- read_eq_change(eq_csv, eq_type)
   if (!is.null(eq)) eq <- eq %>% filter(scenario %in% scenarios)
 

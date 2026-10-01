@@ -1,4 +1,6 @@
-# ============================================================
+#------------------------------------------------------------------------#
+# Run all: regenerate the whole project ----
+#------------------------------------------------------------------------#
 # RUN ALL  -  regenerate the whole project end to end.
 #
 # Sources Scripts/1..4 in order, so a single call reproduces every saved
@@ -18,7 +20,6 @@
 #     wrapper just runs them in a clean environment and times each one.
 #   * The slow step is 2 (spin-up). Set run_step2 <- FALSE to reuse saved
 #     spin-ups when you only need to refresh downstream steps.
-# ============================================================
 
 stopifnot(file.exists("R/setup.R"))        # guard: must be run from project root
 

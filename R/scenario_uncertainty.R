@@ -1,6 +1,6 @@
-# ============================================================
-# SCENARIO PARAMETER UNCERTAINTY
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# SCENARIO PARAMETER UNCERTAINTY ----
+#------------------------------------------------------------------------#
 # Reads the per-scenario parameter uncertainty (Value, SD, Min, Max, Category)
 # from the "scenarios" sheet of Data/scenarios.xlsx and turns it into a usable
 # +/- range for each scenario x parameter, following this precedence:
@@ -18,7 +18,6 @@
 # Columns: scenario, parameter, units, category, value, sd, min, max,
 #          lo, hi, unc_source (SD / MinMax / CV2), bounded (TRUE if the range
 #          was truncated to a physical bound, e.g. a_*/p_* to [0,1]).
-# ============================================================
 
 read_param_uncertainty <- function(path = "Data/scenarios.xlsx",
                                     sheet = "scenarios",
@@ -80,7 +79,9 @@ read_param_uncertainty <- function(path = "Data/scenarios.xlsx",
                     collapse = ", "))
   }
 
-  # ----------------------------------------------------------
+  #------------------------------------------------------------------------#
+  # PHYSICAL BOUNDS ----
+  #------------------------------------------------------------------------#
   # PHYSICAL BOUNDS. Some parameters are constrained to a fixed range and their
   # uncertainty range must not exceed it:
   #   a_* (assimilation eff.), p_* (production eff.)  in [0, 1]
@@ -90,7 +91,6 @@ read_param_uncertainty <- function(path = "Data/scenarios.xlsx",
   # Any other strictly-positive rate/pool parameter gets a lower floor > 0
   # (negative rate constants are non-physical), while genuinely signed params
   # (e.g. k_b_slope_pint < 0) are left alone.
-  # ----------------------------------------------------------
   # exact-name bounds
   bounds_named <- list(
     LigFrac                    = c(0, 1),

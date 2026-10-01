@@ -1,6 +1,6 @@
-# ============================================================
-# setup.R - switch models, scenarios, and site parameters easily
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# setup.R - switch models, scenarios, and site parameters easily ----
+#------------------------------------------------------------------------#
 # Functions:
 #   make_model_wrapper()   integrate only the ACTIVE (non-zero) pools
 #   setup_model()          pick a model + turn groups off + override params
@@ -22,9 +22,10 @@
 #
 # Assumes working dir = project root and that R/climate_forcing.R, R/spinup.R,
 # R/plot_ode_output.R are sourced in your run script.
-# ============================================================
 
-# ---- model registry: one entry per model ----
+#------------------------------------------------------------------------#
+# model registry: one entry per model ----
+#------------------------------------------------------------------------#
 model_table <- list(
   millennial = list(
     src    = c("R/millennial_model.R", "R/derive_millennial_parms.R", "R/init_millennial_state.R"),
@@ -42,9 +43,10 @@ flag_pools <- list(
 )
 animal_flags <- c("earthworm", "RootHerb", "Detritivore")
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# make_model_wrapper() ----
+#------------------------------------------------------------------------#
 # make_model_wrapper(): run the model on the reduced (active) state.
-# ------------------------------------------------------------
 make_model_wrapper <- function(model_fun, full_names, state_groups) {
   function(time, y, parms) {
     full <- setNames(numeric(length(full_names)), full_names)
@@ -78,7 +80,9 @@ make_model_wrapper <- function(model_fun, full_names, state_groups) {
   parms
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# setup_model() ----
+#------------------------------------------------------------------------#
 # setup_model(): pick a model, turn groups off, override parameters.
 #   off              character vector of state pools to zero
 #   param_overrides  named list/vector of parameter values (applied BEFORE
@@ -99,7 +103,6 @@ make_model_wrapper <- function(model_fun, full_names, state_groups) {
 # obj$wrapped_model (spinup_equilibrium, dynamic_spinup,
 # run_followup, deSolve/rootSolve calls) picks up the chosen mode with no
 # changes at the call site. Both modes give IDENTICAL numerical results.
-# ------------------------------------------------------------
 setup_model <- function(model, off = character(0), param_overrides = list(),
                         init_overrides = list(), source_files = TRUE,
                         mode = c("scenario", "wrapper")) {
@@ -163,7 +166,9 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
        wrapped_model = if (mode == "scenario") model_scenario else model_wrapper)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# read_scenarios() ----
+#------------------------------------------------------------------------#
 # read_scenarios(): read the scenarios workbook (Excel .xlsx) with 3 sheets.
 #
 #   "scenarios"              long-form PARAMETER overrides:
@@ -188,13 +193,13 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
 #        init   = named numeric initial values overriding the model defaults)
 #
 # A long-form .csv path is also supported (flags + params from the one sheet).
-# ------------------------------------------------------------
-# ============================================================
+#------------------------------------------------------------------------#
+# Scenario names (sheet -> code) ----
+#------------------------------------------------------------------------#
 # SCENARIO NAMES. scenarios.xlsx keeps its original names; on read-in they are
 # mapped to the names used throughout the code (single words, no spaces).
 # Display labels for figures live in R/compare_functions.R (pretty_scenario()).
 # Matching ignores case, spaces and punctuation. Unlisted names pass through.
-# ============================================================
 scenario_name_map <- c(
   Earthworm      = "Earthworm",
   Isopod         = "Macrofauna",
@@ -222,7 +227,9 @@ read_scenarios <- function(path = "Data/scenarios.xlsx",
                                     check.names = FALSE, stringsAsFactors = FALSE)
   nrm <- function(x) tolower(gsub("[^[:alnum:]]+", "", trimws(as.character(x))))
 
-  # ---- parameters ----
+  #------------------------------------------------------------------------#
+  # parameters ----
+  #------------------------------------------------------------------------#
   pr <- rd(sheet_params)
   need <- c("Parameter", "Scenario", "Value")
   if (!all(need %in% names(pr)))
@@ -233,7 +240,9 @@ read_scenarios <- function(path = "Data/scenarios.xlsx",
   pr <- pr[nzchar(pr$Parameter) & !is.na(pr$Parameter) &
            nzchar(pr$Scenario)  & !is.na(pr$Scenario), , drop = FALSE]
 
-  # ---- inclusion flags ----
+  #------------------------------------------------------------------------#
+  # inclusion flags ----
+  #------------------------------------------------------------------------#
   inc <- rd(sheet_include)
   need <- c("StateVariable", "Scenario", "Inclusion")
   if (!all(need %in% names(inc)))
@@ -241,7 +250,9 @@ read_scenarios <- function(path = "Data/scenarios.xlsx",
   inc$sv  <- trimws(as.character(inc$StateVariable))
   inc$key <- nrm(rename_scenarios(inc$Scenario))
 
-  # ---- initial values ----
+  #------------------------------------------------------------------------#
+  # initial values ----
+  #------------------------------------------------------------------------#
   iv <- rd(sheet_init)
   need <- c("Model", "Scenario", "StateVariable", "InitialEq")
   if (!all(need %in% names(iv)))
@@ -282,11 +293,12 @@ read_scenarios <- function(path = "Data/scenarios.xlsx",
   setNames(out, scen)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# setup_scenario() ----
+#------------------------------------------------------------------------#
 # setup_scenario(): build one arm of a scenario.
 #   animals = TRUE  -> treatment (animals per the CSV flags)
 #   animals = FALSE -> baseline  (all animals off; same plants + climate)
-# ------------------------------------------------------------
 setup_scenario <- function(model, scenarios, scenario, animals = TRUE,
                            source_files = TRUE, mode = c("scenario", "wrapper")) {
   mode <- match.arg(mode)
@@ -308,10 +320,11 @@ setup_scenario <- function(model, scenarios, scenario, animals = TRUE,
   s
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# setup_scenario_pair() ----
+#------------------------------------------------------------------------#
 # setup_scenario_pair(): treatment + matched no-animal baseline.
 # Same plants and same climate/site parameters; baseline has no animals.
-# ------------------------------------------------------------
 setup_scenario_pair <- function(model, scenarios, scenario, source_files = TRUE,
                                 mode = c("scenario", "wrapper")) {
   mode <- match.arg(mode)
@@ -323,8 +336,10 @@ setup_scenario_pair <- function(model, scenarios, scenario, source_files = TRUE,
   )
 }
 
-# ------------------------------------------------------------
-# INDIRECT-EFFECT parameters. The animals affect soil pools in two ways:
+#------------------------------------------------------------------------#
+# Indirect-effect parameters ----
+#------------------------------------------------------------------------#
+# INDIRECT-EFFECT parameters. The animals affect soil pools in two ways
 #   (a) DIRECT   -- feeding fluxes (Fed_*), always on.
 #   (b) INDIRECT -- animals modify RATE parameters of the soil model. These are
 #       the animal-effect slopes zeroed by zero_indirect_effects():
@@ -333,7 +348,6 @@ setup_scenario_pair <- function(model, scenarios, scenario, source_files = TRUE,
 #         k_b_slope_pint                  earthworms   -> aggregate (k_b) loss
 #         k_exudate_slope                 root herbivores -> root exudation
 #       Setting all four to 0 leaves animals acting ONLY through direct feeding.
-# ------------------------------------------------------------
 indirect_effect_params <- c("slope_pint_det_k_frag_litter",
                             "slope_pint_det_k_frag_organic",
                             "k_b_slope_pint",

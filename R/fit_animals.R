@@ -1,6 +1,6 @@
-# ============================================================
-# fit_animals.R - calibrate animal parameters for a TREATMENT scenario
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# fit_animals.R - calibrate animal parameters for a TREATMENT scenario ----
+#------------------------------------------------------------------------#
 # Two goals, fit one animal at a time:
 #   (1) BIOMASS: tune a feeding-rate parameter so the animal's EQUILIBRIUM
 #       biomass matches a target (default = its starting/input value).
@@ -16,7 +16,6 @@
 #
 # Returns the calibrated treatment object plus a full iteration $history so
 # you can see exactly what happened. Requires setup.R, spinup.R sourced.
-# ============================================================
 
 # default parameter levers per animal (override via args if your model differs).
 #   biomass_param  feeding-rate ADJUSTMENT FACTOR (adj_*) tuned to hit a target
@@ -55,7 +54,9 @@ animal_fit_defaults <- list(
     effect_pct    = +10)
 )
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# PER model x scenario x animal OVERRIDES of the effect target ----
+#------------------------------------------------------------------------#
 # PER model x scenario x animal OVERRIDES of the effect target (pool, param,
 # and/or size). The effect pool can differ for a given animal across
 # scenarios -- set a different
@@ -98,7 +99,9 @@ effect_pool_overrides <- list(
   mo[[key[1]]][[animal]]
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# animal_fit_spec() ----
+#------------------------------------------------------------------------#
 # animal_fit_spec(): resolve biomass_param, effect_param, effect_pool, and the
 # default effect size (effect_pct) for an animal. Resolution order for the
 # effect pool/param/size is:
@@ -107,7 +110,6 @@ effect_pool_overrides <- list(
 #   (3) NA (nothing to fit).
 # Pass `scenario` to enable per model x scenario resolution; omit it to get the
 # per-MODEL default only (backwards compatible).
-# ------------------------------------------------------------
 animal_fit_spec <- function(animal, model = NULL, scenario = NULL) {
   d <- animal_fit_defaults[[animal]]
   if (is.null(d)) stop("No animal_fit_defaults entry for '", animal, "'.")
@@ -125,7 +127,9 @@ animal_fit_spec <- function(animal, model = NULL, scenario = NULL) {
        effect_pct    = if (is.null(effect_pct))   NA else effect_pct)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# fit_param_grid() ----
+#------------------------------------------------------------------------#
 # fit_param_grid(): build a gradient that BUFFERS around a parameter's default
 # (or any center) value, for scan_animal_param().
 #   center  the value to buffer around (e.g. parms[[biomass_param]])
@@ -133,7 +137,6 @@ animal_fit_spec <- function(animal, model = NULL, scenario = NULL) {
 #           fraction of |center| on a linear scale
 #   scale   "log" for positive rate parameters; "linear" for params that can
 #           be <= 0 (e.g. k_b_slope_pint)
-# ------------------------------------------------------------
 fit_param_grid <- function(center, buffer = 1, n = 11, scale = c("log", "linear")) {
   scale <- match.arg(scale)
   if (scale == "log") {
@@ -233,7 +236,9 @@ fit_animal_params <- function(treatment, baseline,
   history <- list()
   for (outer in seq_len(max_outer)) {
 
-    # ---- (1) biomass via feeding rate (log10 scale, monotone increasing) ----
+    #------------------------------------------------------------------------#
+    # (1) biomass via feeding rate (log10 scale, monotone increasing) ----
+    #------------------------------------------------------------------------#
     fb <- function(logc) {
       treatment$parms[[biomass_param]] <<- 10^logc
       unname(eq_now()[animal]) - target_biomass
@@ -250,7 +255,9 @@ fit_animal_params <- function(treatment, baseline,
       if (is.finite(root)) treatment$parms[[biomass_param]] <- 10^root
     }
 
-    # ---- (2) effect via effect parameter (linear scale, monotone) ----
+    #------------------------------------------------------------------------#
+    # (2) effect via effect parameter (linear scale, monotone) ----
+    #------------------------------------------------------------------------#
     if (do_effect) {
       fe <- function(val) {
         treatment$parms[[effect_param]] <<- val
@@ -296,7 +303,9 @@ fit_animal_params <- function(treatment, baseline,
 
   treatment$init_state_spin <- eq_now()
 
-  # ---- verification: did the fit hit its target, in a healthy state? ----
+  #------------------------------------------------------------------------#
+  # verification: did the fit hit its target, in a healthy state? ----
+  #------------------------------------------------------------------------#
   eq_fin  <- treatment$init_state_spin
   B_fin   <- unname(eq_fin[animal])
   hit_target <- is.finite(B_fin) &&
@@ -331,9 +340,10 @@ fit_animal_params <- function(treatment, baseline,
   treatment
 }
 
-# ============================================================
+#------------------------------------------------------------------------#
+# scan_animal_param() ----
+#------------------------------------------------------------------------#
 # scan_animal_param() - response curves along a USER-DEFINED parameter gradient
-# ------------------------------------------------------------
 # fit_animal_params() returns a single optimum; this returns the WHOLE curve so
 # you can see how equilibrium biomass and the pool effect respond to a
 # parameter, spot non-convergent / unstable regions (flagged, not fatal), and
@@ -351,7 +361,6 @@ fit_animal_params <- function(treatment, baseline,
 #
 # Returns a data.frame with columns: <param>, biomass, effect_pct, converged,
 # max_deriv. attr(, "param"/"animal"/"effect_pool") describe the scan.
-# ============================================================
 scan_animal_param <- function(treatment, param, values,
                               animal = NULL, baseline = NULL, effect_pool = NULL,
                               warm_start = TRUE,
@@ -407,12 +416,13 @@ scan_animal_param <- function(treatment, param, values,
   res
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# plot_animal_scan() ----
+#------------------------------------------------------------------------#
 # plot_animal_scan(): quick base-R view of a scan_animal_param() result.
 # Biomass (and effect, if present) vs the parameter; non-converged points are
 # drawn in red so unstable regions are obvious. Optional reference lines for a
 # target biomass and a fitted optimum.
-# ------------------------------------------------------------
 plot_animal_scan <- function(scan, target_biomass = NULL, fitted_value = NULL,
                              log_x = FALSE) {
   param <- attr(scan, "param"); animal <- attr(scan, "animal")
@@ -443,12 +453,11 @@ plot_animal_scan <- function(scan, target_biomass = NULL, fitted_value = NULL,
   invisible(NULL)
 }
 
-# ============================================================
-# SAVE / LOAD / APPLY fitted animal parameters
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# SAVE / LOAD / APPLY fitted animal parameters ----
+#------------------------------------------------------------------------#
 # Fit once (Scripts/fit_all_animals.R), save to a tidy file keyed by MODEL, and
 # reuse elsewhere (e.g. Scripts/spinup_dynamic.R) without re-fitting.
-# ============================================================
 
 # save_fitted_params(): write one row per model x scenario x fitted parameter.
 # `summary_long` is the data frame built by fit_all_animals.R (needs columns
@@ -514,9 +523,9 @@ apply_fitted_params <- function(obj, fitted, model, scenario, verbose = TRUE) {
   obj
 }
 
-# ============================================================
-# EFFECT TARGETS - saved effect sizes, read in explicitly for fitting
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# EFFECT TARGETS - saved effect sizes, read in explicitly for fitting ----
+#------------------------------------------------------------------------#
 # Effect fitting is now OPT-IN and EXPLICIT. In Scripts/fit_all_animals.R:
 #
 #   effect_spec <- list()                          # biomass-only fitting
@@ -533,7 +542,6 @@ apply_fitted_params <- function(obj, fitted, model, scenario, verbose = TRUE) {
 # Edit that CSV to change which pool / how big an effect you fit, per
 # model x scenario. Rows with a blank or NA pool/pct are skipped (no effect fit
 # for that animal), so you can turn individual animals off without deleting them.
-# ============================================================
 
 # write the built-in animal_fit_defaults / effect_pool_overrides table out to a
 # CSV you can then edit by hand. Run once to (re)generate the starting file.

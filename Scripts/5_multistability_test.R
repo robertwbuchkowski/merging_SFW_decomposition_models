@@ -1,6 +1,7 @@
-# ============================================================
+#------------------------------------------------------------------------#
+# TEST FOR MULTIPLE STABLE STATES (alternative equilibria) ----
+#------------------------------------------------------------------------#
 # TEST FOR MULTIPLE STABLE STATES (alternative equilibria) - constant forcing
-# ------------------------------------------------------------
 # Microbial-explicit soil models can have more than one STABLE equilibrium
 # (e.g. an active state vs. a microbial-collapse state). This script probes each
 # scenario for that by running the constant-forcing steady-state solver from
@@ -20,7 +21,6 @@
 #         Results/multistability_states.csv  (every distinct state found),
 #         Results/figures/multistability_states.png
 # Run from the project root.
-# ============================================================
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
@@ -34,20 +34,23 @@ scenarios <- names(scen)
 fig_dir <- "Results/figures"; dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 res_dir <- "Results";         dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
 
-# ---- test settings -------------------------------------------------------
+#------------------------------------------------------------------------#
+# test settings ----
+#------------------------------------------------------------------------#
 n_starts   <- 60        # random initial conditions per scenario (+ fixed corners)
 span_dec    <- 2        # random scaling spans +/- this many orders of magnitude
 rel_tol     <- 1e-2     # two equilibria are "the same" if max relative diff < this
 abs_floor   <- 1e-6     # ignore pools below this when comparing (numerical dust)
 use_treatment <- FALSE  # test the BASELINE (no-animal) equilibrium first
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# make_starts() ----
+#------------------------------------------------------------------------#
 # make_starts(): a matrix of initial states (rows = pools, cols = starts).
 # Columns are: the default; an all-low and an all-high corner; a microbial-
 # collapse corner (tiny MIC/B); a microbial-bloom corner; then random draws
 # where every pool is multiplied by an independent log-uniform factor. This
 # spreads seeds across basins, including the ones microbial models flip between.
-# ------------------------------------------------------------
 make_starts <- function(y0, n_random, span = 2) {
   pools <- names(y0)
   cols  <- list(default = y0)
@@ -69,11 +72,12 @@ make_starts <- function(y0, n_random, span = 2) {
   M
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# distinct_states() ----
+#------------------------------------------------------------------------#
 # distinct_states(): cluster converged equilibria into unique states by the
 # max RELATIVE pool difference (pools below abs_floor ignored). Greedy: each
 # state joins the first cluster it matches, else starts a new one.
-# ------------------------------------------------------------
 same_state <- function(a, b) {
   keep <- (abs(a) > abs_floor) | (abs(b) > abs_floor)
   if (!any(keep)) return(TRUE)
@@ -92,9 +96,10 @@ cluster_states <- function(states) {          # list of named numeric vectors
   list(reps = reps, counts = members)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# run one scenario ----
+#------------------------------------------------------------------------#
 # run one scenario: seed many starts, keep converged states, cluster them.
-# ------------------------------------------------------------
 soil_pools_of <- function(nm) setdiff(nm, c("Earthworm","Detritivore","RootHerb"))
 
 test_scenario <- function(scenario) {
@@ -139,7 +144,9 @@ test_scenario <- function(scenario) {
     states = state_tab)
 }
 
-# ---- run all scenarios ---------------------------------------------------
+#------------------------------------------------------------------------#
+# run all scenarios ----
+#------------------------------------------------------------------------#
 all_summary <- list(); all_states <- list()
 for (sc in scenarios) {
   cat("\n=== multistability test:", sc, "===\n")
@@ -162,11 +169,12 @@ else
   cat("\nNo multistability detected: every scenario converged to a single stable",
       "state from all", unique(summary_tbl$n_tested), "seeds.\n")
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# FIGURE: total soil + root C of each distinct stable state per scenario ----
+#------------------------------------------------------------------------#
 # FIGURE: total soil + root C of each distinct stable state per scenario, sized
 # by how many starts fell into it (basin share). Multiple points in a column =
 # multiple stable states.
-# ------------------------------------------------------------
 p <- ggplot(states_tbl, aes(scenario, total_soil_C, size = n_starts)) +
   scale_x_discrete(labels = pretty_scenario) +
   geom_point(alpha = 0.7, colour = "#2166ac") +

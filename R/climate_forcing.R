@@ -6,12 +6,13 @@
 # input-timing weights are closed-form functions of time, each divided by a
 # precomputed annual normaliser so they integrate to 1 over the year.
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# .forcing_norms() ----
+#------------------------------------------------------------------------#
 # .forcing_norms(): precompute (once per parameter set) the annual normalising
 # constants for the growing-season and leaf-litter weights, by integrating
 # their UNNORMALISED shapes over a fine within-year grid. Attaching these to
 # `parms` avoids recomputing them on every derivative evaluation.
-# ------------------------------------------------------------
 .grow_shape <- function(doy, p) {
   Temp  <- p$MAT + p$T_amp * sin(2 * pi * (doy - 110) / 365)
   theta <- if (p$N_theta_peaks == 2) p$MAtheta + p$theta_amp * cos(4 * pi * (doy - 110) / 365)
@@ -53,14 +54,15 @@ climate_forcing_function <- function(time, parms) {
   # annual normalisers (precomputed on parms if available, else compute now)
   nrm <- if (!is.null(p$.forcing_norms)) p$.forcing_norms else forcing_norms(p)
 
-  # --------------------------------------------------
+  #------------------------------------------------------------------------#
+  # Allocation-specific input timing ----
+  #------------------------------------------------------------------------#
   # ALLOCATION-SPECIFIC INPUT TIMING, evaluated continuously at `doy`. Each
   # weight is a rate per day that integrates to 1 over the year:
   #   root_input_weight   growing-season activity / (its annual integral)
   #   wood_input_weight   uniform, 1/365
   #   leaf_litter_weight  fall Gaussian pulse + small growing-season trickle,
   #                       mixed by leaf_litter_summer_frac
-  # --------------------------------------------------
   grow_w <- if (nrm$grow > 0) .grow_shape(doy, p) / nrm$grow else 1/365
   wood_w <- 1/365
   sfrac  <- if (!is.null(p$leaf_litter_summer_frac)) p$leaf_litter_summer_frac else 0.2
@@ -77,9 +79,9 @@ climate_forcing_function <- function(time, parms) {
 }
 
 
-# ------------------------------------------------------------
-# Seasonal forcing (a function of time)
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# Seasonal forcing (a function of time) ----
+#------------------------------------------------------------------------#
 make_climate_forcing <- function(parms) {
   p <- as.list(parms)
   p$.forcing_norms <- forcing_norms(p)          # precompute annual normalisers once
@@ -90,11 +92,12 @@ make_climate_forcing <- function(parms) {
   }
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# Equilibrium (constant) forcing ----
+#------------------------------------------------------------------------#
 # Equilibrium (constant) forcing: annual-mean climate, with uniform daily
 # weights so NPP_daily = NPP_annual / 365 and litterfall is spread evenly.
 # Used for stode()/runsteady() warm-starts.
-# ------------------------------------------------------------
 make_climate_forcing_equilibrium <- function(parms) {
   function(time) {
     forcing <- c(

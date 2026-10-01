@@ -28,12 +28,13 @@ compare_vectors <- function(treatment, baseline) {
   )
 }
 
-# ============================================================
+#------------------------------------------------------------------------#
+# Pool names (single source of truth) ----
+#------------------------------------------------------------------------#
 # POOL NAMES  -  the single source of truth for pool labels and order.
 # Every script and plot renames / orders / selects pools from THIS one vector.
 # Names are raw pool codes; values are the display labels. The vector order is
 # also the display order (used to order and to select pools for plotting).
-# ============================================================
 pool_names <- c(
   C_root_herb = "Herbaceous Root C",
   C_root_tree = "Tree Root C",
@@ -66,12 +67,13 @@ pool_order <- unname(pool_names)
 # soil/plant pools to show in effect plots: everything except the animals
 plot_pools <- unname(pool_names[!names(pool_names) %in% animal_pool_names])
 
-# ============================================================
+#------------------------------------------------------------------------#
+# Scenario display labels (figures only) ----
+#------------------------------------------------------------------------#
 # SCENARIO DISPLAY LABELS (figures only). Code names stay single words
 # (see scenario_name_map in R/setup.R); figures show these labels.
 #   pretty_scenario(x)   code name -> display label (unknown names unchanged)
 #   scenario_labeller    use in facet_wrap(~scenario, labeller = scenario_labeller)
-# ============================================================
 scenario_labels <- c(
   Earthworm     = "Earthworm",
   Macrofauna    = "Macrofauna",

@@ -1,6 +1,7 @@
-# ============================================================
+#------------------------------------------------------------------------#
+# MORRIS SENSITIVITY OF THE ANIMAL EFFECT TO ALL PARAMETERS ----
+#------------------------------------------------------------------------#
 # MORRIS SENSITIVITY OF THE ANIMAL EFFECT TO ALL PARAMETERS (equilibrium)
-# ------------------------------------------------------------
 # One combined Morris elementary-effects screening over the GENERAL model
 # parameters, the SCENARIO-SPECIFIC parameters (Environment / Productivity rows
 # of scenarios.xlsx) and the ANIMAL parameters (Animal / Effect rows, only in the
@@ -39,7 +40,16 @@
 #   total and direct equilibrium animal effects are recomputed per sample.
 #   Outputs: animal_effect_uncertainty_samples.csv / _summary.csv,
 #            figures/animal_effect_uncertainty.png
-# ============================================================
+#
+# REGIME FLAGS: every evaluation is tagged if the treatment equilibrium has
+#   (a) microbial collapse (MIC or B < collapse_rel x baseline), or
+#   (b) aggregate breakdown at the model's 0.001 floor (kb_floor, earthworms).
+#   Flagged points are kept; Morris also reports mu*/sigma/rank from unflagged
+#   steps only (*_clean columns) and the uncertainty summary gives intervals
+#   with and without flagged samples.
+#
+# PARALLEL: model evaluations run on n_cores worker processes (PSOCK, works on
+#   Windows). Set n_cores <- 1 to run serially.
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl, ggrepel)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/derive_millennial_parms.R")
@@ -62,7 +72,9 @@ animal_pools <- c("Earthworm", "Detritivore", "RootHerb")
 derive_fn    <- match.fun(model_table[[model]]$derive)
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
-# ---- Morris + range settings ---------------------------------------------
+#------------------------------------------------------------------------#
+# Morris + range settings ----
+#------------------------------------------------------------------------#
 morris_r      <- 200     # trajectories per scenario (raise for stable mu*/sigma)
 morris_levels <- 4L     # grid levels p in the Morris design
 buffer        <- 0.5    # MAIN no-uncertainty range = [value*buffer, value/buffer]
@@ -73,19 +85,41 @@ morris_seed   <- 27082026      # base seed; each scenario uses morris_seed + its
 run_main_morris <- TRUE   # main-text analysis (existing uncertainty)
 run_supp_morris <- TRUE   # supplemental analysis (standardized half-double, Min/Max-bound)
 
-# ---- Morris bootstrap (convergence of the ranking) ----
+#------------------------------------------------------------------------#
+# Morris bootstrap (convergence of the ranking) ----
+#------------------------------------------------------------------------#
 boot_B     <- 1000        # bootstrap replicates over trajectories
 boot_top_k <- 5           # report P(parameter is in the top-k by mu*)
 
-# ---- Uncertainty propagation to the headline animal effect ----
+#------------------------------------------------------------------------#
+# Uncertainty propagation to the headline animal effect ----
+#------------------------------------------------------------------------#
 run_uncertainty_propagation <- TRUE
 up_n        <- 500        # Latin-hypercube samples per scenario (3 equilibria each)
 up_seed     <- 20260827
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# Parallel execution ----
+#------------------------------------------------------------------------#
+# Model evaluations (Morris trajectories, uncertainty samples) run on n_cores
+# worker processes; 1 = serial. The bootstrap itself is vectorised and takes
+# seconds, so it stays on the main process.
+n_cores <- max(1, parallel::detectCores(logical = FALSE) - 1)
+
+#------------------------------------------------------------------------#
+# Regime flags (kept in the results, reported with and without) ----
+#------------------------------------------------------------------------#
+#   microbe_collapse : MIC or B in the treatment below collapse_rel x baseline
+#   kb_floor         : aggregate breakdown rate k_b*(1 + Earthworm*k_b_slope_pint)
+#                      at or below the model's 0.001 floor (breakdown switched off)
+collapse_rel <- 1e-6
+kb_floor     <- 0.001
+
+#------------------------------------------------------------------------#
+# GENERAL model parameters to include ----
+#------------------------------------------------------------------------#
 # GENERAL model parameters to include (animal parameters are added per scenario
 # from scenarios.xlsx below). Only those present in a scenario's parms are used.
-# ------------------------------------------------------------
 sweep_params <- c("k_frag_litter", "k_frag_organic", "k_l_o", "k_l", "k_b", "k_pa",
                   "k_ma", "k_litterfall_ann", "k_litterfall_herb_ann", "k_MICd",
                   "k_bd", "root_to_organic", "a_root_herb", "k_exudate_tree",
@@ -94,10 +128,11 @@ sweep_params <- c("k_frag_litter", "k_frag_organic", "k_l_o", "k_l", "k_b", "k_p
                   "alpha_pl", "alpha_lb", "K_pl", "K_lb", "p1", "p2", "K_ld",
                   "CUE_T", "p_a", "p_b", "k_mort_root_tree", "k_mort_root_herb")
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# Pretty display names ----
+#------------------------------------------------------------------------#
 # Pretty display names (code -> label), general + animal parameters combined.
 # pretty_param() falls back to the raw code for anything not listed.
-# ------------------------------------------------------------
 param_labels <- c(
   k_frag_litter = "Litter fragmentation", k_frag_organic = "Organic fragmentation",
   k_frag_CWD = "CWD fragmentation", k_l_o = "DOM -> POC turnover",
@@ -141,11 +176,12 @@ param_labels <- c(
 
 pretty_param <- function(x) ifelse(x %in% names(param_labels), param_labels[x], x)
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# PHYSICAL GUARD RAILS ----
+#------------------------------------------------------------------------#
 # PHYSICAL GUARD RAILS. a_*/p_* efficiencies in [0,1] (except soil partition
 # coefficients p_a, p_b [0,1] and p_c unbounded); named fractions in [0,1];
 # pct_claysilt in [0,100]. clamp_to_bounds() pulls a value onto the nearest edge.
-# ------------------------------------------------------------
 param_bounds <- function(param) {
   if (grepl("^(a_|p_)", param) && !param %in% c("p_a", "p_b", "p_c"))
     return(c(0, 1))
@@ -159,9 +195,10 @@ param_bounds <- function(param) {
 }
 clamp_to_bounds <- function(v, param) { b <- param_bounds(param); pmin(pmax(v, b[1]), b[2]) }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# set_param() ----
+#------------------------------------------------------------------------#
 # set_param(): change ONE parameter and rebuild derived params + forcing.
-# ------------------------------------------------------------
 set_param <- function(obj, param, value) {
   obj$parms[[param]]        <- value
   obj$parms                 <- derive_fn(obj$parms)
@@ -169,9 +206,24 @@ set_param <- function(obj, param, value) {
   obj
 }
 
+# regime_flags(): which special regime (if any) an equilibrium pair is in.
+# Returns "" (normal), "microbe_collapse", "kb_floor" or both joined by "+".
+regime_flags <- function(eq_b, eq_t, parms) {
+  f   <- character(0)
+  mic <- intersect(c("MIC", "B"), intersect(names(eq_b), names(eq_t)))
+  if (length(mic) && any(is.finite(eq_t[mic]) &
+                         eq_t[mic] < collapse_rel * pmax(eq_b[mic], 1e-12)))
+    f <- c(f, "microbe_collapse")
+  if ("Earthworm" %in% names(eq_t)) {
+    kb <- parms$k_b + eq_t[["Earthworm"]] * parms$k_b_slope_pint * parms$k_b
+    if (is.finite(kb) && kb <= kb_floor) f <- c(f, "kb_floor")
+  }
+  paste(f, collapse = "+")
+}
+
 # equilibrium TOTAL animal effect on total soil + root C (scalar, g C m-2).
-# Attaches `converged` (TRUE only if BOTH arms reached a stable steady state) so
-# the Morris driver can flag evaluations that did not settle.
+# Attaches `converged` (TRUE only if BOTH arms reached a stable steady state)
+# and `regime` (see regime_flags) for the Morris driver.
 animal_effect_totalC <- function(pair) {
   pair$baseline  <- spinup_equilibrium(pair$baseline, verbose = FALSE)
   pair$treatment <- spinup_equilibrium(pair$treatment,
@@ -184,33 +236,29 @@ animal_effect_totalC <- function(pair) {
   soil <- setdiff(intersect(names(eq_b), names(eq_t)), animal_pools)
   val  <- sum(eq_t[soil]) - sum(eq_b[soil])
   attr(val, "converged") <- conv
+  attr(val, "regime")    <- if (conv) regime_flags(eq_b, eq_t, pair$treatment$parms) else ""
   val
 }
 
-# per-Morris-run counter of equilibrium evaluations that did NOT reach a stable
-# state. Reset before each morris_run() call; effect_scalar() increments it.
-.morris_nonconv <- new.env(parent = emptyenv())
-.morris_nonconv$n <- 0L; .morris_nonconv$total <- 0L
+# make_effect_fun(): the Morris evaluator for one scenario. Built by a
+# top-level factory so its environment carries only base_pair to the workers.
+make_effect_fun <- function(base_pair) function(pv) effect_scalar(base_pair, pv)
 
-# scalar output for a named parameter vector (set all, both arms, then evaluate).
-# Returns NA (dropped from the elementary effects) when an arm fails to reach a
-# stable equilibrium, and records that in .morris_nonconv.
+# scalar output for a named parameter vector (set all, both arms, then
+# evaluate). The converged / regime attributes travel with the value;
+# morris_run() drops non-converged points and tags flagged ones.
 effect_scalar <- function(base_pair, pv) {
   pair <- base_pair
   for (nm in names(pv)) {
     pair$treatment <- set_param(pair$treatment, nm, pv[[nm]])
     pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
   }
-  val <- animal_effect_totalC(pair)
-  .morris_nonconv$total <- .morris_nonconv$total + 1L
-  if (!isTRUE(attr(val, "converged"))) {
-    .morris_nonconv$n <- .morris_nonconv$n + 1L
-    return(NA_real_)
-  }
-  as.numeric(val)
+  animal_effect_totalC(pair)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# PARAMETER RANGES ----
+#------------------------------------------------------------------------#
 # PARAMETER RANGES. range_for() returns lo, hi (clamped to guard rails) and a
 # label for how the range was set, under either mode:
 #   mode = "main"         reported +/-2 SD or [Min, Max] if available, else the
@@ -220,7 +268,6 @@ effect_scalar <- function(base_pair, pv) {
 #                         labels: 50-200% / MinMax-bound / guard-rail-bound /
 #                                 MinMax-excludes-default (Min/Max does not
 #                                 overlap 50-200%; the unbound 50-200% is kept)
-# ------------------------------------------------------------
 unc_all <- tryCatch(read_param_uncertainty("Data/scenarios.xlsx", warn_cv = FALSE),
                     error = function(e) { message("uncertainty read failed: ",
                                                   conditionMessage(e)); NULL })
@@ -272,11 +319,12 @@ animal_unc <- if (!is.null(unc_all))
 scenspec_unc <- if (!is.null(unc_all))
   unc_all[unc_all$category %in% c("Environment", "Productivity"), , drop = FALSE] else NULL
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# param_set_for() ----
+#------------------------------------------------------------------------#
 # param_set_for(): the parameters screened in one scenario and their class
 # (general / scenario-specific / animal). Shared by Morris and the uncertainty
 # propagation so both use exactly the same parameter set.
-# ------------------------------------------------------------
 param_set_for <- function(scenario, parms_here) {
   a_here <- if (!is.null(animal_unc)) {
     a <- animal_unc[animal_unc$scenario == scenario, , drop = FALSE]
@@ -303,11 +351,12 @@ make_base_pair <- function(scenario) {
   bp
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# run_morris() ----
+#------------------------------------------------------------------------#
 # run_morris(): Morris screening for every scenario under one range mode.
 # Each scenario is seeded with morris_seed + its index, so the main and
 # standardized runs share the same unit-hypercube trajectories.
-# ------------------------------------------------------------
 run_morris <- function(mode = c("main", "standardized")) {
   mode <- match.arg(mode)
   morris_rows <- list()
@@ -333,13 +382,18 @@ run_morris <- function(mode = c("main", "standardized")) {
 
     cat("Morris [", mode, "]: ", scenario, " - ", length(keep), " parameters, ",
         morris_r, " trajectories\n", sep = "")
-    .morris_nonconv$n <- 0L; .morris_nonconv$total <- 0L
     set.seed(morris_seed + si)
     trajs <- morris_trajectories(length(keep), morris_r, levels = morris_levels)
     ee    <- morris_run(trajs, lo, hi,
-                        eval_fun = function(pv) effect_scalar(base_pair, pv),
-                        verbose = FALSE)
-    n_bad <- .morris_nonconv$n; n_tot <- .morris_nonconv$total
+                        eval_fun = make_effect_fun(base_pair),
+                        verbose = FALSE, cl = cl)
+    n_bad <- attr(ee, "n_nonconverged"); n_tot <- attr(ee, "n_eval")
+    rc    <- attr(ee, "regime_counts")
+    n_mic <- if ("microbe_collapse" %in% names(rc)) rc[["microbe_collapse"]] else 0L
+    n_kb  <- if ("kb_floor" %in% names(rc)) rc[["kb_floor"]] else 0L
+    if (n_mic + n_kb > 0)
+      message(sprintf("Morris [%s] %s: flagged evaluations - microbe_collapse %d, kb_floor %d (of %d).",
+                      mode, scenario, n_mic, n_kb, n_tot))
     if (n_bad > 0)
       warning(sprintf("Morris [%s] %s: %d of %d equilibrium evaluations did NOT reach a stable state (%.1f%%).",
                       mode, scenario, n_bad, n_tot, 100 * n_bad / max(n_tot, 1)))
@@ -355,6 +409,15 @@ run_morris <- function(mode = c("main", "standardized")) {
     bt <- morris_bootstrap(ee, B = boot_B, top_k = boot_top_k,
                            seed = morris_seed + 1000 + si)
     if (!is.null(bt)) sm <- merge(sm, bt, by = "parameter", all.x = TRUE, sort = FALSE)
+    # same metrics using only steps where neither end is in a flagged regime
+    ee_clean <- ee[!nzchar(ee$regime), , drop = FALSE]
+    sm_clean <- if (nrow(ee_clean)) morris_summary(ee_clean) else
+      data.frame(parameter = character(), mu_star = numeric(), sigma = numeric(), n_ee = integer())
+    names(sm_clean)[names(sm_clean) != "parameter"] <-
+      paste0(names(sm_clean)[names(sm_clean) != "parameter"], "_clean")
+    sm <- merge(sm, sm_clean, by = "parameter", all.x = TRUE, sort = FALSE)
+    sm$n_ee_flagged <- vapply(sm$parameter, function(p)
+      sum(ee$parameter == p & nzchar(ee$regime)), integer(1))
     ee$scenario <- scenario
     ee_all[[scenario]] <- ee
     sm$scenario       <- scenario
@@ -370,26 +433,32 @@ run_morris <- function(mode = c("main", "standardized")) {
     sm$is_animal      <- sm$parameter %in% a_here
     sm$n_nonconverged <- n_bad
     sm$n_evaluations  <- n_tot
+    sm$n_eval_microbe_collapse <- n_mic
+    sm$n_eval_kb_floor         <- n_kb
     morris_rows[[scenario]] <- sm
   }
 
   tbl <- bind_rows(morris_rows) %>%
     mutate(parameter_label = pretty_param(parameter)) %>%
     group_by(scenario) %>% arrange(scenario, desc(mu_star)) %>%
-    mutate(rank = row_number()) %>% ungroup() %>%
+    mutate(rank = row_number()) %>%
+    mutate(rank_clean = rank(-mu_star_clean, ties.method = "first", na.last = "keep")) %>%
+    ungroup() %>%
     select(scenario, parameter, parameter_label, param_type, is_animal,
            range_source, default, range_lo, range_hi, default_in_range,
            mu_star, mu_star_lo, mu_star_hi, sigma, sigma_lo, sigma_hi,
            n_ee, rank, rank_median, rank_lo, rank_hi, p_top_k,
-           n_nonconverged, n_evaluations)
+           mu_star_clean, sigma_clean, n_ee_clean, rank_clean, n_ee_flagged,
+           n_nonconverged, n_evaluations, n_eval_microbe_collapse, n_eval_kb_floor)
   attr(tbl, "ee") <- bind_rows(ee_all)          # raw elementary effects
   tbl
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# FIGURE helper: Morris mu* vs sigma map ----
+#------------------------------------------------------------------------#
 # FIGURE helper: traditional Morris mu* vs sigma map, one facet per scenario.
 # Colour = how the range was set; shape = parameter type.
-# ------------------------------------------------------------
 plot_morris <- function(tbl, colours, labels, legend_name = "Range source") {
   ggplot(tbl, aes(mu_star, sigma)) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey70") +
@@ -468,9 +537,20 @@ write_morris_outputs <- function(tbl, tag, colours, labels) {
   cat("Wrote:", csv, "and figures animal_effect_morris", tag, "[ _animal].png\n", sep = "")
 }
 
-# ------------------------------------------------------------
-# RUN
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# RUN ----
+#------------------------------------------------------------------------#
+# start the worker pool (NULL = serial). Workers source the R/ helpers and get
+# the script-level objects that the model evaluations need.
+cl <- morris_cluster(
+  n_cores,
+  source_files = c("R/climate_forcing.R", "R/spinup.R", "R/derive_millennial_parms.R",
+                   "R/millennial_model.R", "R/init_millennial_state.R",
+                   "R/setup.R", "R/compare_functions.R", "R/fit_animals.R"),
+  export = c("set_param", "derive_fn", "animal_pools", "regime_flags",
+             "animal_effect_totalC", "effect_scalar", "collapse_rel", "kb_floor"))
+if (!is.null(cl)) cat("Running model evaluations on", length(cl), "worker processes.\n")
+
 morris_main <- morris_supp <- NULL
 if (run_main_morris) {
   morris_main <- run_morris("main")
@@ -481,12 +561,13 @@ if (run_supp_morris) {
   write_morris_outputs(morris_supp, "_standardized", supp_cols, supp_labs)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# MAIN vs STANDARDIZED comparison ----
+#------------------------------------------------------------------------#
 # MAIN vs STANDARDIZED comparison: per-parameter mu* and rank side by side, and
 # a per-scenario Spearman rank correlation of mu*. A parameter whose rank
 # drops a lot under the standardized range was important mainly because its
 # reported uncertainty is wide (and vice versa).
-# ------------------------------------------------------------
 if (!is.null(morris_main) && !is.null(morris_supp)) {
   cmp <- full_join(
     morris_main %>% select(scenario, parameter, parameter_label, param_type,
@@ -510,9 +591,9 @@ if (!is.null(morris_main) && !is.null(morris_supp)) {
 }
 
 
-# ============================================================
-# UNCERTAINTY PROPAGATION TO THE HEADLINE ANIMAL EFFECT
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# UNCERTAINTY PROPAGATION TO THE HEADLINE ANIMAL EFFECT ----
+#------------------------------------------------------------------------#
 # Morris ranks parameters; it does not say how uncertain the animal effect
 # itself is. Here ALL screened parameters are sampled jointly (Latin hypercube,
 # up_n samples per scenario) over the MAIN-text ranges, and for every sample the
@@ -525,7 +606,6 @@ if (!is.null(morris_main) && !is.null(morris_supp)) {
 # Outputs: Results/animal_effect_uncertainty_samples.csv  (every sample)
 #          Results/animal_effect_uncertainty_summary.csv  (per scenario)
 #          Results/figures/animal_effect_uncertainty.png
-# ============================================================
 
 # inverse-CDF sampler for one parameter given u in (0,1)
 up_quantile <- function(u, rg, r) {
@@ -554,7 +634,8 @@ headline_effects <- function(base_pair, pv) {
     pair$treatment <- set_param(pair$treatment, nm, pv[[nm]])
     pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
   }
-  out <- c(total = NA_real_, direct = NA_real_, converged = 0)
+  out <- c(total = NA_real_, direct = NA_real_, converged = 0,
+           microbe_collapse = 0, kb_floor = 0)
   res <- tryCatch({
     b  <- spinup_equilibrium(pair$baseline, verbose = FALSE)
     eb <- b$init_state_spin
@@ -564,12 +645,21 @@ headline_effects <- function(base_pair, pv) {
     soil <- setdiff(intersect(names(eb), names(tr$init_state_spin)), animal_pools)
     conv <- isTRUE(b$spin_info$converged) && isTRUE(tr$spin_info$converged) &&
             isTRUE(td$spin_info$converged)
+    # regime flags: total-effect state (both flags) and direct-effect state
+    # (microbes only; its indirect slopes are zero, so no k_b floor)
+    rg_t <- regime_flags(eb, tr$init_state_spin, pair$treatment$parms)
+    rg_d <- regime_flags(eb, td$init_state_spin, pair$treatment$parms)
     c(total  = sum(tr$init_state_spin[soil]) - sum(eb[soil]),
       direct = sum(td$init_state_spin[soil]) - sum(eb[soil]),
-      converged = as.numeric(conv))
+      converged = as.numeric(conv),
+      microbe_collapse = as.numeric(grepl("microbe_collapse", paste(rg_t, rg_d))),
+      kb_floor         = as.numeric(grepl("kb_floor", rg_t)))
   }, error = function(e) out)
   res
 }
+
+# factory so a parallel worker receives only base_pair with the evaluator
+make_headline_fun <- function(base_pair) function(pv) headline_effects(base_pair, pv)
 
 run_uncertainty_propagation_fn <- function() {
   samp_rows <- list(); summ_rows <- list()
@@ -600,9 +690,10 @@ run_uncertainty_propagation_fn <- function() {
     colnames(X) <- pn
 
     default <- headline_effects(base_pair, setNames(numeric(0), character(0)))
-    Y <- t(vapply(seq_len(up_n), function(i)
-      headline_effects(base_pair, setNames(X[i, ], pn)),
-      c(total = 0, direct = 0, converged = 0)))
+    rows_list <- lapply(seq_len(up_n), function(i) setNames(X[i, ], pn))
+    Y <- if (is.null(cl)) lapply(rows_list, function(pv) headline_effects(base_pair, pv)) else
+      parallel::parLapply(cl, rows_list, make_headline_fun(base_pair))
+    Y <- do.call(rbind, Y)
 
     n_bad <- sum(Y[, "converged"] < 1)
     if (n_bad > 0)
@@ -615,12 +706,19 @@ run_uncertainty_propagation_fn <- function() {
                        check.names = FALSE)
     samp_rows[[scenario]] <- s_df
 
-    ok  <- Y[, "converged"] == 1 & is.finite(Y[, "total"]) & is.finite(Y[, "direct"])
+    ok   <- Y[, "converged"] == 1 & is.finite(Y[, "total"]) & is.finite(Y[, "direct"])
+    flag <- Y[, "microbe_collapse"] == 1 | Y[, "kb_floor"] == 1
+    n_mic <- sum(ok & Y[, "microbe_collapse"] == 1); n_kb <- sum(ok & Y[, "kb_floor"] == 1)
+    if (n_mic + n_kb > 0)
+      message(sprintf("Uncertainty propagation %s: flagged samples - microbe_collapse %d, kb_floor %d (of %d converged).",
+                      scenario, n_mic, n_kb, sum(ok)))
     tot <- Y[ok, "total"]; dir <- Y[ok, "direct"]
+    tot_c <- Y[ok & !flag, "total"]; dir_c <- Y[ok & !flag, "direct"]
     pct <- 100 * dir / tot
     q   <- function(v, p) if (length(v)) unname(stats::quantile(v, p, na.rm = TRUE)) else NA_real_
     summ_rows[[scenario]] <- data.frame(
       scenario = scenario, n_samples = up_n, n_converged = sum(ok),
+      n_microbe_collapse = n_mic, n_kb_floor = n_kb, n_clean = sum(ok & !flag),
       total_default  = default[["total"]],
       total_median   = q(tot, 0.5), total_mean = mean(tot),
       total_q025     = q(tot, 0.025), total_q975 = q(tot, 0.975),
@@ -632,12 +730,18 @@ run_uncertainty_propagation_fn <- function() {
       pct_direct_default = 100 * default[["direct"]] / default[["total"]],
       pct_direct_median  = q(pct[is.finite(pct)], 0.5),
       pct_direct_q025    = q(pct[is.finite(pct)], 0.025),
-      pct_direct_q975    = q(pct[is.finite(pct)], 0.975))
+      pct_direct_q975    = q(pct[is.finite(pct)], 0.975),
+      total_median_clean = q(tot_c, 0.5),
+      total_q025_clean   = q(tot_c, 0.025), total_q975_clean = q(tot_c, 0.975),
+      p_sign_as_default_clean = if (length(tot_c)) mean(sign(tot_c) == sign(default[["total"]])) else NA_real_,
+      direct_median_clean = q(dir_c, 0.5),
+      direct_q025_clean   = q(dir_c, 0.025), direct_q975_clean = q(dir_c, 0.975))
   }
   list(samples = bind_rows(samp_rows), summary = bind_rows(summ_rows))
 }
 
 if (run_uncertainty_propagation) {
+  if (!is.null(cl)) parallel::clusterExport(cl, "headline_effects")   # defined after cluster start
   up <- run_uncertainty_propagation_fn()
   write_csv(up$samples, file.path(res_dir, "animal_effect_uncertainty_samples.csv"))
   write_csv(up$summary, file.path(res_dir, "animal_effect_uncertainty_summary.csv"))
@@ -646,14 +750,21 @@ if (run_uncertainty_propagation) {
           transmute(scenario, n_converged,
                     total = sprintf("%.1f (%.1f to %.1f)", total_median, total_q025, total_q975),
                     direct = sprintf("%.1f (%.1f to %.1f)", direct_median, direct_q025, direct_q975),
-                    p_sign_as_default = round(p_sign_as_default, 3)),
+                    p_sign_as_default = round(p_sign_as_default, 3),
+                    flagged = n_microbe_collapse + n_kb_floor,
+                    total_unflagged = sprintf("%.1f (%.1f to %.1f)", total_median_clean,
+                                              total_q025_clean, total_q975_clean)),
         row.names = FALSE)
 
   # FIGURE: distribution of total and direct effects per scenario; solid line =
   # all-default effect, shaded band = central 95% of the samples.
   long <- up$samples %>% filter(converged == 1) %>%
-    select(scenario, total, direct) %>%
+    select(scenario, total, direct, microbe_collapse, kb_floor) %>%
     pivot_longer(c(total, direct), names_to = "effect", values_to = "value")
+  long_clean <- long %>% filter(microbe_collapse == 0, kb_floor == 0)
+  flag_txt <- up$summary %>%
+    transmute(scenario, lab = sprintf("flagged: %d collapse, %d k_b floor",
+                                      n_microbe_collapse, n_kb_floor))
   bands <- up$summary %>%
     transmute(scenario,
               total_lo = total_q025, total_hi = total_q975, total_def = total_default,
@@ -663,6 +774,9 @@ if (run_uncertainty_propagation) {
     geom_rect(data = bands, aes(xmin = lo, xmax = hi, ymin = -Inf, ymax = Inf, fill = effect),
               inherit.aes = FALSE, alpha = 0.12) +
     geom_density(alpha = 0.35) +
+    geom_density(data = long_clean, fill = NA, linetype = "dashed", linewidth = 0.5) +
+    geom_text(data = flag_txt, aes(x = Inf, y = Inf, label = lab), inherit.aes = FALSE,
+              hjust = 1.05, vjust = 1.5, size = 2.8, colour = "grey30") +
     geom_vline(data = bands, aes(xintercept = def, colour = effect), linewidth = 0.7) +
     geom_vline(xintercept = 0, linetype = "dotted", colour = "grey40") +
     facet_wrap(~scenario, scales = "free", labeller = scenario_labeller) +
@@ -670,7 +784,9 @@ if (run_uncertainty_propagation) {
     scale_colour_manual(values = c(total = "#1b7837", direct = "#762a83"), name = "Effect") +
     labs(x = expression("Animal effect on total soil + root C (g C m"^-2*")"),
          y = "Density",
-         caption = "Solid line = all-default effect; shaded band = central 95% of samples; dotted = no effect.") +
+         caption = paste("Filled = all converged samples; dashed outline = excluding flagged regimes",
+                         "(microbial collapse, k_b at floor). Solid line = all-default effect;",
+                         "shaded band = central 95%; dotted = no effect.")) +
     theme_minimal(base_size = 11) + theme(legend.position = "bottom")
   ggsave(file.path(fig_dir, "animal_effect_uncertainty.png"), p_up,
          width = 12, height = 8, dpi = 150)
@@ -678,3 +794,6 @@ if (run_uncertainty_propagation) {
       file.path(res_dir, "animal_effect_uncertainty_summary.csv"),
       file.path(fig_dir, "animal_effect_uncertainty.png"), "\n")
 }
+
+# shut down the worker pool
+if (!is.null(cl)) parallel::stopCluster(cl)

@@ -1,6 +1,6 @@
-# ============================================================
-# SPIN-UP & STABILITY HELPERS
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# SPIN-UP & STABILITY HELPERS ----
+#------------------------------------------------------------------------#
 #   spinup_equilibrium()  FAST warm-start to steady state under CONSTANT forcing
 #                         (rootSolve::runsteady forward integration). Now
 #                         ERROR-SAFE: if the solver blows up (e.g. an extreme
@@ -10,13 +10,13 @@
 #                         a phase-robust stability test (annual means) that
 #                         ignores negligible pools. Writes PNG trajectory plots
 #                         sized for many panels.
-# ============================================================
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# runsteady_spinup() ----
+#------------------------------------------------------------------------#
 # runsteady_spinup(): integrate y forward to steady state under the forcing in
 # `parms`. Error-safe: a solver failure or non-finite result -> converged=FALSE
 # and an NA state, so callers (e.g. the fitter's bracket search) can skip it.
-# ------------------------------------------------------------
 runsteady_spinup <- function(y, model_fn, parms,
                              max_time = 1e7, stol = 1e-8, verbose = TRUE) {
   ss <- tryCatch(
@@ -45,10 +45,11 @@ runsteady_spinup <- function(y, model_fn, parms,
        time_to_steady = t_steady, max_deriv = max_drv, raw = ss)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# spinup_equilibrium() ----
+#------------------------------------------------------------------------#
 # spinup_equilibrium(): runsteady on a setup object. Stores obj$init_state_spin
 # and obj$spin_info. warm_start: shared pools override the object's init.
-# ------------------------------------------------------------
 spinup_equilibrium <- function(obj, warm_start = NULL,
                                max_time = 1e7, stol = 1e-8, verbose = TRUE) {
   y0 <- obj$working_state
@@ -71,10 +72,11 @@ spinup_equilibrium <- function(obj, warm_start = NULL,
   obj
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# save_trajectory_png() ----
+#------------------------------------------------------------------------#
 # save_trajectory_png(): write ALL pools of a deSolve run to a single PNG,
 # sized for the number of panels (default 4 columns).
-# ------------------------------------------------------------
 save_trajectory_png <- function(out, file, ncol = 4, panel_px = 320, res = 110) {
   df    <- as.data.frame(out)
   pools <- setdiff(names(df), "time")
@@ -92,21 +94,23 @@ save_trajectory_png <- function(out, file, ncol = 4, panel_px = 320, res = 110) 
   invisible(file)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# check_stability() ----
+#------------------------------------------------------------------------#
 # check_stability(): is the seasonal limit cycle stationary? Compares the
 # ANNUAL MEAN of each pool over the last full period vs the previous one
 # (means are phase-independent, so an uneven `by` does not create spurious
 # drift). Pools whose mean is below `abs_floor` are flagged negligible and
 # excluded from the convergence decision (so a near-zero pool can't dominate).
 # Returns a table sorted by relative drift.
-# ------------------------------------------------------------
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# check_by() ----
+#------------------------------------------------------------------------#
 # check_by(): the output step MUST divide the year, or the seasonal cycle is
 # sampled at a drifting phase and the annual-mean stability test never settles.
 # 365 = 5 x 73, so the only clean steps are 1, 5, 73 and 365. check_stability()
 # interpolates to a daily grid so a bad `by` still gives a correct test, but it
 # costs seasonal resolution, hence the warning.
-# ------------------------------------------------------------
 valid_by <- c(1, 5, 73, 365)
 check_by <- function(by) {
   if (!isTRUE(365 %% by == 0))
@@ -129,7 +133,9 @@ check_stability <- function(out, period = 365, abs_floor = 1e-3, dt = 1, use_old
     res <- data.frame(pool = cols, abs_drift = abs(as.numeric(abs_drift)), rel_drift = abs(as.numeric(rel_drift)),
                       above_floor = T)
   }else{
-    # ------------------------------------------------------------
+    #------------------------------------------------------------------------#
+    # GRID-INDEPENDENT annual means ----
+    #------------------------------------------------------------------------#
     # GRID-INDEPENDENT annual means. The raw output grid (seq(0, 365*n_years,
     # by = by)) only lines up with the year when `by` divides 365 (i.e. by is
     # 1, 5, 73 or 365). With, say, by = 30 (365/30 = 12.167) consecutive 365-day
@@ -138,7 +144,6 @@ check_stability <- function(out, period = 365, abs_floor = 1e-3, dt = 1, use_old
     # drifting -- worst for pools with a big, sharp seasonal swing (C_leaf_herb).
     # Fix: interpolate every pool onto a uniform `dt`-day grid FIRST, then take
     # the trapezoidal means. The metric is then correct for any `by`.
-    # ------------------------------------------------------------
     mean_over <- function(col, t0, t1) {
       t0 <- max(t0, min(tt))
       if (t1 - t0 <= 0 || sum(tt >= t0 - 1e-9 & tt <= t1 + 1e-9) < 2) return(NA_real_)
@@ -166,12 +171,13 @@ check_stability <- function(out, period = 365, abs_floor = 1e-3, dt = 1, use_old
   res[order(-res$rel_drift), ]
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# spinup_until_stable() ----
+#------------------------------------------------------------------------#
 # spinup_until_stable(): SEASONAL integration, lengthening until the annual
 # means stop drifting (only meaningful pools count). PNG plots each iteration.
 #   tol        max allowed year-over-year relative drift of annual means
 #   abs_floor  pools with mean below this (g C m-2) are ignored in the test
-# ------------------------------------------------------------
 spinup_until_stable <- function(init_state, parms, model_fn,
                                 n_years = 100, by = 5,
                                 max_iter = 10, tol = 1e-3, abs_floor = 1e-3,
@@ -229,9 +235,9 @@ final_state <- function(out) {
   setNames(v, cols)
 }
 
-# ============================================================
-# LIMIT-CYCLE SPIN-UP BY SHOOTING / NEWTON
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# LIMIT-CYCLE SPIN-UP BY SHOOTING / NEWTON ----
+#------------------------------------------------------------------------#
 # A periodically-forced ODE has a limit cycle y*(t) with period P (= 365 d).
 # Plain forward integration ("run for N years until it stops changing") can only
 # approach it at the rate of the SLOWEST eigenvalue of the year-map, so a system
@@ -247,7 +253,6 @@ final_state <- function(out) {
 # Convergence is Newton-quadratic and INDEPENDENT of the slow eigenvalue: a few
 # one-year integrations, not hundreds of years. Stability of the found cycle is
 # read off for free from the eigenvalues of M (all |lambda| < 1 => stable).
-# ============================================================
 
 # one-year map: integrate exactly one period and return the end state (ordered
 # to match names(y0)). `by` only sets output density; period end is exact.
@@ -259,7 +264,9 @@ final_state <- function(out) {
   fs[names(y0)]
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# spinup_limit_cycle() ----
+#------------------------------------------------------------------------#
 # spinup_limit_cycle(): Newton shooting for the seasonal limit cycle.
 #   y0          starting guess for the cycle's t=0 state (e.g. an equilibrium
 #               from spinup_equilibrium(), or any reasonable state)
@@ -270,7 +277,6 @@ final_state <- function(out) {
 #               residual or drives a pool negative (simple line-search safeguard)
 # Returns the cycle start state, the within-year trajectory, the residual, the
 # monodromy spectral radius (|lambda|max), and convergence flag.
-# ------------------------------------------------------------
 spinup_limit_cycle <- function(y0, parms, model_fn,
                                period = 365, by = 5,
                                tol = 1e-8, max_newton = 20,
@@ -335,12 +341,13 @@ spinup_limit_cycle <- function(y0, parms, model_fn,
        iterations = it)
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# dynamic_spinup_newton() ----
+#------------------------------------------------------------------------#
 # dynamic_spinup_newton(): finds the limit cycle by Newton shooting and returns
 # the same shape as dynamic_spinup() (list with final_state / out / converged).
 # Warm-starts from the constant-forcing equilibrium
 # (cheap and close), which makes Newton converge in a handful of iterations.
-# ------------------------------------------------------------
 dynamic_spinup_newton <- function(obj, from = NULL, by = 5,
                                   tol = 1e-8, max_newton = 20, verbose = TRUE) {
   y0 <- if (!is.null(from)) {

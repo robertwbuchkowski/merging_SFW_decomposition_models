@@ -1,4 +1,6 @@
-# ============================================================
+#------------------------------------------------------------------------#
+# Fast follow-up from saved stable states ----
+#------------------------------------------------------------------------#
 # FAST FOLLOW-UP - reuse saved stable states (from spinup_dynamic.R) for
 # short (~100 yr) perturbation experiments, looped over ALL models x scenarios:
 #   LOOP 1  ADD animals to the spun-up BASELINE (colonization), plus a
@@ -10,7 +12,6 @@
 # either loop can be (re)run independently and plotting can happen later,
 # in a fresh session, without re-running any simulation.
 # Run from project root; requires Data/spinup/*.rds from spinup_dynamic.R.
-# ============================================================
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
@@ -29,15 +30,15 @@ by      <- 1
 fitted_params <- if (use_fitted_params)
   load_fitted_params("Results/fitted_animal_params.csv") else NULL
 
-# ------------------------------------------------------------
-# LOOP 1: ADD animals + CONTINUED-BASELINE control
+#------------------------------------------------------------------------#
+# LOOP 1: ADD animals + CONTINUED-BASELINE control ----
+#------------------------------------------------------------------------#
 # For each model x scenario with saved spin-ups, reuses the SAVED parameter
 # lists (so any calibration from fit_all_animals.R / spinup_dynamic.R is
 # preserved), then runs:
 #   add               animals introduced into the baseline limit cycle
 #   continue_baseline the same baseline limit cycle continued with no animals
 # Both are saved to Data/followup/ for plotting (see plot_followup_add()).
-# ------------------------------------------------------------
 add_results <- list()
 
 for (model in models) {
@@ -76,10 +77,11 @@ for (model in models) {
   }
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# LOOP 2: REMOVE animals ----
+#------------------------------------------------------------------------#
 # LOOP 2: REMOVE animals (fully independent of Loop 1 -- reads only the
 # saved spin-ups from disk, so it can be run on its own / in a fresh session).
-# ------------------------------------------------------------
 remove_results <- list()
 
 for (model in models) {
@@ -110,35 +112,35 @@ for (model in models) {
   }
 }
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# PLOTTING: continued baseline vs. animals added ----
+#------------------------------------------------------------------------#
 # PLOTTING: continued baseline (no animals) vs. animals-added, per
 # model/scenario. Works directly from the saved Data/followup/*.rds files, so
 # this can be run later without re-running either loop above.
-# ------------------------------------------------------------
-if(F){
-  # Example, one model/scenario:
-  plot_followup_add("millennial", "RootHerbivore", by = NULL)
-  
-  pdf("Plots/output.pdf", width = 8, height = 8)
-  # All model x scenario combos that have saved add + continue_baseline runs:
-  for (scenario in names(scen)) {
-    for (model in models) {
-      if (file.exists(sprintf("Data/followup/%s_%s_add.rds", model, scenario)) &&
-          file.exists(sprintf("Data/followup/%s_%s_continue_baseline.rds", model, scenario))) {
-        print(plot_followup_add(model, scenario, by = 365))
-      }
+# Example, one model/scenario:
+plot_followup_add("millennial", "RootHerbivore", by = NULL)
+
+pdf("Plots/output.pdf", width = 8, height = 8)
+# All model x scenario combos that have saved add + continue_baseline runs:
+for (scenario in names(scen)) {
+  for (model in models) {
+    if (file.exists(sprintf("Data/followup/%s_%s_add.rds", model, scenario)) &&
+        file.exists(sprintf("Data/followup/%s_%s_continue_baseline.rds", model, scenario))) {
+      print(plot_followup_add(model, scenario, by = 365))
     }
   }
-  dev.off()
 }
+dev.off()
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# COMBINED animal-effect graphic ----
+#------------------------------------------------------------------------#
 # COMBINED animal-effect graphic: the stacked C-change trajectory over the
 # follow-up PLUS the equilibrium effect (from Scripts/2_spinup_dynamic.R ->
 # Results/animal_eq_effect.csv) as a stacked bar past a broken x-axis, with
 # matching pool colours and a dashed net-change line. One facet per scenario.
 # This single figure replaces the separate equilibrium-effect plot.
-# ------------------------------------------------------------
 dir.create("Plots", showWarnings = FALSE)
 p_combined <- plot_followup_with_eq("millennial", by = 365,
                                     eq_csv = "Results/animal_eq_effect.csv",

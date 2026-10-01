@@ -1,6 +1,6 @@
-# -------------------------------------------------------
-# Updated Millennial v2 ODE
-# --------------------------------------------------------
+#------------------------------------------------------------------------#
+# Updated Millennial v2 ODE ----
+#------------------------------------------------------------------------#
 
 # Original Millennial model license:
 # MIT License
@@ -126,21 +126,22 @@ millennial_model_wplant <- function(time, state, parms){
   B          <- if ("B" %in% .ns) state[["B"]] else 0
 
 
-    # ----------------------------------------------------------------
+    #------------------------------------------------------------------------#
+    # Feeding-rate adjustment factors ----
+    #------------------------------------------------------------------------#
     # Feeding-rate adjustment factors: one knob per animal scales ALL of
     # that animal's feeding coefficients together (default 1 = no change).
     # The animal fitting tunes these (adj_*) rather than the individual c_*
     # rates, so an animal that feeds on several pools keeps its relative
     # food preferences while its overall feeding rate goes up or down.
-    # ----------------------------------------------------------------
     c_earthworm_litter <- adj_earthworm    * c_earthworm_litter
     c_earthworm_soil   <- adj_earthworm    * c_earthworm_soil
     c_earthworm_om     <- adj_earthworm    * c_earthworm_om
     c_detritivores     <- adj_detritivores * c_detritivores
     c_rootherb         <- adj_rootherb     * c_rootherb
-    # ----------------------------
-    # ---- Get climate forcing ----
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Get climate forcing ----
+    #------------------------------------------------------------------------#
     forcing <- climate_forcing(time)
     T_t              <- forcing["Temp"] # °C
     theta_t          <- forcing["theta"] # m^3 m^-3
@@ -148,18 +149,21 @@ millennial_model_wplant <- function(time, state, parms){
     wood_input_weight  <- forcing["wood_input_weight"]   # uniform over the year (sums to 1/yr)
     leaf_litter_weight <- forcing["leaf_litter_weight"]  # autumn peak + summer trickle (sums to 1/yr)
 
-    # --------------------------------------------------
+    #------------------------------------------------------------------------#
+    # Shared growing-season activity (temperature + moisture) ----
+    #------------------------------------------------------------------------#
     # Shared growing-season activity (temperature + moisture), in [0, 1].
     # This single activity index drives BOTH the seasonal allocation of NPP
     # and the winter dormancy of roots/wood, so the two follow the same logic.
     #   f_T_act : logistic temperature activity (warm -> 1, cold -> 0)
     #   f_theta : moisture limitation (theta / theta_opt, capped at 1)
-    # --------------------------------------------------
     f_T_act  <- 1 / (1 + exp(-k_root_dormancy * (T_t - root_dormancy_temp)))
     f_theta  <- pmin(1, pmax(0, theta_t) / theta_opt)
     activity <- f_T_act * f_theta
 
-    # --------------------------------------------------
+    #------------------------------------------------------------------------#
+    # Inputs from annual NPP + allocation + timing forcings ----
+    #------------------------------------------------------------------------#
     # INPUTS FROM ANNUAL NPP + ALLOCATION + TIMING FORCINGS.
     # NPP_herb / NPP_tree are ANNUAL parameters (g C m-2 yr-1). We work directly
     # from the annual value and route each allocation to its destination with
@@ -171,7 +175,6 @@ millennial_model_wplant <- function(time, state, parms){
     #   wood   a_wood_tree[tree]                            -> CWD,    uniform
     #   roots  a_root_herb[herb], a_root_tree[tree]         -> root pools,
     #                                                         growing season only
-    # --------------------------------------------------
     NPP_herb_ann <- if (C_root_herb > 0) NPP_herb else 0
     NPP_tree_ann <- if (C_root_tree > 0) NPP_tree else 0
 
@@ -190,9 +193,10 @@ millennial_model_wplant <- function(time, state, parms){
     # total plant C entering the tracked pools this instant (for mass balance)
     total_plant_input <- leaf_litter_input + cwd_input + root_growth_herb + root_growth_tree
 
-    # --------------------------------------------------
+    #------------------------------------------------------------------------#
+    # Root winter dormancy ----
+    #------------------------------------------------------------------------#
     # Root winter dormancy: activity index with a winter floor.
-    # --------------------------------------------------
     act <- winter_root_act_prop + (1 - winter_root_act_prop) * activity
 
     root_mortality_herb <- k_mort_root_herb * C_root_herb*act
@@ -202,9 +206,9 @@ millennial_model_wplant <- function(time, state, parms){
     exudates_herb       <- (k_exudate_intercept + RootHerb*k_exudate_slope)* C_root_herb*act
     exudates_tree       <- k_exudate_tree* C_root_tree*act
 
-    # ----------------------------
-    # Earthworm rates
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Earthworm rates ----
+    #------------------------------------------------------------------------#
 
     Fed_earthworm_litter = c_earthworm_litter*Litter*Earthworm
 
@@ -227,9 +231,9 @@ millennial_model_wplant <- function(time, state, parms){
 
     Respiration_earthworm = (1-p_earthworm)*(a_earthworm*(Fed_earthworm_litter + Fed_earthworm_om) + a_earthworm_soil*(Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A)) + E_earthworm*Earthworm
 
-    # ----------------------------
-    # Detritiviory rates
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Detritiviory rates ----
+    #------------------------------------------------------------------------#
 
     Fed_det_mic = c_detritivores*MIC*Detritivore
 
@@ -243,9 +247,9 @@ millennial_model_wplant <- function(time, state, parms){
 
     Respiration_detritivore = (1-p_detritivores)*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit)
 
-    # --------------------------------------------------
-    # Root herbivores
-    # --------------------------------------------------
+    #------------------------------------------------------------------------#
+    # Root herbivores ----
+    #------------------------------------------------------------------------#
     Fed_rootherb_herb = c_rootherb*C_root_herb*RootHerb
 
     Carcass_rootherb_P = d_rootherb*RootHerb^2
@@ -254,35 +258,35 @@ millennial_model_wplant <- function(time, state, parms){
 
     Respiration_rootherb = (1-p_rootherb)*a_rootherb*Fed_rootherb_herb
 
-    # ----------------------------
-    # Fragmentation and physical transfer to organic and mineral soil
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Fragmentation and physical transfer to organic and mineral soil ----
+    #------------------------------------------------------------------------#
     fragmentation_litter   <- (k_frag_litter + k_frag_litter*slope_pint_det_k_frag_litter*Detritivore)  * Litter   # -> Organic
     fragmentation_CWD      <- k_frag_CWD     * CWD      # -> Organic
     fragmentation_organic  <- (k_frag_organic + k_frag_organic*slope_pint_det_k_frag_organic*Detritivore) * Organic  # -> POM
 
-    # ----------------------------
-    # Sorption capacity Qmax (Eq. 11)
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Sorption capacity Qmax (Eq. 11) ----
+    #------------------------------------------------------------------------#
     Qmax <- depth * BD * pct_claysilt * p_c
 
-    # ----------------------------
-    # Binding affinity for L sorption (Eq. 10)
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Binding affinity for L sorption (Eq. 10) ----
+    #------------------------------------------------------------------------#
     K_lm <- exp(-p1*pH - p2) * K_ld
 
-    # ----------------------------
-    # Temperature functions (Arrhenius; Eqs. 3 & 14)
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Temperature functions (Arrhenius; Eqs. 3 & 14) ----
+    #------------------------------------------------------------------------#
     V_pl <- alpha_pl * exp(-Ea_pl / (Rgas*(T_t + 273.15)))
     V_lb <- alpha_lb * exp(-Ea_lb / (Rgas*(T_t + 273.15)))
 
     V_ol <- alpha_ol * exp(-Ea_pl / (Rgas*(T_t + 273.15)))
     V_ob <- alpha_ob * exp(-Ea_pl / (Rgas*(T_t + 273.15)))
 
-    # ----------------------------
-    # Moisture sensitivity
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Moisture sensitivity ----
+    #------------------------------------------------------------------------#
     # Diffusion limitation (Eq. 4)
     S_wD <- (theta_t / phi_por)^0.5
 
@@ -290,15 +294,15 @@ millennial_model_wplant <- function(time, state, parms){
     oxygen_term <- k_a_min + (1 - k_a_min) * ((max(phi_por - theta_t, 0)) / phi_por)^0.5
     S_wB <- exp(lambda_mat * psi_matric) * oxygen_term * S_wD
 
-    # ----------------------------
-    # Carbon use efficiency (Eqs. 21–22)
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Carbon use efficiency (Eqs. 21–22) ----
+    #------------------------------------------------------------------------#
     CUE <- CUE_ref - CUE_T * (T_t - T_ref)
     CUE <- max(0, min(1, CUE))
 
-    # ----------------------------
-    # KINETICS: depolymerization (F_pl) & uptake (F_lb)
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # KINETICS: depolymerization (F_pl) & uptake (F_lb) ----
+    #------------------------------------------------------------------------#
     if(kinetics == 1){
       # Reverse MM for depolymerization; forward MM for uptake
       F_pl <- V_pl * S_wD * P * B / (K_pl + B)
@@ -336,9 +340,9 @@ millennial_model_wplant <- function(time, state, parms){
       stop("Unknown kinetics option. Use 1, 2, or 3")
     }
 
-    # ----------------------------
-    # Aggregation fluxes
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Aggregation fluxes ----
+    #------------------------------------------------------------------------#
 
     k_b_cur = pmax(0.001, k_b + Earthworm * k_b_slope_pint * k_b)
 
@@ -346,22 +350,22 @@ millennial_model_wplant <- function(time, state, parms){
     F_a  <- k_b_cur  * S_wD * A   # Eq. 6
     F_ma <- k_ma * S_wD * M   # Eq. 18
 
-    # ----------------------------
-    # Sorption/desorption
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Sorption/desorption ----
+    #------------------------------------------------------------------------#
     sat_term <- max(0, 1 - (M / max(Qmax, .Machine$double.eps)))
     F_lm <- S_wD * K_lm * L * sat_term        # Eq. 9
     F_ld <- K_ld * (M / max(Qmax, .Machine$double.eps))  # Eq. 12
 
-    # ----------------------------
-    # Leaching
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Leaching ----
+    #------------------------------------------------------------------------#
     F_l <- k_l * S_wD * L             # Eq. 8
     F_l_organic <- k_l_o * S_wD * DOM # organic horizon leaching
 
-    # ----------------------------
-    # Microbial mortality + respiration partitioning
-    # ----------------------------
+    #------------------------------------------------------------------------#
+    # Microbial mortality + respiration partitioning ----
+    #------------------------------------------------------------------------#
     F_bm <- k_bd * B^2                # Eq. 16
     F_bg <- F_lb * CUE
     F_mr <- F_lb * (1 - CUE)
@@ -370,17 +374,17 @@ millennial_model_wplant <- function(time, state, parms){
     F_MIC_mortality  <- k_MICd * MIC^2
     F_MIC_respiration <- F_DOM_MIC * (1 - CUE)
 
-    # --------------------------------------------------
-    # Plant differential equations:
-    # --------------------------------------------------
+    #------------------------------------------------------------------------#
+    # Plant differential equations ----
+    #------------------------------------------------------------------------#
 
     dC_root_herb <- root_growth_herb - root_mortality_herb - exudates_herb - Fed_rootherb_herb
 
     dC_root_tree <- root_growth_tree - root_mortality_tree - exudates_tree
 
-    # --------------------------------------------------
-    # Animal differential equations:
-    # --------------------------------------------------
+    #------------------------------------------------------------------------#
+    # Animal differential equations ----
+    #------------------------------------------------------------------------#
 
     # Earthworms:
     dEarthworm <-
@@ -396,9 +400,9 @@ millennial_model_wplant <- function(time, state, parms){
     # Root herbivores:
     dRootHerb <- p_rootherb*a_rootherb*Fed_rootherb_herb - Carcass_rootherb_P
 
-    # -------------------------------
-    # Organic horizon pools
-    # -------------------------------
+    #------------------------------------------------------------------------#
+    # Organic horizon pools ----
+    #------------------------------------------------------------------------#
 
     # Detritus pools
     dLitter  <- leaf_litter_input - F_Litter_DOM - fragmentation_litter - Fed_earthworm_litter - Fed_det_lit
@@ -427,9 +431,9 @@ millennial_model_wplant <- function(time, state, parms){
     Fi_safe <- max(Fi_t, .Machine$double.eps)
     p_i <- Fi_t_part / Fi_safe
 
-    # -------------------------
-    # Millennial model pools:
-    # -------------------------
+    #------------------------------------------------------------------------#
+    # Millennial model pools ----
+    #------------------------------------------------------------------------#
 
     # Eq. 1
     dP <- p_i * Fi_t + p_a * F_a - F_pa - F_pl -
@@ -472,9 +476,9 @@ millennial_model_wplant <- function(time, state, parms){
 
     # browser()
 
-    # ---------------------------
-    # Return list for deSolve
-    # ---------------------------
+    #------------------------------------------------------------------------#
+    # Return list for deSolve ----
+    #------------------------------------------------------------------------#
     .dvec <- c(
         # Plant pools (roots only):
         dC_root_herb,

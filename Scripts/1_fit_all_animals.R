@@ -1,10 +1,11 @@
-# ============================================================
+#------------------------------------------------------------------------#
+# Fit animal parameters for all models x scenarios ----
+#------------------------------------------------------------------------#
 # Fit animal parameters for ALL models x ALL scenarios and summarise how the
 # fitted parameters differ across models (with the baseline/default value for
 # reference). Run from project root. This calibrates on the (fast) constant-
 # forcing equilibrium only -- no seasonal spin-up -- but still does many
 # runsteady solves, so it takes a few minutes.
-# ============================================================
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
@@ -14,7 +15,9 @@ scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("millennial")
 do_effect_fitting = FALSE
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# EFFECT fitting -- OPT-IN and EXPLICIT ----
+#------------------------------------------------------------------------#
 # EFFECT fitting -- OPT-IN and EXPLICIT. Nothing happens in the background:
 # an effect is fit ONLY for animals that `effect_spec` gives a pool AND a
 # target size for. Pick ONE of:
@@ -27,7 +30,6 @@ do_effect_fitting = FALSE
 # pool, pct, param) -- edit it to change which pool and how big an effect to
 # fit. Blank/NA pool or pct = no effect fit for that animal. To (re)generate
 # the file from the built-in defaults, run once:  save_effect_targets()
-# ------------------------------------------------------------
 if(do_effect_fitting){
   effect_spec <- load_effect_targets("Data/effect_targets.csv")
 }else{
@@ -140,10 +142,11 @@ save_fitted_params(summary_long, "Results/fitted_animal_params.csv")
 cat("\n================= FITTED ANIMAL PARAMETERS (long) =================\n")
 print(summary_long, digits = 4)
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# Wide view: fitted feeding rate by MODEL ----
+#------------------------------------------------------------------------#
 # Wide view: fitted feeding rate by MODEL (baseline shown once), so you can
 # read across a row to see how different the models are.
-# ------------------------------------------------------------
 bm <- summary_long[summary_long$role == "biomass (feeding rate)", ]
 wide <- reshape(
   bm[, c("scenario", "animal", "param", "baseline", "model", "fitted")],
@@ -157,11 +160,12 @@ print(wide, digits = 4)
 
 cat("\nSaved Results/animal_fit_summary_long.csv and Results/animal_fit_feeding_rate_by_model.csv\n")
 
-# ------------------------------------------------------------
+#------------------------------------------------------------------------#
+# Interactive single scan + plot (run by hand while tuning) ----
+#------------------------------------------------------------------------#
 # Interactive single scan + plot (run by hand while tuning). scan_animal_param
 # returns an object plot_animal_scan() understands directly; the batch loop
 # above just flattens many such scans into one CSV.
-# ------------------------------------------------------------
 if (FALSE) {
   model <- "millennial"; scenario <- "RootHerbivore"; a <- "RootHerb"
   pair <- setup_scenario_pair(model, scen, scenario)

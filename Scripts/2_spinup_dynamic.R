@@ -1,4 +1,6 @@
-# ============================================================
+#------------------------------------------------------------------------#
+# Spin-up (run once per scenario, reuse saved states) ----
+#------------------------------------------------------------------------#
 # SPIN-UP  -  run once per scenario, then reuse the saved states.
 # Pipeline: equilibrium spin-up -> apply saved fitted animal params ->
 # record the equilibrium animal effect (total + direct) -> seasonal spin-up to
@@ -12,7 +14,6 @@
 #     Scripts/followup_analysis.R).
 # Requires Results/fitted_animal_params.csv from Scripts/fit_all_animals.R when
 # use_fitted_params = TRUE.
-# ============================================================
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
@@ -21,9 +22,11 @@ source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("millennial")
 
-# ---- toggles -------------------------------------------------------------
+#------------------------------------------------------------------------#
+# toggles ----
+#------------------------------------------------------------------------#
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)
-do_spinup         <- TRUE    # run the seasonal dynamic spin-up (the slow part)
+do_spinup         <- FALSE    # run the seasonal dynamic spin-up (the slow part)
 do_treatment      <- FALSE   # also spin up the treatment arm now (else baseline only)
 use_newton        <- TRUE    # TRUE = Newton shooting (fast, exact limit cycle);
                              # FALSE = forward-integration spin-up
@@ -99,7 +102,9 @@ for (model in models) {
 animal_eq_effect <- do.call("rbind", animal_eq_effect)
 write_csv(animal_eq_effect, "Results/animal_eq_effect.csv")
 
-# ---- summary table: total vs direct animal effect, one row per scenario ----
+#------------------------------------------------------------------------#
+# summary table: total vs direct animal effect, one row per scenario ----
+#------------------------------------------------------------------------#
 # For each scenario the animal effect on TOTAL soil + root C is the net change
 # summed over the shared pools (difference = treatment - baseline; animal
 # biomass pools have no baseline so are NA and excluded). "direct" repeats this
@@ -121,7 +126,9 @@ write_csv(animal_effect_summary, "Results/animal_effect_summary.csv")
 cat("\nAnimal effect on total soil + root C (g C m-2), by scenario:\n")
 print(as.data.frame(animal_effect_summary), row.names = FALSE)
 
-# ---- equilibrium animal-effect figure ------------------------------------
+#------------------------------------------------------------------------#
+# equilibrium animal-effect figure ----
+#------------------------------------------------------------------------#
 # Pools to show and their labels/order come from pool_names in
 # R/compare_functions.R (relabel_pools / pool_order / plot_pools).
 
@@ -148,3 +155,6 @@ animal_eq_effect %>% filter(!is.na(baseline)) %>%
   ylab(expression("Animal Effect (g C m"^-2*")")) + xlab("") +
   scale_fill_manual(name = "Type",values = c("black", "blue"))
 dev.off()
+
+
+
