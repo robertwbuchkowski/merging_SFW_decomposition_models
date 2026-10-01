@@ -148,6 +148,3 @@ animal_eq_effect %>% filter(!is.na(baseline)) %>%
   ylab(expression("Animal Effect (g C m"^-2*")")) + xlab("") +
   scale_fill_manual(name = "Type",values = c("black", "blue"))
 dev.off()
-
-
-

@@ -88,6 +88,8 @@ for (model in models) {
         target = f$target_biomass, achieved = f$achieved_biomass,
         converged = abs(f$achieved_biomass - f$target_biomass) /
                     max(abs(f$target_biomass), 1e-8) < tol_biomass,
+        solver_converged   = isTRUE(f$solver_converged),
+        microbes_collapsed = if (is.null(f$microbes_collapsed)) "" else f$microbes_collapsed,
         stringsAsFactors = FALSE)
 
       # effect parameter row -- written whenever an effect was actually fit
@@ -104,6 +106,8 @@ for (model in models) {
           target = f$target_effect_pct, achieved = f$achieved_effect_pct,
           converged = is.finite(f$achieved_effect_pct) &&
                       abs(f$achieved_effect_pct - f$target_effect_pct) < 1,
+          solver_converged   = isTRUE(f$solver_converged),
+          microbes_collapsed = if (is.null(f$microbes_collapsed)) "" else f$microbes_collapsed,
           stringsAsFactors = FALSE)
       }
     }
@@ -115,6 +119,19 @@ if (!length(rows)) stop("No fits succeeded - check the model/scenario setup.")
 summary_long <- do.call(rbind, rows)
 dir.create("Results", showWarnings = FALSE)
 write.csv(summary_long, "Results/animal_fit_summary_long.csv", row.names = FALSE)
+
+# Calibration check: list any fit that missed its target, did not converge, or
+# collapsed the microbial pools. Such rows are NOT safe to use downstream.
+bad_fit <- summary_long[!summary_long$converged | !summary_long$solver_converged |
+                        nzchar(summary_long$microbes_collapsed), , drop = FALSE]
+if (nrow(bad_fit)) {
+  warning("Calibration problems (check before using Results/fitted_animal_params.csv):\n",
+          paste(sprintf("  %s / %s / %s: target %.4g, achieved %.4g%s", bad_fit$scenario,
+                        bad_fit$animal, bad_fit$param, bad_fit$target, bad_fit$achieved,
+                        ifelse(nzchar(bad_fit$microbes_collapsed),
+                               paste0(", collapsed: ", bad_fit$microbes_collapsed), "")),
+                collapse = "\n"))
+} else cat("\nCalibration check: every fit hit its target with healthy microbial pools.\n")
 
 # Save the fitted parameters (keyed by MODEL x scenario x param) for reuse in
 # Scripts/spinup_dynamic.R -- so the spin-up reads them instead of re-fitting.

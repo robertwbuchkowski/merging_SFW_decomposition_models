@@ -115,20 +115,22 @@ for (model in models) {
 # model/scenario. Works directly from the saved Data/followup/*.rds files, so
 # this can be run later without re-running either loop above.
 # ------------------------------------------------------------
-# Example, one model/scenario:
-plot_followup_add("millennial", "RootHerbivore", by = NULL)
-
-pdf("Plots/output.pdf", width = 8, height = 8)
-# All model x scenario combos that have saved add + continue_baseline runs:
-for (scenario in names(scen)) {
-  for (model in models) {
-    if (file.exists(sprintf("Data/followup/%s_%s_add.rds", model, scenario)) &&
-        file.exists(sprintf("Data/followup/%s_%s_continue_baseline.rds", model, scenario))) {
-      print(plot_followup_add(model, scenario, by = 365))
+if(F){
+  # Example, one model/scenario:
+  plot_followup_add("millennial", "RootHerbivore", by = NULL)
+  
+  pdf("Plots/output.pdf", width = 8, height = 8)
+  # All model x scenario combos that have saved add + continue_baseline runs:
+  for (scenario in names(scen)) {
+    for (model in models) {
+      if (file.exists(sprintf("Data/followup/%s_%s_add.rds", model, scenario)) &&
+          file.exists(sprintf("Data/followup/%s_%s_continue_baseline.rds", model, scenario))) {
+        print(plot_followup_add(model, scenario, by = 365))
+      }
     }
   }
+  dev.off()
 }
-dev.off()
 
 # ------------------------------------------------------------
 # COMBINED animal-effect graphic: the stacked C-change trajectory over the

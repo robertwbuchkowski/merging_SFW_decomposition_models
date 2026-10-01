@@ -209,13 +209,21 @@ fit_animal_params <- function(treatment, baseline,
     baseline <- spinup_equilibrium(baseline, max_time = max_time, stol = stol, verbose = FALSE)
   base_eq <- baseline$init_state_spin
 
-  # warm-started equilibrium evaluator for the treatment (error-safe)
-  last_eq   <- treatment$working_state
+  # Equilibrium evaluator for the treatment. EVERY evaluation starts from the
+  # SAME state: the baseline equilibrium for the shared pools plus the animal at
+  # its input value -- exactly how Scripts 2 and 4 compute the treatment
+  # equilibrium. Do NOT chain warm starts from the previous trial value: a high
+  # trial feeding rate can graze the organic-horizon microbes (MIC) to ~0, and
+  # regrowth from ~0 is so slow that the steady-state test is met in a false
+  # "microbe-free" state. Chained warm starts then carry that false state into
+  # the next trials and the calibration lands on the wrong feeding rate.
+  ref_start <- treatment$working_state
+  shared0   <- intersect(names(ref_start), names(base_eq))
+  ref_start[shared0] <- base_eq[shared0]
   last_conv <- TRUE
   eq_now <- function() {
-    sp <- spinup_equilibrium(treatment, warm_start = last_eq,
+    sp <- spinup_equilibrium(treatment, warm_start = ref_start,
                              max_time = max_time, stol = stol, verbose = FALSE)
-    if (all(is.finite(sp$init_state_spin))) last_eq <<- sp$init_state_spin
     last_conv <<- isTRUE(sp$spin_info$converged)
     sp$init_state_spin
   }
@@ -287,9 +295,31 @@ fit_animal_params <- function(treatment, baseline,
   }
 
   treatment$init_state_spin <- eq_now()
+
+  # ---- verification: did the fit hit its target, in a healthy state? ----
+  eq_fin  <- treatment$init_state_spin
+  B_fin   <- unname(eq_fin[animal])
+  hit_target <- is.finite(B_fin) &&
+    abs(B_fin - target_biomass) / max(abs(target_biomass), 1e-8) < tol_biomass
+  if (!hit_target)
+    warning(sprintf("fit_animal_params(%s / %s): biomass %.4g misses target %.4g (%+.0f%%) -- do NOT use this fit.",
+                    scenario, animal, B_fin, target_biomass,
+                    100 * (B_fin / target_biomass - 1)))
+  # microbial pools that collapsed to ~0 relative to the baseline equilibrium
+  mic_pools <- intersect(c("MIC", "B"), intersect(names(eq_fin), names(base_eq)))
+  collapsed <- mic_pools[is.finite(eq_fin[mic_pools]) &
+                         eq_fin[mic_pools] < 1e-6 * pmax(base_eq[mic_pools], 1e-12)]
+  if (length(collapsed))
+    warning(sprintf("fit_animal_params(%s / %s): microbial pool(s) %s collapsed to ~0 at the fitted rate.",
+                    scenario, animal, paste(collapsed, collapse = ", ")))
+  if (!last_conv)
+    warning(sprintf("fit_animal_params(%s / %s): final equilibrium did not converge.", scenario, animal))
+
   treatment$fit <- list(
     animal = animal,
     solver_converged = last_conv,
+    hit_target = hit_target,
+    microbes_collapsed = paste(collapsed, collapse = " "),
     biomass_param = biomass_param, fitted_biomass_param = treatment$parms[[biomass_param]],
     target_biomass = target_biomass, achieved_biomass = unname(treatment$init_state_spin[animal]),
     effect_param = if (do_effect) effect_param else NA,
