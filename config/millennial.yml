@@ -20,7 +20,7 @@ k_l_o: 0.15
 depth: 0.20
 BD: 1300
 p_c: 0.86
-rho_p: 3250
+rho_p: 2650
 
 # ---- Chemistry ----
 pH: 6

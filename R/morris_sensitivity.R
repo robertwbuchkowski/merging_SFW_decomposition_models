@@ -66,19 +66,24 @@ morris_trajectories <- function(k, r, levels = 4L) {
 # Factory for the per-trajectory evaluator. Built at top level so that its
 # environment holds only what a parallel worker needs (not the cluster itself).
 .make_eval_traj <- function(pnames, span, lo, eval_fun) {
+  # force() evaluates the arguments now; otherwise R would ship unevaluated
+  # promises to the workers, which then cannot find the original objects.
+  force(pnames); force(span); force(lo); force(eval_fun)
   function(X) {
     real <- sweep(sweep(X, 2, span, `*`), 2, lo, `+`)   # map to real values
     n <- nrow(real)
-    y <- rep(NA_real_, n); conv <- logical(n); reg <- character(n)
+    y <- rep(NA_real_, n); conv <- logical(n); reg <- character(n); err <- character(n)
     for (i in seq_len(n)) {
       v <- tryCatch(eval_fun(setNames(as.numeric(real[i, ]), pnames)),
-                    error = function(e) structure(NA_real_, converged = FALSE))
+                    error = function(e) structure(NA_real_, converged = FALSE,
+                                                  error = conditionMessage(e)))
+      if (!is.null(attr(v, "error"))) err[i] <- attr(v, "error")
       cv <- attr(v, "converged"); rg <- attr(v, "regime")
       conv[i] <- if (is.null(cv)) is.finite(as.numeric(v)) else isTRUE(cv)
       y[i]    <- if (conv[i]) as.numeric(v) else NA_real_
       reg[i]  <- if (is.null(rg) || is.na(rg)) "" else rg
     }
-    list(y = y, conv = conv, regime = reg)
+    list(y = y, conv = conv, regime = reg, error = err)
   }
 }
 
@@ -106,11 +111,23 @@ morris_run <- function(traj_list, lo, hi, eval_fun, verbose = TRUE, cl = NULL) {
   }
   out <- do.call(rbind, ee_rows)
 
+  # surface errors raised inside the evaluations (otherwise they would only
+  # show up as non-converged points)
+  errs <- unlist(lapply(res, `[[`, "error")); errs <- errs[nzchar(errs)]
+  if (length(errs)) {
+    tab <- sort(table(errs), decreasing = TRUE)
+    warning(sprintf("morris_run: %d of %d evaluations were not solved. Reasons: %s",
+                    length(errs), sum(lengths(lapply(res, `[[`, "conv"))),
+                    paste(sprintf("%s (%d x)", names(tab), as.integer(tab)), collapse = "; ")),
+            call. = FALSE)
+  }
+
   all_conv <- unlist(lapply(res, `[[`, "conv"))
   all_reg  <- unlist(lapply(res, `[[`, "regime"))
   tags     <- unlist(strsplit(all_reg[nzchar(all_reg)], "\\+"))
   attr(out, "n_eval")         <- length(all_conv)
   attr(out, "n_nonconverged") <- sum(!all_conv)
+  attr(out, "skip_reasons")   <- if (length(errs)) table(errs) else table(character(0))
   attr(out, "regime_counts")  <- table(factor(tags))
   out
 }
@@ -146,7 +163,18 @@ morris_cluster <- function(n_cores, source_files, packages = c("deSolve", "rootS
 #   mu_star mean |EE|  -> TOTAL sensitivity (rank on this)
 #   sigma   sd of EE    -> interactions / non-linearity
 morris_summary <- function(ee_df) {
+  empty <- data.frame(parameter = character(), mu_star = numeric(),
+                      sigma = numeric(), n_ee = integer())
+  if (is.null(ee_df) || !nrow(ee_df)) {
+    warning("morris_summary: no elementary effects to summarise.", call. = FALSE)
+    return(empty)
+  }
   ee_df <- ee_df[is.finite(ee_df$ee), , drop = FALSE]
+  if (!nrow(ee_df)) {
+    warning("morris_summary: every elementary effect is NA (all evaluations failed",
+            " or did not converge) -- see the morris_run warning for the cause.", call. = FALSE)
+    return(empty)
+  }
   agg <- lapply(split(ee_df$ee, ee_df$parameter), function(v) {
     data.frame(mu_star = mean(abs(v)),
                sigma = if (length(v) > 1) sd(v) else 0,

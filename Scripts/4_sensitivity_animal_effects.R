@@ -116,6 +116,14 @@ collapse_rel <- 1e-6
 kb_floor     <- 0.001
 
 #------------------------------------------------------------------------#
+# Equilibrium solver horizon (days) ----
+#------------------------------------------------------------------------#
+# Parameter sets near microbial collapse approach equilibrium very slowly
+# (> 1e7 d). The solver stops as soon as the steady-state test is met, so a
+# long horizon only costs time where it is needed.
+eq_max_time <- 1e9
+
+#------------------------------------------------------------------------#
 # GENERAL model parameters to include ----
 #------------------------------------------------------------------------#
 # GENERAL model parameters to include (animal parameters are added per scenario
@@ -124,9 +132,13 @@ sweep_params <- c("k_frag_litter", "k_frag_organic", "k_l_o", "k_l", "k_b", "k_p
                   "k_ma", "k_litterfall_ann", "k_litterfall_herb_ann", "k_MICd",
                   "k_bd", "root_to_organic", "a_root_herb", "k_exudate_tree",
                   "k_exudate_herb", "k_frag_CWD", "K_ol", "alpha_ol", "alpha_ob",
-                  "K_ob", "p_c", "rho_p", "psi_matric", "lambda_mat", "k_a_min",
+                  "K_ob", "p_c", "psi_matric", "lambda_mat", "k_a_min",
                   "alpha_pl", "alpha_lb", "K_pl", "K_lb", "p1", "p2", "K_ld",
                   "CUE_T", "p_a", "p_b", "k_mort_root_tree", "k_mort_root_herb")
+# rho_p (particle density) is deliberately NOT varied: it is close to constant
+# for mineral soils, and with porosity = 1 - BD / rho_p a half-to-double range
+# produces impossible soils (porosity <= 0 or below the soil moisture).
+# Porosity uncertainty enters through bulk density (BD) instead.
 
 #------------------------------------------------------------------------#
 # Pretty display names ----
@@ -206,6 +218,17 @@ set_param <- function(obj, param, value) {
   obj
 }
 
+# infeasible_soil(): parameter sets that describe an impossible soil. Porosity
+# (1 - BD / rho_p) must be positive and exceed the mean soil moisture, otherwise
+# the moisture functions take the square root of a negative number. Returns ""
+# or a short reason; such evaluations are skipped and reported, not solved.
+infeasible_soil <- function(parms) {
+  phi <- parms$phi_por
+  if (!is.finite(phi) || phi <= 0) return("infeasible soil: porosity <= 0 (BD >= rho_p)")
+  if (phi <= parms$MAtheta)        return("infeasible soil: porosity <= mean soil moisture")
+  ""
+}
+
 # regime_flags(): which special regime (if any) an equilibrium pair is in.
 # Returns "" (normal), "microbe_collapse", "kb_floor" or both joined by "+".
 regime_flags <- function(eq_b, eq_t, parms) {
@@ -225,10 +248,11 @@ regime_flags <- function(eq_b, eq_t, parms) {
 # Attaches `converged` (TRUE only if BOTH arms reached a stable steady state)
 # and `regime` (see regime_flags) for the Morris driver.
 animal_effect_totalC <- function(pair) {
-  pair$baseline  <- spinup_equilibrium(pair$baseline, verbose = FALSE)
+  pair$baseline  <- spinup_equilibrium(pair$baseline, max_time = eq_max_time,
+                                       verbose = FALSE)
   pair$treatment <- spinup_equilibrium(pair$treatment,
                                        warm_start = pair$baseline$init_state_spin,
-                                       verbose = FALSE)
+                                       max_time = eq_max_time, verbose = FALSE)
   eq_b <- pair$baseline$init_state_spin
   eq_t <- pair$treatment$init_state_spin
   conv <- isTRUE(pair$baseline$spin_info$converged) &&
@@ -242,7 +266,10 @@ animal_effect_totalC <- function(pair) {
 
 # make_effect_fun(): the Morris evaluator for one scenario. Built by a
 # top-level factory so its environment carries only base_pair to the workers.
-make_effect_fun <- function(base_pair) function(pv) effect_scalar(base_pair, pv)
+make_effect_fun <- function(base_pair) {
+  force(base_pair)            # evaluate now so workers receive the object itself
+  function(pv) effect_scalar(base_pair, pv)
+}
 
 # scalar output for a named parameter vector (set all, both arms, then
 # evaluate). The converged / regime attributes travel with the value;
@@ -253,6 +280,8 @@ effect_scalar <- function(base_pair, pv) {
     pair$treatment <- set_param(pair$treatment, nm, pv[[nm]])
     pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
   }
+  why <- infeasible_soil(pair$baseline$parms)
+  if (nzchar(why)) return(structure(NA_real_, converged = FALSE, error = why))
   animal_effect_totalC(pair)
 }
 
@@ -388,6 +417,13 @@ run_morris <- function(mode = c("main", "standardized")) {
                         eval_fun = make_effect_fun(base_pair),
                         verbose = FALSE, cl = cl)
     n_bad <- attr(ee, "n_nonconverged"); n_tot <- attr(ee, "n_eval")
+    # impossible soils are skipped before solving: count them separately
+    sr    <- attr(ee, "skip_reasons")
+    n_inf <- if (length(sr)) sum(sr[grepl("^infeasible soil", names(sr))]) else 0L
+    n_bad <- n_bad - n_inf
+    if (n_inf > 0)
+      message(sprintf("Morris [%s] %s: %d of %d points are unrealistic soils (porosity <= 0 or <= soil moisture) and were removed.",
+                      mode, scenario, n_inf, n_tot))
     rc    <- attr(ee, "regime_counts")
     n_mic <- if ("microbe_collapse" %in% names(rc)) rc[["microbe_collapse"]] else 0L
     n_kb  <- if ("kb_floor" %in% names(rc)) rc[["kb_floor"]] else 0L
@@ -402,8 +438,8 @@ run_morris <- function(mode = c("main", "standardized")) {
     if (length(out_rng))
       warning(sprintf("Morris [%s] %s: model value lies OUTSIDE its range for: %s",
                       mode, scenario, paste(out_rng, collapse = ", ")))
-    cat(sprintf("  stable-state check: %d/%d evaluations converged%s\n",
-                n_tot - n_bad, n_tot, if (n_bad > 0) "  <-- SEE WARNING" else ""))
+    cat(sprintf("  stable-state check: %d/%d realistic evaluations converged%s; %d unrealistic soils removed\n",
+                n_tot - n_inf - n_bad, n_tot - n_inf, if (n_bad > 0) "  <-- SEE WARNING" else "", n_inf))
 
     sm <- morris_summary(ee)
     bt <- morris_bootstrap(ee, B = boot_B, top_k = boot_top_k,
@@ -431,6 +467,10 @@ run_morris <- function(mode = c("main", "standardized")) {
     sm$default_in_range <- sm$default >= sm$range_lo & sm$default <= sm$range_hi
     sm$param_type     <- ptype[sm$parameter]
     sm$is_animal      <- sm$parameter %in% a_here
+    # elementary effects lost because an end point was removed or unsolved
+    sm$n_ee_removed <- vapply(sm$parameter, function(p)
+      sum(ee$parameter == p & !is.finite(ee$ee)), integer(1))
+    sm$n_eval_infeasible <- n_inf
     sm$n_nonconverged <- n_bad
     sm$n_evaluations  <- n_tot
     sm$n_eval_microbe_collapse <- n_mic
@@ -449,7 +489,8 @@ run_morris <- function(mode = c("main", "standardized")) {
            mu_star, mu_star_lo, mu_star_hi, sigma, sigma_lo, sigma_hi,
            n_ee, rank, rank_median, rank_lo, rank_hi, p_top_k,
            mu_star_clean, sigma_clean, n_ee_clean, rank_clean, n_ee_flagged,
-           n_nonconverged, n_evaluations, n_eval_microbe_collapse, n_eval_kb_floor)
+           n_ee_removed, n_eval_infeasible, n_nonconverged, n_evaluations,
+           n_eval_microbe_collapse, n_eval_kb_floor)
   attr(tbl, "ee") <- bind_rows(ee_all)          # raw elementary effects
   tbl
 }
@@ -548,7 +589,8 @@ cl <- morris_cluster(
                    "R/millennial_model.R", "R/init_millennial_state.R",
                    "R/setup.R", "R/compare_functions.R", "R/fit_animals.R"),
   export = c("set_param", "derive_fn", "animal_pools", "regime_flags",
-             "animal_effect_totalC", "effect_scalar", "collapse_rel", "kb_floor"))
+             "animal_effect_totalC", "effect_scalar", "collapse_rel", "kb_floor",
+             "eq_max_time", "infeasible_soil"))
 if (!is.null(cl)) cat("Running model evaluations on", length(cl), "worker processes.\n")
 
 morris_main <- morris_supp <- NULL
@@ -635,13 +677,15 @@ headline_effects <- function(base_pair, pv) {
     pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
   }
   out <- c(total = NA_real_, direct = NA_real_, converged = 0,
-           microbe_collapse = 0, kb_floor = 0)
+           microbe_collapse = 0, kb_floor = 0, infeasible = 0)
+  if (nzchar(infeasible_soil(pair$baseline$parms))) { out[["infeasible"]] <- 1; return(out) }
   res <- tryCatch({
-    b  <- spinup_equilibrium(pair$baseline, verbose = FALSE)
+    b  <- spinup_equilibrium(pair$baseline, max_time = eq_max_time, verbose = FALSE)
     eb <- b$init_state_spin
-    tr <- spinup_equilibrium(pair$treatment, warm_start = eb, verbose = FALSE)
+    tr <- spinup_equilibrium(pair$treatment, warm_start = eb, max_time = eq_max_time,
+                             verbose = FALSE)
     td <- spinup_equilibrium(zero_indirect_effects(pair$treatment, verbose = FALSE),
-                             warm_start = eb, verbose = FALSE)
+                             warm_start = eb, max_time = eq_max_time, verbose = FALSE)
     soil <- setdiff(intersect(names(eb), names(tr$init_state_spin)), animal_pools)
     conv <- isTRUE(b$spin_info$converged) && isTRUE(tr$spin_info$converged) &&
             isTRUE(td$spin_info$converged)
@@ -653,13 +697,17 @@ headline_effects <- function(base_pair, pv) {
       direct = sum(td$init_state_spin[soil]) - sum(eb[soil]),
       converged = as.numeric(conv),
       microbe_collapse = as.numeric(grepl("microbe_collapse", paste(rg_t, rg_d))),
-      kb_floor         = as.numeric(grepl("kb_floor", rg_t)))
+      kb_floor         = as.numeric(grepl("kb_floor", rg_t)),
+      infeasible       = 0)
   }, error = function(e) out)
   res
 }
 
 # factory so a parallel worker receives only base_pair with the evaluator
-make_headline_fun <- function(base_pair) function(pv) headline_effects(base_pair, pv)
+make_headline_fun <- function(base_pair) {
+  force(base_pair)
+  function(pv) headline_effects(base_pair, pv)
+}
 
 run_uncertainty_propagation_fn <- function() {
   samp_rows <- list(); summ_rows <- list()
@@ -695,12 +743,16 @@ run_uncertainty_propagation_fn <- function() {
       parallel::parLapply(cl, rows_list, make_headline_fun(base_pair))
     Y <- do.call(rbind, Y)
 
-    n_bad <- sum(Y[, "converged"] < 1)
+    n_inf <- sum(Y[, "infeasible"] == 1)
+    n_bad <- sum(Y[, "converged"] < 1) - n_inf
+    if (n_inf > 0)
+      warning(sprintf("Uncertainty propagation %s: %d of %d samples describe an impossible soil (porosity <= moisture); excluded.",
+                      scenario, n_inf, up_n))
     if (n_bad > 0)
       warning(sprintf("Uncertainty propagation %s: %d of %d samples did NOT reach a stable state; excluded.",
                       scenario, n_bad, up_n))
-    cat(sprintf("  stable-state check: %d/%d samples converged%s\n",
-                up_n - n_bad, up_n, if (n_bad > 0) "  <-- SEE WARNING" else ""))
+    cat(sprintf("  stable-state check: %d/%d realistic samples converged%s; %d unrealistic soils removed\n",
+                up_n - n_inf - n_bad, up_n - n_inf, if (n_bad > 0) "  <-- SEE WARNING" else "", n_inf))
 
     s_df <- data.frame(scenario = scenario, sample = seq_len(up_n), Y, X,
                        check.names = FALSE)
@@ -718,7 +770,8 @@ run_uncertainty_propagation_fn <- function() {
     q   <- function(v, p) if (length(v)) unname(stats::quantile(v, p, na.rm = TRUE)) else NA_real_
     summ_rows[[scenario]] <- data.frame(
       scenario = scenario, n_samples = up_n, n_converged = sum(ok),
-      n_microbe_collapse = n_mic, n_kb_floor = n_kb, n_clean = sum(ok & !flag),
+      n_infeasible = n_inf, n_microbe_collapse = n_mic, n_kb_floor = n_kb,
+      n_clean = sum(ok & !flag),
       total_default  = default[["total"]],
       total_median   = q(tot, 0.5), total_mean = mean(tot),
       total_q025     = q(tot, 0.025), total_q975 = q(tot, 0.975),
