@@ -36,10 +36,16 @@
 #   the top-k in >= 80% of replicates (otherwise a warning: raise morris_r).
 #
 # UNCERTAINTY PROPAGATION (run_uncertainty_propagation): all screened
-#   parameters sampled jointly by Latin hypercube over the MAIN ranges; the
-#   total and direct equilibrium animal effects are recomputed per sample.
-#   Outputs: animal_effect_uncertainty_samples.csv / _summary.csv,
+#   parameters sampled jointly by Latin hypercube (truncated normal for SD,
+#   triangular for Min/Max, log-normal for unmeasured parameters); the total
+#   and direct equilibrium animal effects are recomputed per sample, and only
+#   samples whose baseline stays near realistic stocks are ACCEPTED (baseline
+#   realism filter; targets editable in Data/baseline_targets.csv).
+#   Outputs: animal_effect_uncertainty_*.csv, baseline_targets_used.csv,
 #            figures/animal_effect_uncertainty.png
+#
+# PAIRED MORRIS FIGURE: figures/animal_effect_morris_paired.png compares the
+#   current-knowledge and standardized rankings with bootstrap intervals.
 #
 # REGIME FLAGS: every evaluation is tagged if the treatment equilibrium has
 #   (a) microbial collapse (MIC or B < collapse_rel x baseline), or
@@ -95,8 +101,22 @@ boot_top_k <- 5           # report P(parameter is in the top-k by mu*)
 # Uncertainty propagation to the headline animal effect ----
 #------------------------------------------------------------------------#
 run_uncertainty_propagation <- TRUE
-up_n        <- 500        # Latin-hypercube samples per scenario (3 equilibria each)
+up_n        <- 2000       # Latin-hypercube samples per scenario (3 equilibria each);
+                          # ~10-30% pass the realism filter, so keep this large
 up_seed     <- 20260827
+up_gsd          <- 1.5           # geometric SD of the log-normal used for parameters
+                                 # with no reported uncertainty (1.5 = ~68% within x/1.5)
+up_minmax_dist  <- "triangular"  # Min/Max parameters: "triangular" (mode = model value) or "uniform"
+
+# Baseline realism filter (see the section below). Defaults: each scenario's
+# all-default baseline equilibrium, accepted range = reference / factor .. x factor.
+up_filter_pools  <- c("TotalC", "P", "M", "MIC", "B")   # TotalC = all non-animal pools
+up_filter_factor <- 2                 # default accepted range: reference / 2 .. x 2
+up_filter_factor_by_pool <- c(MIC = 10) # per-pool overrides: organic-horizon microbial
+                                        # biomass is tiny and volatile, so allow / 10 .. x 10
+up_targets_file  <- "Data/baseline_targets.csv"   # optional; overrides the defaults
+
+paired_n_top <- 8          # parameters per scenario in the paired Morris figure
 
 #------------------------------------------------------------------------#
 # Parallel execution ----
@@ -634,34 +654,141 @@ if (!is.null(morris_main) && !is.null(morris_supp)) {
 
 
 #------------------------------------------------------------------------#
+# Paired Morris ranking: current knowledge vs standardized ----
+#------------------------------------------------------------------------#
+# Per scenario, the top parameters with bootstrap 95% intervals for BOTH range
+# definitions. mu* is scaled to the most influential parameter within each
+# scenario x analysis (raw mu* depends on range width, so it is not comparable
+# between analyses). "*" after a label = the bootstrap rank intervals of the two
+# analyses do not overlap (rank shift beyond sampling noise). Uses this
+# session's runs, or the saved CSVs when the Morris runs were switched off.
+plot_morris_paired <- function(main_tbl, std_tbl, n_top = 8) {
+  prep <- function(d, tag) d %>%
+    transmute(scenario, parameter, parameter_label, analysis = tag,
+              mu_star, mu_star_lo, mu_star_hi, rank, rank_lo, rank_hi)
+  mm <- bind_rows(prep(main_tbl, "main"), prep(std_tbl, "std")) %>%
+    group_by(scenario, analysis) %>%
+    mutate(s_max = max(mu_star, na.rm = TRUE), rel = mu_star / s_max,
+           rel_lo = mu_star_lo / s_max, rel_hi = mu_star_hi / s_max) %>%
+    ungroup()
+  keep <- mm %>% filter(rank <= n_top) %>% distinct(scenario, parameter)
+  pd   <- mm %>% semi_join(keep, by = c("scenario", "parameter"))
+  shift <- pd %>% select(scenario, parameter, analysis, rank_lo, rank_hi) %>%
+    pivot_wider(names_from = analysis, values_from = c(rank_lo, rank_hi)) %>%
+    mutate(star = rank_hi_main < rank_lo_std | rank_hi_std < rank_lo_main) %>%
+    select(scenario, parameter, star)
+  ord <- pd %>% filter(analysis == "main") %>% select(scenario, parameter, rel_main = rel)
+  pd <- pd %>% left_join(ord, by = c("scenario", "parameter")) %>%
+    left_join(shift, by = c("scenario", "parameter")) %>%
+    mutate(label = paste0(parameter_label, ifelse(!is.na(star) & star, " *", "")),
+           key   = paste(label, scenario, sep = "___"))
+  pd$key <- factor(pd$key, levels = unique(pd$key[order(pd$scenario, pd$rel_main)]))
+
+  dodge <- c(main = 0.18, std = -0.18)       # current knowledge above, standardized below
+  ggplot(pd, aes(y = key, colour = analysis)) +
+    lapply(names(dodge), function(a) list(
+      geom_errorbar(data = filter(pd, analysis == a),
+                    aes(xmin = rel_lo, xmax = rel_hi), width = 0.25,
+                    orientation = "y", position = position_nudge(y = dodge[[a]])),
+      geom_point(data = filter(pd, analysis == a), aes(x = rel), size = 2,
+                 position = position_nudge(y = dodge[[a]])))) +
+    facet_wrap(~scenario, scales = "free_y", labeller = scenario_labeller) +
+    scale_y_discrete(labels = function(x) sub("___.*$", "", x)) +
+    scale_colour_manual(values = c(main = "#2166ac", std = "#b2182b"),
+                        labels = c(main = "Current knowledge", std = "Standardized (50-200%)"),
+                        name = NULL) +
+    labs(x = expression(mu*"* relative to the most influential parameter (95% bootstrap CI)"),
+         y = NULL,
+         caption = paste0("Top ", n_top, " parameters from either analysis per scenario, ordered by ",
+                          "current-knowledge mu*. * = rank shift beyond bootstrap noise.")) +
+    theme_minimal(base_size = 10) +
+    theme(legend.position = "bottom", panel.grid.minor = element_blank())
+}
+
+paired_main <- if (!is.null(morris_main)) morris_main else {
+  f <- file.path(res_dir, "animal_effect_morris.csv"); if (file.exists(f)) read_csv(f, show_col_types = FALSE) }
+paired_std <- if (!is.null(morris_supp)) morris_supp else {
+  f <- file.path(res_dir, "animal_effect_morris_standardized.csv"); if (file.exists(f)) read_csv(f, show_col_types = FALSE) }
+if (!is.null(paired_main) && !is.null(paired_std)) {
+  p_paired <- plot_morris_paired(paired_main, paired_std, n_top = paired_n_top)
+  ggsave(file.path(fig_dir, "animal_effect_morris_paired.png"), p_paired,
+         width = 11, height = 8, dpi = 300)
+  cat("Wrote:", file.path(fig_dir, "animal_effect_morris_paired.png"), "\n")
+}
+
+
+#------------------------------------------------------------------------#
 # UNCERTAINTY PROPAGATION TO THE HEADLINE ANIMAL EFFECT ----
 #------------------------------------------------------------------------#
 # Morris ranks parameters; it does not say how uncertain the animal effect
 # itself is. Here ALL screened parameters are sampled jointly (Latin hypercube,
-# up_n samples per scenario) over the MAIN-text ranges, and for every sample the
-# equilibrium TOTAL and DIRECT animal effects on total soil + root C are
-# recomputed. Sampling distributions by range source:
-#   SD      normal(sheet value, SD) truncated to value +/- 2 SD (and guard rails)
-#   MinMax  uniform on [Min, Max]
-#   buffer  log-uniform on [value/2, 2*value] (symmetric in ratio around value)
-# Parameters are sampled independently (no correlation structure).
-# Outputs: Results/animal_effect_uncertainty_samples.csv  (every sample)
-#          Results/animal_effect_uncertainty_summary.csv  (per scenario)
-#          Results/figures/animal_effect_uncertainty.png
+# up_n samples per scenario) and for every sample the equilibrium TOTAL and
+# DIRECT animal effects on total soil + root C are recomputed.
+#
+# Sampling distributions (concentrated on plausible values, not uniform):
+#   SD reported      normal(sheet value, SD), truncated at +/- 2 SD
+#   Min/Max reported triangular(Min, mode = model value, Max)   [up_minmax_dist]
+#   nothing reported log-normal centred on the model value with geometric SD
+#                    up_gsd, truncated to half..double
+#   All truncated to the physical guard rails. Parameters are independent.
+#
+# BASELINE REALISM FILTER: a sample is ACCEPTED only if its no-animal
+#   equilibrium stays within the target range for every listed pool. Default
+#   targets = the all-default baseline equilibrium of each scenario, with
+#   lower/upper = reference / factor and reference * factor, where factor is
+#   up_filter_factor unless the pool is listed in up_filter_factor_by_pool.
+#   To use your own targets, copy Results/baseline_targets_used.csv to
+#   Data/baseline_targets.csv and edit lower/upper (or add rows; pool = any
+#   state variable or TotalC). Rows in that file override the defaults.
+#
+# Outputs: animal_effect_uncertainty_samples.csv      every sample
+#          animal_effect_uncertainty_summary.csv      per scenario x subset
+#                                                     (all / unflagged / accepted)
+#          animal_effect_uncertainty_diagnostics.csv  counts, acceptance, rejections
+#          animal_effect_uncertainty_inputs.csv       distribution of every parameter
+#          baseline_targets_used.csv                  realism targets actually used
+#          figures/animal_effect_uncertainty.png
 
-# inverse-CDF sampler for one parameter given u in (0,1)
-up_quantile <- function(u, rg, r) {
-  lo <- rg$lo; hi <- rg$hi
-  if (rg$source == "SD" && !is.null(r) && is.finite(r$sd) && r$sd > 0) {
-    a <- pnorm(lo, r$value, r$sd); b <- pnorm(hi, r$value, r$sd)
-    return(qnorm(a + u * (b - a), r$value, r$sd))
-  }
-  if (rg$source == "buffer" && lo * hi > 0) {               # same sign: log-uniform
-    s <- sign(lo); l <- log(abs(lo)); h <- log(abs(hi))
-    v <- s * exp(l + u * (h - l))
-    return(v)
-  }
-  lo + u * (hi - lo)                                         # uniform
+# inverse-CDF samplers (u in (0,1))
+q_trunc_norm <- function(u, mean, sd, lo, hi) {
+  a <- pnorm(lo, mean, sd); b <- pnorm(hi, mean, sd)
+  qnorm(a + u * (b - a), mean, sd)
+}
+q_trunc_lnorm <- function(u, centre, gsd, lo, hi) {        # centre, lo, hi > 0
+  ml <- log(centre); sl <- log(gsd)
+  a <- pnorm(log(lo), ml, sl); b <- pnorm(log(hi), ml, sl)
+  exp(qnorm(a + u * (b - a), ml, sl))
+}
+q_triangular <- function(u, lo, mode, hi) {
+  mode <- min(max(mode, lo), hi); fc <- (mode - lo) / (hi - lo)
+  ifelse(u < fc, lo + sqrt(u * (hi - lo) * (mode - lo)),
+                 hi - sqrt((1 - u) * (hi - lo) * (hi - mode)))
+}
+
+# up_distribution(): sampling distribution for one scenario x parameter
+up_distribution <- function(scenario, p, d0) {
+  rg <- range_for(scenario, p, d0, "main"); r <- unc_row(scenario, p)
+  if (rg$source == "SD" && !is.null(r) && is.finite(r$sd) && r$sd > 0)
+    return(list(dist = "truncated normal", lo = rg$lo, hi = rg$hi,
+                centre = r$value, spread = r$sd))
+  if (rg$source == "MinMax")
+    return(list(dist = if (up_minmax_dist == "uniform") "uniform" else "triangular",
+                lo = rg$lo, hi = rg$hi, centre = min(max(d0, rg$lo), rg$hi), spread = NA_real_))
+  if (rg$lo * rg$hi > 0)                                    # same sign: log-normal on magnitude
+    return(list(dist = "truncated log-normal", lo = rg$lo, hi = rg$hi,
+                centre = d0, spread = up_gsd))
+  list(dist = "uniform", lo = rg$lo, hi = rg$hi, centre = d0, spread = NA_real_)
+}
+
+up_quantile <- function(u, ds) {
+  switch(ds$dist,
+    "truncated normal"     = q_trunc_norm(u, ds$centre, ds$spread, ds$lo, ds$hi),
+    "triangular"           = q_triangular(u, ds$lo, ds$centre, ds$hi),
+    "truncated log-normal" = {
+      s  <- sign(ds$centre); mg <- sort(abs(c(ds$lo, ds$hi)))
+      s * q_trunc_lnorm(u, abs(ds$centre), ds$spread, mg[1], mg[2])
+    },
+    ds$lo + u * (ds$hi - ds$lo))                            # uniform
 }
 
 # Latin hypercube in (0,1)^k: one stratified draw per row in each column
@@ -669,17 +796,26 @@ lhs_unit <- function(n, k) {
   vapply(seq_len(k), function(j) (sample.int(n) - runif(n)) / n, numeric(n))
 }
 
-# total and direct equilibrium effects for one parameter vector
-headline_effects <- function(base_pair, pv) {
+# baseline values used by the realism filter ("TotalC" = all non-animal pools)
+baseline_values <- function(eb, pools) {
+  soil <- setdiff(names(eb), animal_pools)
+  v <- c(TotalC = sum(eb[soil]), eb[soil])
+  setNames(vapply(pools, function(p) if (p %in% names(v)) unname(v[[p]]) else NA_real_,
+                  numeric(1)), paste0("base_", pools))
+}
+
+# total and direct equilibrium effects + baseline values for one parameter vector
+headline_effects <- function(base_pair, pv, pools) {
   pair <- base_pair
   for (nm in names(pv)) {
     pair$treatment <- set_param(pair$treatment, nm, pv[[nm]])
     pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
   }
   out <- c(total = NA_real_, direct = NA_real_, converged = 0,
-           microbe_collapse = 0, kb_floor = 0, infeasible = 0)
+           microbe_collapse = 0, kb_floor = 0, infeasible = 0,
+           setNames(rep(NA_real_, length(pools)), paste0("base_", pools)))
   if (nzchar(infeasible_soil(pair$baseline$parms))) { out[["infeasible"]] <- 1; return(out) }
-  res <- tryCatch({
+  tryCatch({
     b  <- spinup_equilibrium(pair$baseline, max_time = eq_max_time, verbose = FALSE)
     eb <- b$init_state_spin
     tr <- spinup_equilibrium(pair$treatment, warm_start = eb, max_time = eq_max_time,
@@ -689,8 +825,6 @@ headline_effects <- function(base_pair, pv) {
     soil <- setdiff(intersect(names(eb), names(tr$init_state_spin)), animal_pools)
     conv <- isTRUE(b$spin_info$converged) && isTRUE(tr$spin_info$converged) &&
             isTRUE(td$spin_info$converged)
-    # regime flags: total-effect state (both flags) and direct-effect state
-    # (microbes only; its indirect slopes are zero, so no k_b floor)
     rg_t <- regime_flags(eb, tr$init_state_spin, pair$treatment$parms)
     rg_d <- regime_flags(eb, td$init_state_spin, pair$treatment$parms)
     c(total  = sum(tr$init_state_spin[soil]) - sum(eb[soil]),
@@ -698,154 +832,213 @@ headline_effects <- function(base_pair, pv) {
       converged = as.numeric(conv),
       microbe_collapse = as.numeric(grepl("microbe_collapse", paste(rg_t, rg_d))),
       kb_floor         = as.numeric(grepl("kb_floor", rg_t)),
-      infeasible       = 0)
+      infeasible       = 0,
+      baseline_values(eb, pools))
   }, error = function(e) out)
-  res
 }
 
-# factory so a parallel worker receives only base_pair with the evaluator
-make_headline_fun <- function(base_pair) {
-  force(base_pair)
-  function(pv) headline_effects(base_pair, pv)
+# factory so a parallel worker receives only what the evaluator needs
+make_headline_fun <- function(base_pair, pools) {
+  force(base_pair); force(pools)
+  function(pv) headline_effects(base_pair, pv, pools)
+}
+
+# realism targets for one scenario: defaults from the all-default baseline,
+# overridden / extended by rows in up_targets_file
+targets_for <- function(scenario, base_pair, user_targets) {
+  eb  <- spinup_equilibrium(base_pair$baseline, max_time = eq_max_time,
+                            verbose = FALSE)$init_state_spin
+  ref <- baseline_values(eb, up_filter_pools)
+  fac <- ifelse(up_filter_pools %in% names(up_filter_factor_by_pool),
+                up_filter_factor_by_pool[up_filter_pools], up_filter_factor)
+  tg  <- data.frame(scenario = scenario, pool = up_filter_pools,
+                    reference = unname(ref), lower = unname(ref) / fac,
+                    upper = unname(ref) * fac, factor = unname(fac), source = "default",
+                    stringsAsFactors = FALSE)
+  tg <- tg[is.finite(tg$reference), , drop = FALSE]
+  if (!is.null(user_targets)) {
+    u <- user_targets[user_targets$scenario == scenario, , drop = FALSE]
+    for (i in seq_len(nrow(u))) {
+      j <- which(tg$pool == u$pool[i])
+      if (length(j)) { tg$lower[j] <- u$lower[i]; tg$upper[j] <- u$upper[i]; tg$source[j] <- "user" }
+      else tg <- rbind(tg, data.frame(scenario = scenario, pool = u$pool[i],
+                                      reference = if ("reference" %in% names(u)) u$reference[i] else NA_real_,
+                                      lower = u$lower[i], upper = u$upper[i], factor = NA_real_,
+                                      source = "user"))
+    }
+  }
+  tg
 }
 
 run_uncertainty_propagation_fn <- function() {
-  samp_rows <- list(); summ_rows <- list()
+  user_targets <- if (file.exists(up_targets_file)) {
+    u <- read.csv(up_targets_file, stringsAsFactors = FALSE)
+    if (!all(c("scenario", "pool", "lower", "upper") %in% names(u)))
+      stop(up_targets_file, " needs columns scenario, pool, lower, upper")
+    u$scenario <- rename_scenarios(u$scenario)
+    cat("Baseline realism targets: using", up_targets_file, "\n"); u
+  } else NULL
+
+  samp_rows <- summ_rows <- diag_rows <- input_rows <- target_rows <- list()
+  q <- function(v, p) if (length(v)) unname(stats::quantile(v, p, na.rm = TRUE)) else NA_real_
+
   for (si in seq_along(scenarios)) {
     scenario   <- scenarios[si]
     base_pair  <- make_base_pair(scenario)
     parms_here <- base_pair$treatment$parms
     ps         <- param_set_for(scenario, parms_here)
 
-    rgs <- list(); rows <- list()
+    # sampling distributions
+    dists <- list()
     for (p in ps$pnames) {
       d0 <- parms_here[[p]]
       if (!is.finite(d0) || d0 == 0) next
-      rg <- range_for(scenario, p, d0, "main")
-      if (is.finite(rg$lo) && is.finite(rg$hi) && rg$hi > rg$lo) {
-        rgs[[p]] <- rg; rows[[p]] <- unc_row(scenario, p)
-      }
+      ds <- up_distribution(scenario, p, d0)
+      if (is.finite(ds$lo) && is.finite(ds$hi) && ds$hi > ds$lo) dists[[p]] <- ds
     }
-    pn <- names(rgs); k <- length(pn)
+    pn <- names(dists); k <- length(pn)
+    input_rows[[scenario]] <- data.frame(
+      scenario = scenario, parameter = pn, parameter_label = pretty_param(pn),
+      param_type = ps$ptype[pn], default = vapply(pn, function(p) parms_here[[p]], 0),
+      distribution = vapply(dists, `[[`, "", "dist"),
+      lo = vapply(dists, `[[`, 0, "lo"), hi = vapply(dists, `[[`, 0, "hi"),
+      centre = vapply(dists, `[[`, 0, "centre"), spread = vapply(dists, `[[`, 0, "spread"),
+      row.names = NULL)
+
+    # realism targets
+    tg <- targets_for(scenario, base_pair, user_targets)
+    target_rows[[scenario]] <- tg
+    pools <- tg$pool
 
     cat("Uncertainty propagation: ", scenario, " - ", k, " parameters, ",
         up_n, " LHS samples\n", sep = "")
     set.seed(up_seed + si)
     U <- lhs_unit(up_n, k)
-    X <- vapply(seq_len(k), function(j) up_quantile(U[, j], rgs[[pn[j]]], rows[[pn[j]]]),
-                numeric(up_n))
+    X <- vapply(seq_len(k), function(j) up_quantile(U[, j], dists[[pn[j]]]), numeric(up_n))
     if (up_n == 1) X <- matrix(X, nrow = 1)
     colnames(X) <- pn
 
-    default <- headline_effects(base_pair, setNames(numeric(0), character(0)))
+    default <- headline_effects(base_pair, setNames(numeric(0), character(0)), pools)
     rows_list <- lapply(seq_len(up_n), function(i) setNames(X[i, ], pn))
-    Y <- if (is.null(cl)) lapply(rows_list, function(pv) headline_effects(base_pair, pv)) else
-      parallel::parLapply(cl, rows_list, make_headline_fun(base_pair))
-    Y <- do.call(rbind, Y)
+    hf <- make_headline_fun(base_pair, pools)
+    Y  <- if (is.null(cl)) lapply(rows_list, hf) else parallel::parLapply(cl, rows_list, hf)
+    Y  <- do.call(rbind, Y)
 
-    n_inf <- sum(Y[, "infeasible"] == 1)
-    n_bad <- sum(Y[, "converged"] < 1) - n_inf
-    if (n_inf > 0)
-      warning(sprintf("Uncertainty propagation %s: %d of %d samples describe an impossible soil (porosity <= moisture); excluded.",
-                      scenario, n_inf, up_n))
-    if (n_bad > 0)
-      warning(sprintf("Uncertainty propagation %s: %d of %d samples did NOT reach a stable state; excluded.",
-                      scenario, n_bad, up_n))
-    cat(sprintf("  stable-state check: %d/%d realistic samples converged%s; %d unrealistic soils removed\n",
-                up_n - n_inf - n_bad, up_n - n_inf, if (n_bad > 0) "  <-- SEE WARNING" else "", n_inf))
-
-    s_df <- data.frame(scenario = scenario, sample = seq_len(up_n), Y, X,
-                       check.names = FALSE)
-    samp_rows[[scenario]] <- s_df
-
+    # classification
+    inf  <- Y[, "infeasible"] == 1
     ok   <- Y[, "converged"] == 1 & is.finite(Y[, "total"]) & is.finite(Y[, "direct"])
     flag <- Y[, "microbe_collapse"] == 1 | Y[, "kb_floor"] == 1
-    n_mic <- sum(ok & Y[, "microbe_collapse"] == 1); n_kb <- sum(ok & Y[, "kb_floor"] == 1)
-    if (n_mic + n_kb > 0)
-      message(sprintf("Uncertainty propagation %s: flagged samples - microbe_collapse %d, kb_floor %d (of %d converged).",
-                      scenario, n_mic, n_kb, sum(ok)))
-    tot <- Y[ok, "total"]; dir <- Y[ok, "direct"]
-    tot_c <- Y[ok & !flag, "total"]; dir_c <- Y[ok & !flag, "direct"]
-    pct <- 100 * dir / tot
-    q   <- function(v, p) if (length(v)) unname(stats::quantile(v, p, na.rm = TRUE)) else NA_real_
-    summ_rows[[scenario]] <- data.frame(
-      scenario = scenario, n_samples = up_n, n_converged = sum(ok),
-      n_infeasible = n_inf, n_microbe_collapse = n_mic, n_kb_floor = n_kb,
-      n_clean = sum(ok & !flag),
-      total_default  = default[["total"]],
-      total_median   = q(tot, 0.5), total_mean = mean(tot),
-      total_q025     = q(tot, 0.025), total_q975 = q(tot, 0.975),
-      p_total_positive = mean(tot > 0),
-      p_sign_as_default = mean(sign(tot) == sign(default[["total"]])),
-      direct_default = default[["direct"]],
-      direct_median  = q(dir, 0.5),
-      direct_q025    = q(dir, 0.025), direct_q975 = q(dir, 0.975),
-      pct_direct_default = 100 * default[["direct"]] / default[["total"]],
-      pct_direct_median  = q(pct[is.finite(pct)], 0.5),
-      pct_direct_q025    = q(pct[is.finite(pct)], 0.025),
-      pct_direct_q975    = q(pct[is.finite(pct)], 0.975),
-      total_median_clean = q(tot_c, 0.5),
-      total_q025_clean   = q(tot_c, 0.025), total_q975_clean = q(tot_c, 0.975),
-      p_sign_as_default_clean = if (length(tot_c)) mean(sign(tot_c) == sign(default[["total"]])) else NA_real_,
-      direct_median_clean = q(dir_c, 0.5),
-      direct_q025_clean   = q(dir_c, 0.025), direct_q975_clean = q(dir_c, 0.975))
+    pass_pool <- vapply(seq_len(nrow(tg)), function(j) {
+      v <- Y[, paste0("base_", tg$pool[j])]
+      is.finite(v) & v >= tg$lower[j] & v <= tg$upper[j]
+    }, logical(up_n))
+    if (up_n == 1) pass_pool <- matrix(pass_pool, nrow = 1)
+    accepted <- ok & apply(pass_pool, 1, all)
+
+    n_inf <- sum(inf); n_bad <- sum(!ok) - n_inf
+    cat(sprintf("  %d/%d realistic samples converged; %d unrealistic soils removed\n",
+                sum(ok), up_n - n_inf, n_inf))
+    cat(sprintf("  baseline realism filter: %d of %d converged samples accepted (%.0f%%)\n",
+                sum(accepted), sum(ok), 100 * sum(accepted) / max(sum(ok), 1)))
+    if (sum(ok) > 0 && sum(accepted) / sum(ok) < 0.1)
+      warning(sprintf("Uncertainty propagation %s: only %d of %d samples pass the baseline realism filter -- the parameter distributions may be wider than plausible, or the targets too strict.",
+                      scenario, sum(accepted), sum(ok)))
+    if (n_bad > 0)
+      warning(sprintf("Uncertainty propagation %s: %d samples did NOT reach a stable state; excluded.",
+                      scenario, n_bad))
+
+    samp_rows[[scenario]] <- data.frame(scenario = scenario, sample = seq_len(up_n),
+                                        accepted = accepted, Y, X, check.names = FALSE)
+
+    rej <- setNames(colSums(!pass_pool[ok, , drop = FALSE]), paste0("n_reject_", tg$pool))
+    diag_rows[[scenario]] <- data.frame(
+      scenario = scenario, n_samples = up_n, n_infeasible = n_inf,
+      n_nonconverged = n_bad, n_converged = sum(ok),
+      n_microbe_collapse = sum(ok & Y[, "microbe_collapse"] == 1),
+      n_kb_floor = sum(ok & Y[, "kb_floor"] == 1),
+      n_accepted = sum(accepted), acceptance_rate = sum(accepted) / max(sum(ok), 1),
+      t(rej), check.names = FALSE)
+
+    summ <- function(idx, label) {
+      tot <- Y[idx, "total"]; dir <- Y[idx, "direct"]
+      pct <- 100 * dir / tot; pct <- pct[is.finite(pct)]
+      data.frame(
+        scenario = scenario, subset = label, n = sum(idx),
+        total_default = default[["total"]],
+        total_median = q(tot, 0.5), total_mean = if (length(tot)) mean(tot) else NA_real_,
+        total_q025 = q(tot, 0.025), total_q975 = q(tot, 0.975),
+        p_total_positive = if (length(tot)) mean(tot > 0) else NA_real_,
+        p_sign_as_default = if (length(tot)) mean(sign(tot) == sign(default[["total"]])) else NA_real_,
+        direct_default = default[["direct"]],
+        direct_median = q(dir, 0.5), direct_q025 = q(dir, 0.025), direct_q975 = q(dir, 0.975),
+        pct_direct_default = 100 * default[["direct"]] / default[["total"]],
+        pct_direct_median = q(pct, 0.5), pct_direct_q025 = q(pct, 0.025),
+        pct_direct_q975 = q(pct, 0.975))
+    }
+    summ_rows[[scenario]] <- rbind(summ(ok, "all converged"),
+                                   summ(ok & !flag, "unflagged"),
+                                   summ(accepted, "accepted"))
   }
-  list(samples = bind_rows(samp_rows), summary = bind_rows(summ_rows))
+  list(samples = bind_rows(samp_rows), summary = bind_rows(summ_rows),
+       diagnostics = bind_rows(diag_rows), inputs = bind_rows(input_rows),
+       targets = bind_rows(target_rows))
 }
 
 if (run_uncertainty_propagation) {
-  if (!is.null(cl)) parallel::clusterExport(cl, "headline_effects")   # defined after cluster start
+  if (!is.null(cl)) parallel::clusterExport(cl, c("headline_effects", "baseline_values"))
   up <- run_uncertainty_propagation_fn()
-  write_csv(up$samples, file.path(res_dir, "animal_effect_uncertainty_samples.csv"))
-  write_csv(up$summary, file.path(res_dir, "animal_effect_uncertainty_summary.csv"))
-  cat("\nHeadline animal effect with propagated parameter uncertainty (g C m-2):\n")
-  print(up$summary %>%
-          transmute(scenario, n_converged,
-                    total = sprintf("%.1f (%.1f to %.1f)", total_median, total_q025, total_q975),
+  write_csv(up$samples,     file.path(res_dir, "animal_effect_uncertainty_samples.csv"))
+  write_csv(up$summary,     file.path(res_dir, "animal_effect_uncertainty_summary.csv"))
+  write_csv(up$diagnostics, file.path(res_dir, "animal_effect_uncertainty_diagnostics.csv"))
+  write_csv(up$inputs,      file.path(res_dir, "animal_effect_uncertainty_inputs.csv"))
+  write_csv(up$targets,     file.path(res_dir, "baseline_targets_used.csv"))
+
+  cat("\nHeadline animal effect with propagated parameter uncertainty (g C m-2),",
+      "accepted samples:\n")
+  print(up$summary %>% filter(subset == "accepted") %>%
+          transmute(scenario, n,
+                    total  = sprintf("%.1f (%.1f to %.1f)", total_median, total_q025, total_q975),
                     direct = sprintf("%.1f (%.1f to %.1f)", direct_median, direct_q025, direct_q975),
-                    p_sign_as_default = round(p_sign_as_default, 3),
-                    flagged = n_microbe_collapse + n_kb_floor,
-                    total_unflagged = sprintf("%.1f (%.1f to %.1f)", total_median_clean,
-                                              total_q025_clean, total_q975_clean)),
+                    p_sign_as_default = round(p_sign_as_default, 3)),
         row.names = FALSE)
 
-  # FIGURE: distribution of total and direct effects per scenario; solid line =
-  # all-default effect, shaded band = central 95% of the samples.
+  # FIGURE: accepted samples (filled) vs all converged samples (dashed outline);
+  # solid line = all-default effect; shaded band = central 95% of accepted.
   long <- up$samples %>% filter(converged == 1) %>%
-    select(scenario, total, direct, microbe_collapse, kb_floor) %>%
+    select(scenario, accepted, total, direct) %>%
     pivot_longer(c(total, direct), names_to = "effect", values_to = "value")
-  long_clean <- long %>% filter(microbe_collapse == 0, kb_floor == 0)
-  flag_txt <- up$summary %>%
-    transmute(scenario, lab = sprintf("flagged: %d collapse, %d k_b floor",
-                                      n_microbe_collapse, n_kb_floor))
-  bands <- up$summary %>%
+  long_acc <- long %>% filter(accepted)
+  bands <- up$summary %>% filter(subset == "accepted") %>%
     transmute(scenario,
               total_lo = total_q025, total_hi = total_q975, total_def = total_default,
               direct_lo = direct_q025, direct_hi = direct_q975, direct_def = direct_default) %>%
     pivot_longer(-scenario, names_to = c("effect", ".value"), names_sep = "_")
-  p_up <- ggplot(long, aes(value, fill = effect, colour = effect)) +
+  acc_txt <- up$diagnostics %>%
+    transmute(scenario, lab = sprintf("accepted %d of %d", n_accepted, n_converged)) %>%
+    tidyr::crossing(effect = c("total", "direct"))
+  # total effect first, direct effect second
+  fx <- function(d) mutate(d, effect = factor(effect, levels = c("total", "direct")))
+  long <- fx(long); long_acc <- fx(long_acc); bands <- fx(bands); acc_txt <- fx(acc_txt)
+  p_up <- ggplot(long_acc, aes(value, fill = effect, colour = effect)) +
     geom_rect(data = bands, aes(xmin = lo, xmax = hi, ymin = -Inf, ymax = Inf, fill = effect),
               inherit.aes = FALSE, alpha = 0.12) +
     geom_density(alpha = 0.35) +
-    geom_density(data = long_clean, fill = NA, linetype = "dashed", linewidth = 0.5) +
-    geom_text(data = flag_txt, aes(x = Inf, y = Inf, label = lab), inherit.aes = FALSE,
-              hjust = 1.05, vjust = 1.5, size = 2.8, colour = "grey30") +
+    geom_density(data = long, fill = NA, linetype = "dashed", linewidth = 0.4) +
     geom_vline(data = bands, aes(xintercept = def, colour = effect), linewidth = 0.7) +
     geom_vline(xintercept = 0, linetype = "dotted", colour = "grey40") +
-    facet_wrap(~scenario, scales = "free", labeller = scenario_labeller) +
+    geom_text(data = acc_txt, aes(x = Inf, y = Inf, label = lab), inherit.aes = FALSE,
+              hjust = 1.05, vjust = 1.5, size = 2.8, colour = "grey30") +
+    facet_wrap(~ scenario + effect, scales = "free", ncol = 2, labeller = scenario_labeller) +
     scale_fill_manual(values = c(total = "#1b7837", direct = "#762a83"), name = "Effect") +
     scale_colour_manual(values = c(total = "#1b7837", direct = "#762a83"), name = "Effect") +
     labs(x = expression("Animal effect on total soil + root C (g C m"^-2*")"),
          y = "Density",
-         caption = paste("Filled = all converged samples; dashed outline = excluding flagged regimes",
-                         "(microbial collapse, k_b at floor). Solid line = all-default effect;",
-                         "shaded band = central 95%; dotted = no effect.")) +
+         caption = paste("Filled = samples passing the baseline realism filter; dashed = all converged samples.",
+                         "Solid line = all-default effect; shaded band = central 95% of accepted; dotted = no effect.")) +
     theme_minimal(base_size = 11) + theme(legend.position = "bottom")
   ggsave(file.path(fig_dir, "animal_effect_uncertainty.png"), p_up,
-         width = 12, height = 8, dpi = 150)
-  cat("Wrote:", file.path(res_dir, "animal_effect_uncertainty_samples.csv"),
-      file.path(res_dir, "animal_effect_uncertainty_summary.csv"),
-      file.path(fig_dir, "animal_effect_uncertainty.png"), "\n")
+         width = 10, height = 2.6 * length(unique(long$scenario)) + 1.2, dpi = 150)
+  cat("Wrote uncertainty outputs to", res_dir, "and", file.path(fig_dir, "animal_effect_uncertainty.png"), "\n")
 }
 
 # shut down the worker pool
