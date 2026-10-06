@@ -3,7 +3,7 @@
 #------------------------------------------------------------------------#
 # RUN ALL  -  regenerate the whole project end to end.
 #
-# Sources Scripts/1..4 in order, so a single call reproduces every saved
+# Sources Scripts/1..5 in order, so a single call reproduces every saved
 # output (fitted params -> spin-up states -> follow-up runs -> sensitivity).
 # Run from the project root:  source("Scripts/0_run_all.R")
 #
@@ -16,12 +16,24 @@
 #                                      (Morris: main = reported uncertainty;
 #                                       supplemental = standardized 50-200%)
 #       5 multistability_test         -> Results/multistability_*.csv, figure (diagnostic)
-#   * Each script sources the same R/ helpers and is self-contained; this
-#     wrapper just runs them in a clean environment and times each one.
+#   * Each script sources the R/ helpers it needs and is self-contained. This
+#     wrapper runs each one in the GLOBAL environment (as if you ran it by
+#     hand), optionally clearing it first so every step starts fresh, and
+#     times each step. All custom functions live in R/ and are sourced at the
+#     top of each script.
+#   * Step-through debugging: set debug_functions <- TRUE. Every function the
+#     script has just sourced is flagged with debugonce(), so running the steps
+#     top to bottom opens the browser the first time each function is called.
+#     Model evaluations then run serially (no parallel workers), so the
+#     debugger can reach them. Set back to FALSE for normal runs.
 #   * The slow step is 2 (spin-up). Set run_step2 <- FALSE to reuse saved
 #     spin-ups when you only need to refresh downstream steps.
 
 stopifnot(file.exists("R/setup.R"))        # guard: must be run from project root
+source("R/run_utils.R")                     # run_one(), debugonce_functions()
+
+debug_functions         <- FALSE  # TRUE = debugonce() on every function loaded by each script
+clean_env_between_steps <- TRUE   # TRUE = clear the global environment before each step
 
 run_step1 <- TRUE    # fit animal parameters
 run_step2 <- TRUE    # equilibrium + seasonal spin-up (slow)
@@ -37,16 +49,14 @@ steps <- c(
   "5" = "Scripts/5_multistability_test.R")
 run <- c(run_step1, run_step2, run_step3, run_step4, run_step5)
 
-run_one <- function(path) {
-  message("\n", strrep("=", 60), "\n== RUN: ", path, "\n", strrep("=", 60))
-  t0 <- Sys.time()
-  # each script runs in its own environment so their globals don't collide
-  sys.source(path, envir = new.env(parent = globalenv()))
-  message(sprintf("== DONE: %s  (%.1f min)", path,
-                  as.numeric(difftime(Sys.time(), t0, units = "mins"))))
-}
+
+options(sfw.debugonce = debug_functions)   # read by debugonce_functions() in each script
+keep_objs <- c("run_one", "debugonce_functions", "steps", "run", "i", "t_all",
+               "debug_functions", "clean_env_between_steps", "keep_objs",
+               paste0("run_step", 1:5))
 
 t_all <- Sys.time()
-for (i in seq_along(steps)) if (run[i]) run_one(steps[[i]])
+for (i in seq_along(steps)) if (run[i]) run_one(steps[[i]], clean = clean_env_between_steps,
+                                                keep = keep_objs)
 message(sprintf("\nAll requested steps finished in %.1f min.",
                 as.numeric(difftime(Sys.time(), t_all, units = "mins"))))

@@ -112,7 +112,11 @@ setup_model <- function(model, off = character(0), param_overrides = list(),
   if (is.null(m))
     stop("Unknown model '", model, "'. Choose: ",
          paste(names(model_table), collapse = ", "))
-  if (source_files) invisible(lapply(m$src, source))
+  # Re-sourcing replaces the model functions; skip it while step-through
+  # debugging is on (option sfw.debugonce), so their debug flags survive.
+  if (source_files && !(isTRUE(getOption("sfw.debugonce", FALSE)) &&
+                        exists(m$fn, mode = "function")))
+    invisible(lapply(m$src, source))
 
   model_fn  <- match.fun(m$fn)
   derive_fn <- match.fun(m$derive)

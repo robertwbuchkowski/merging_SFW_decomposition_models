@@ -10,6 +10,10 @@ library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
+source("R/millennial_model.R"); source("R/derive_millennial_parms.R")
+source("R/init_millennial_state.R")
+source("R/run_utils.R")
+debugonce_functions()   # only active when options(sfw.debugonce = TRUE); see Scripts/0_run_all.R
 
 scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("millennial")
