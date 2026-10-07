@@ -17,7 +17,7 @@
 #
 # This file is model-agnostic: give it parameter bounds and a function that maps
 # a named parameter vector to a scalar output. Scripts supply the bounds (from a
-# SD rule or the standardized 50-200% range in Scripts/4) and the
+# SD rule or the standardized CV rule in Scripts/4) and the
 # output function (the equilibrium animal effect).
 
 #------------------------------------------------------------------------#

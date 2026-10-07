@@ -185,10 +185,15 @@ unc_row <- function(scenario, param) {
 #          bounds of param_bounds()
 #   bound_hit  which side(s) were cut and why, e.g. "lower:positive",
 #          "upper:Max", "lower:proportion; upper:proportion" ("" = none)
-param_sd_info <- function(scenario, param, default) {
+# use_reported_sd = FALSE ignores reported SDs and use_minmax = FALSE ignores the
+# reported Min/Max entirely (no SD reduction, no cut), so every parameter gets
+# SD = cv_default x |default| cut only at the physical bounds -- the
+# standardized Morris analysis.
+param_sd_info <- function(scenario, param, default, use_reported_sd = TRUE,
+                          use_minmax = TRUE) {
   r <- unc_row(scenario, param)
-  has_mm <- !is.null(r) && is.finite(r$min) && is.finite(r$max) && r$max > r$min
-  if (!is.null(r) && is.finite(r$sd_reported)) {
+  has_mm <- use_minmax && !is.null(r) && is.finite(r$min) && is.finite(r$max) && r$max > r$min
+  if (use_reported_sd && !is.null(r) && is.finite(r$sd_reported)) {
     sd <- r$sd_reported; src <- "SD"
   } else {
     sd <- cv_default * abs(default); src <- "CV-default"
@@ -214,40 +219,20 @@ param_sd_info <- function(scenario, param, default) {
 # range_for() ----
 #------------------------------------------------------------------------#
 # Used in: called by run_morris()
-# Needs (set in Scripts/4_sensitivity_animal_effects.R): supp_frac
 # range_for(): lo, hi, the range-source label and the bound hits for one
-# parameter, under either Morris mode:
-#   mode = "main"         the standard-deviation rule of param_sd_info():
+# parameter, under either Morris mode (both via param_sd_info()):
+#   mode = "main"         reported SD where available, else the CV rule:
 #                         default +/- 2 SD.        labels: SD / CV-MinMax / CV-default
-#   mode = "standardized" 50-200% for every parameter, cut to the reported
-#                         Min/Max wherever that is narrower.
-#                         labels: 50-200% / MinMax-bound / guard-rail-bound /
-#                                 MinMax-excludes-default
+#   mode = "standardized" SD = cv_default x |default| for EVERY parameter,
+#                         ignoring reported SDs and Min/Max entirely; the range
+#                         (+/- 2 SD) is cut only at the physical bounds.
+#                                                  label: CV-default
 range_for <- function(scenario, param, default, mode = c("main", "standardized")) {
   mode <- match.arg(mode)
-  if (mode == "main") {
-    s <- param_sd_info(scenario, param, default)
-    return(list(lo = s$lo, hi = s$hi, source = s$source, sd = s$sd, cv = s$cv,
-                bound_hit = s$bound_hit))
-  }
-  r   <- unc_row(scenario, param)
-  rng <- sort(default * supp_frac); lo <- rng[1]; hi <- rng[2]
-  src <- "50-200%"; hit <- character(0)
-  if (!is.null(r) && is.finite(r$min) && is.finite(r$max) && r$max > r$min) {
-    lo2 <- max(lo, r$min); hi2 <- min(hi, r$max)
-    if (hi2 > lo2) {
-      if (lo2 > lo) hit <- c(hit, "lower:Min")
-      if (hi2 < hi) hit <- c(hit, "upper:Max")
-      if (length(hit)) src <- "MinMax-bound"
-      lo <- lo2; hi <- hi2
-    } else src <- "MinMax-excludes-default"
-  }
-  b <- param_bounds(param, default); why <- attr(b, "why")
-  if (lo < b[1]) { lo <- b[1]; hit <- c(hit, paste0("lower:", why[1])) }
-  if (hi > b[2]) { hi <- b[2]; hit <- c(hit, paste0("upper:", why[2])) }
-  if (length(hit) && src == "50-200%") src <- "guard-rail-bound"
-  list(lo = lo, hi = hi, source = src, sd = NA_real_, cv = NA_real_,
-       bound_hit = paste(hit, collapse = "; "))
+  s <- param_sd_info(scenario, param, default, use_reported_sd = (mode == "main"),
+                     use_minmax = (mode == "main"))
+  list(lo = s$lo, hi = s$hi, source = s$source, sd = s$sd, cv = s$cv,
+       bound_hit = s$bound_hit)
 }
 
 #------------------------------------------------------------------------#

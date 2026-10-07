@@ -14,7 +14,7 @@
 #       3 followup_analysis      -> Data/followup/*.rds, Plots/*
 #       4 sensitivity_animal_effects -> Results/animal_effect_morris*.csv, figures
 #                                      (Morris: main = SD rule; supplemental =
-#                                       standardized 50-200%)
+#                                       standardized: CV = cv_default for all)
 #       5 uncertainty_animal_effect  -> Results/animal_effect_uncertainty_*.csv, figure
 #                                      (Latin hypercube on the headline effect)
 #       6 multistability_test        -> Results/multistability_*.csv, figure (diagnostic)

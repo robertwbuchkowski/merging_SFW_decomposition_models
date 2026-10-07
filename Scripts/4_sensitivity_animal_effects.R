@@ -19,8 +19,10 @@
 #     (labelled SD / CV-MinMax / CV-default). Same rule as the uncertainty
 #     propagation in Scripts/5_uncertainty_animal_effect.R.
 #   SUPPLEMENTAL (run_supp_morris) - STANDARDIZED, apples-to-apples:
-#     every parameter gets [value x 0.5, value x 2], cut to a narrower
-#     reported Min/Max.
+#     CV = cv_default for EVERY parameter (SD = cv_default x |value|),
+#     ignoring reported SDs and Min/Max entirely; the range (+/- 2 SD) is cut
+#     only at the physical bounds. Comparing it with MAIN shows which rankings
+#     come from the reported SDs and Min/Max limits.
 #   Both are cut to the physical bounds (proportions in [0, 1] including p_a
 #   and p_b, sign kept, pH, clay+silt). Every cut is reported in the
 #   bound_hit column and printed per scenario.
@@ -83,11 +85,10 @@ derive_fn    <- match.fun(model_table[[model]]$derive)
 #------------------------------------------------------------------------#
 morris_r      <- 200     # trajectories per scenario (raise for stable mu*/sigma)
 morris_levels <- 4L     # grid levels p in the Morris design
-supp_frac     <- c(0.5, 2)     # SUPPLEMENTAL standardized range = 50-200% of value (half..double)
 morris_seed   <- 27082026      # base seed; each scenario uses morris_seed + its index
 
 run_main_morris <- TRUE   # main-text analysis (existing uncertainty)
-run_supp_morris <- TRUE   # supplemental analysis (standardized half-double, Min/Max-bound)
+run_supp_morris <- TRUE   # supplemental analysis (standardized: CV = cv_default for every parameter)
 
 #------------------------------------------------------------------------#
 # Morris bootstrap (convergence of the ranking) ----
@@ -134,12 +135,8 @@ scenspec_unc <- if (!is.null(unc_all))
 main_cols <- c(SD = "#1b7837", `CV-MinMax` = "#2166ac", `CV-default` = "#b2182b")
 main_labs <- c(SD = "Reported SD", `CV-MinMax` = "CV reduced to fit Min/Max",
                `CV-default` = paste0("CV = ", cv_default, " (no SD or Min/Max)"))
-supp_cols <- c(`50-200%` = "#b2182b", `MinMax-bound` = "#2166ac",
-               `guard-rail-bound` = "#762a83", `MinMax-excludes-default` = "#e08214")
-supp_labs <- c(`50-200%` = "50% to 200% (half to double)",
-               `MinMax-bound` = "50-200% cut to Min/Max",
-               `guard-rail-bound` = "50-200% cut to physical bound",
-               `MinMax-excludes-default` = "50-200% (Min/Max excludes default)")
+supp_cols <- main_cols["CV-default"]
+supp_labs <- c(`CV-default` = paste0("CV = ", cv_default, " (all parameters)"))
 
 
 #------------------------------------------------------------------------#

@@ -224,6 +224,7 @@ write_morris_outputs <- function(tbl, tag, colours, labels) {
 # plot_morris_paired() ----
 #------------------------------------------------------------------------#
 # Used in: Scripts/4_sensitivity_animal_effects.R (section: Paired Morris ranking: current knowledge vs standardized)
+# Needs (set in R/sensitivity_settings.R): cv_default
 # Per scenario, the top parameters with bootstrap 95% intervals for BOTH range
 # definitions. mu* is scaled to the most influential parameter within each
 # scenario x analysis (raw mu* depends on range width, so it is not comparable
@@ -263,7 +264,8 @@ plot_morris_paired <- function(main_tbl, std_tbl, n_top = 8) {
     facet_wrap(~scenario, scales = "free_y", labeller = scenario_labeller) +
     scale_y_discrete(labels = function(x) sub("___.*$", "", x)) +
     scale_colour_manual(values = c(main = "#2166ac", std = "#b2182b"),
-                        labels = c(main = "Current knowledge", std = "Standardized (50-200%)"),
+                        labels = c(main = "Current knowledge",
+                                   std = paste0("Standardized (CV = ", cv_default, ")")),
                         name = NULL) +
     labs(x = expression(mu*"* relative to the most influential parameter (95% bootstrap CI)"),
          y = NULL,
