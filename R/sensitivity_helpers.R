@@ -1,11 +1,12 @@
 #------------------------------------------------------------------------#
 # Sensitivity analysis: parameter sets, ranges and model evaluation ----
 #------------------------------------------------------------------------#
-# Helper functions for Scripts/4_sensitivity_animal_effects.R. They were moved here from the script so
+# Helper functions for the sensitivity scripts. They were moved here from the scripts so
 # that every custom function is defined BEFORE the script's analysis code
 # runs (sourced at the top of the script), which also lets
 # debugonce_functions() flag them all for step-through debugging.
 #
+# Shared settings (parameter list, SD rule, bounds) are in R/sensitivity_settings.R.
 # These functions read settings and data that the script creates at top level
 # (listed per function under 'Needs'). They are looked up when the function is
 # CALLED, so source this file first and run the script's settings before use.
@@ -14,39 +15,54 @@
 # pretty_param() ----
 #------------------------------------------------------------------------#
 # Used in: called by run_morris(), run_uncertainty_propagation_fn()
-# Needs (set in 4_sensitivity_animal_effects.R): param_labels
+# Needs (set in R/sensitivity_settings.R): param_labels
 pretty_param <- function(x) ifelse(x %in% names(param_labels), param_labels[x], x)
 
 #------------------------------------------------------------------------#
 # param_bounds() ----
 #------------------------------------------------------------------------#
-# Used in: called by clamp_to_bounds()
-# PHYSICAL GUARD RAILS. a_*/p_* efficiencies in [0,1] (except soil partition
-# coefficients p_a, p_b [0,1] and p_c unbounded); named fractions in [0,1];
-# pct_claysilt in [0,100]. clamp_to_bounds() pulls a value onto the nearest edge.
-param_bounds <- function(param) {
-  if (grepl("^(a_|p_)", param) && !param %in% c("p_a", "p_b", "p_c"))
-    return(c(0, 1))
-  switch(param,
-         winter_root_act_prop = , root_to_organic = ,
-         k_litterfall_ann = , k_litterfall_herb_ann = c(0, 1),
-         pct_claysilt = c(0, 100),
-         p_a = , p_b = c(0, 1),
-         LigFrac = , a_root_herb = , prop_feaces_earthworm_LMWC = c(0, 1),
-         c(-Inf, Inf))
+# Used in: called by clamp_to_bounds(), param_sd_info(), range_for()
+# Needs (set in R/sensitivity_settings.R): param_bound_table, bound_exempt_prefix,
+#   positive_floor_frac, sign_free_params
+# Physical bounds for one parameter, as c(lower, upper) with attribute "why"
+# naming the reason for each side (used to label bound hits):
+#   proportion  a_* / p_* efficiencies in [0, 1], except p_a, p_b, p_c
+#   table       named entries in param_bound_table (e.g. root_to_organic,
+#               pct_claysilt in [0, 100], pH in [1, 14])
+#   positive    a positive value stays >= positive_floor_frac x value
+#   sign        a negative value stays <= 0
+# `default` (the parameter's model value) is needed for the sign rules.
+param_bounds <- function(param, default = NA_real_) {
+  lo <- -Inf; hi <- Inf; why <- c("", "")
+  if (grepl("^(a_|p_)", param) && !param %in% bound_exempt_prefix) {
+    lo <- 0; hi <- 1; why <- c("proportion", "proportion")
+  }
+  if (param %in% names(param_bound_table)) {
+    lo <- param_bound_table[[param]][1]; hi <- param_bound_table[[param]][2]
+    why <- c("table", "table")
+  }
+  if (is.finite(default) && !param %in% sign_free_params) {
+    if (default > 0 && lo < positive_floor_frac * default) {
+      lo <- positive_floor_frac * default; why[1] <- "positive"
+    }
+    if (default < 0 && hi > 0) { hi <- 0; why[2] <- "sign" }
+  }
+  structure(c(lo, hi), why = why)
 }
 
 #------------------------------------------------------------------------#
 # clamp_to_bounds() ----
 #------------------------------------------------------------------------#
 # Used in: called by range_for()
-clamp_to_bounds <- function(v, param) { b <- param_bounds(param); pmin(pmax(v, b[1]), b[2]) }
+clamp_to_bounds <- function(v, param, default = NA_real_) {
+  b <- param_bounds(param, default); pmin(pmax(v, b[1]), b[2])
+}
 
 #------------------------------------------------------------------------#
 # set_param() ----
 #------------------------------------------------------------------------#
 # Used in: called by effect_scalar(), headline_effects()
-# Needs (set in 4_sensitivity_animal_effects.R): derive_fn
+# Needs (set in Scripts/4 and Scripts/5): derive_fn
 # set_param(): change ONE parameter and rebuild derived params + forcing.
 set_param <- function(obj, param, value) {
   obj$parms[[param]]        <- value
@@ -74,7 +90,7 @@ infeasible_soil <- function(parms) {
 # regime_flags() ----
 #------------------------------------------------------------------------#
 # Used in: called by animal_effect_totalC(), headline_effects()
-# Needs (set in 4_sensitivity_animal_effects.R): collapse_rel, kb_floor
+# Needs (set in R/sensitivity_settings.R): collapse_rel, kb_floor
 # regime_flags(): which special regime (if any) an equilibrium pair is in.
 # Returns "" (normal), "microbe_collapse", "kb_floor" or both joined by "+".
 regime_flags <- function(eq_b, eq_t, parms) {
@@ -94,7 +110,7 @@ regime_flags <- function(eq_b, eq_t, parms) {
 # animal_effect_totalC() ----
 #------------------------------------------------------------------------#
 # Used in: called by effect_scalar()
-# Needs (set in 4_sensitivity_animal_effects.R): animal_pools, eq_max_time
+# Needs (set in R/sensitivity_settings.R): animal_pools, eq_max_time
 # equilibrium TOTAL animal effect on total soil + root C (scalar, g C m-2).
 # Attaches `converged` (TRUE only if BOTH arms reached a stable steady state)
 # and `regime` (see regime_flags) for the Morris driver.
@@ -148,7 +164,7 @@ effect_scalar <- function(base_pair, pv) {
 # unc_row() ----
 #------------------------------------------------------------------------#
 # Used in: called by range_for(), up_distribution()
-# Needs (set in 4_sensitivity_animal_effects.R): unc_all
+# Needs (set in Scripts/4 and Scripts/5): unc_all
 unc_row <- function(scenario, param) {
   if (is.null(unc_all)) return(NULL)
   r <- unc_all[unc_all$scenario == scenario & unc_all$parameter == param, , drop = FALSE]
@@ -156,55 +172,90 @@ unc_row <- function(scenario, param) {
 }
 
 #------------------------------------------------------------------------#
+# param_sd_info() ----
+#------------------------------------------------------------------------#
+# Used in: called by range_for() (Morris, Scripts/4) and up_distribution()
+#   (uncertainty propagation, Scripts/5)
+# Needs (set in R/sensitivity_settings.R): cv_default
+# The standard deviation and analysed range for one scenario x parameter,
+# centred on the model value `default`:
+#   sd     reported SD ("SD"); else cv_default x |default| ("CV-default"), reduced to
+#          (Max - Min) / 4 when a reported Min/Max implies less ("CV-MinMax")
+#   lo/hi  default +/- 2 sd, cut to the reported Min/Max, then to the physical
+#          bounds of param_bounds()
+#   bound_hit  which side(s) were cut and why, e.g. "lower:positive",
+#          "upper:Max", "lower:proportion; upper:proportion" ("" = none)
+param_sd_info <- function(scenario, param, default) {
+  r <- unc_row(scenario, param)
+  has_mm <- !is.null(r) && is.finite(r$min) && is.finite(r$max) && r$max > r$min
+  if (!is.null(r) && is.finite(r$sd_reported)) {
+    sd <- r$sd_reported; src <- "SD"
+  } else {
+    sd <- cv_default * abs(default); src <- "CV-default"
+    if (has_mm && (r$max - r$min) / 4 < sd) { sd <- (r$max - r$min) / 4; src <- "CV-MinMax" }
+  }
+  lo <- default - 2 * sd; hi <- default + 2 * sd; hit <- character(0)
+  if (has_mm) {
+    if (lo < r$min) { lo <- r$min; hit <- c(hit, "lower:Min") }
+    if (hi > r$max) { hi <- r$max; hit <- c(hit, "upper:Max") }
+  }
+  b <- param_bounds(param, default); why <- attr(b, "why")
+  if (lo < b[1]) { lo <- b[1]; hit <- c(hit, paste0("lower:", why[1])) }
+  if (hi > b[2]) { hi <- b[2]; hit <- c(hit, paste0("upper:", why[2])) }
+  if (lo > hi) {                      # model value outside the reported Min/Max
+    lo <- hi <- default; hit <- c(hit, "default outside Min/Max")
+  }
+  list(sd = sd, cv = if (default != 0) sd / abs(default) else NA_real_,
+       source = src, lo = lo, hi = hi, centre = default,
+       bound_hit = paste(hit, collapse = "; "))
+}
+
+#------------------------------------------------------------------------#
 # range_for() ----
 #------------------------------------------------------------------------#
-# Used in: called by run_morris(), up_distribution()
-# Needs (set in 4_sensitivity_animal_effects.R): buffer, supp_frac
-# range_for(): returns lo, hi (clamped to the physical guard rails) and a label
-# for how the range was set, under either mode:
-#   mode = "main"         reported +/-2 SD or [Min, Max] if available, else the
-#                         half-to-double buffer.            labels: SD / MinMax / buffer
+# Used in: called by run_morris()
+# Needs (set in Scripts/4_sensitivity_animal_effects.R): supp_frac
+# range_for(): lo, hi, the range-source label and the bound hits for one
+# parameter, under either Morris mode:
+#   mode = "main"         the standard-deviation rule of param_sd_info():
+#                         default +/- 2 SD.        labels: SD / CV-MinMax / CV-default
 #   mode = "standardized" 50-200% for every parameter, cut to the reported
 #                         Min/Max wherever that is narrower.
 #                         labels: 50-200% / MinMax-bound / guard-rail-bound /
-#                                 MinMax-excludes-default (Min/Max does not
-#                                 overlap 50-200%; the unbound 50-200% is kept)
+#                                 MinMax-excludes-default
 range_for <- function(scenario, param, default, mode = c("main", "standardized")) {
   mode <- match.arg(mode)
-  r    <- unc_row(scenario, param)
-
   if (mode == "main") {
-    src <- "buffer"; lo <- default * buffer; hi <- default / buffer
-    if (!is.null(r) && r$unc_source %in% c("SD", "MinMax")) {
-      src <- r$unc_source; lo <- r$lo; hi <- r$hi                 # reported range
-    }
-    rng <- sort(c(clamp_to_bounds(lo, param), clamp_to_bounds(hi, param)))
-    return(list(lo = rng[1], hi = rng[2], source = src))
+    s <- param_sd_info(scenario, param, default)
+    return(list(lo = s$lo, hi = s$hi, source = s$source, sd = s$sd, cv = s$cv,
+                bound_hit = s$bound_hit))
   }
-
-  # standardized: 50-200% (sorted so negative defaults stay ordered)
+  r   <- unc_row(scenario, param)
   rng <- sort(default * supp_frac); lo <- rng[1]; hi <- rng[2]
-  src <- "50-200%"
+  src <- "50-200%"; hit <- character(0)
   if (!is.null(r) && is.finite(r$min) && is.finite(r$max) && r$max > r$min) {
     lo2 <- max(lo, r$min); hi2 <- min(hi, r$max)
     if (hi2 > lo2) {
-      if (lo2 > lo || hi2 < hi) src <- "MinMax-bound"
+      if (lo2 > lo) hit <- c(hit, "lower:Min")
+      if (hi2 < hi) hit <- c(hit, "upper:Max")
+      if (length(hit)) src <- "MinMax-bound"
       lo <- lo2; hi <- hi2
-    } else {
-      src <- "MinMax-excludes-default"                            # keep 50-200%
-    }
+    } else src <- "MinMax-excludes-default"
   }
-  clo <- clamp_to_bounds(lo, param); chi <- clamp_to_bounds(hi, param)
-  if ((clo != lo || chi != hi) && src == "50-200%") src <- "guard-rail-bound"
-  rng <- sort(c(clo, chi))
-  list(lo = rng[1], hi = rng[2], source = src)
+  b <- param_bounds(param, default); why <- attr(b, "why")
+  if (lo < b[1]) { lo <- b[1]; hit <- c(hit, paste0("lower:", why[1])) }
+  if (hi > b[2]) { hi <- b[2]; hit <- c(hit, paste0("upper:", why[2])) }
+  if (length(hit) && src == "50-200%") src <- "guard-rail-bound"
+  list(lo = lo, hi = hi, source = src, sd = NA_real_, cv = NA_real_,
+       bound_hit = paste(hit, collapse = "; "))
 }
 
 #------------------------------------------------------------------------#
 # param_set_for() ----
 #------------------------------------------------------------------------#
 # Used in: called by run_morris(), run_uncertainty_propagation_fn()
-# Needs (set in 4_sensitivity_animal_effects.R): animal_unc, scenspec_unc, sweep_params
+# Needs (set in Scripts/4 and Scripts/5): animal_unc, scenspec_unc
+# Needs (set in R/sensitivity_settings.R): sweep_params
 # param_set_for(): the parameters screened in one scenario and their class
 # (general / scenario-specific / animal). Shared by Morris and the uncertainty
 # propagation so both use exactly the same parameter set.
@@ -229,7 +280,7 @@ param_set_for <- function(scenario, parms_here) {
 # make_base_pair() ----
 #------------------------------------------------------------------------#
 # Used in: called by run_morris(), run_uncertainty_propagation_fn()
-# Needs (set in 4_sensitivity_animal_effects.R): fitted_params, model, scen
+# Needs (set in Scripts/4 and Scripts/5): fitted_params, model, scen
 # base scenario pair with the fitted animal parameters applied
 make_base_pair <- function(scenario) {
   bp <- setup_scenario_pair(model, scen, scenario)

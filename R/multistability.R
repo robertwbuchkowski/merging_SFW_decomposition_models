@@ -1,7 +1,7 @@
 #------------------------------------------------------------------------#
 # Multistability test: initial conditions, clustering, per-scenario test ----
 #------------------------------------------------------------------------#
-# Helper functions for Scripts/5_multistability_test.R. They were moved here from the script so
+# Helper functions for Scripts/6_multistability_test.R. They were moved here from the script so
 # that every custom function is defined BEFORE the script's analysis code
 # runs (sourced at the top of the script), which also lets
 # debugonce_functions() flag them all for step-through debugging.
@@ -14,7 +14,7 @@
 # make_starts() ----
 #------------------------------------------------------------------------#
 # Used in: called by test_scenario()
-# Needs (set in 5_multistability_test.R): abs_floor
+# Needs (set in 6_multistability_test.R): abs_floor
 # make_starts(): a matrix of initial states (rows = pools, cols = starts).
 # Columns are: the default; an all-low and an all-high corner; a microbial-
 # collapse corner (tiny MIC/B); a microbial-bloom corner; then random draws
@@ -45,7 +45,7 @@ make_starts <- function(y0, n_random, span = 2) {
 # same_state() ----
 #------------------------------------------------------------------------#
 # Used in: called by cluster_states()
-# Needs (set in 5_multistability_test.R): abs_floor, rel_tol
+# Needs (set in 6_multistability_test.R): abs_floor, rel_tol
 # distinct_states(): cluster converged equilibria into unique states by the
 # max RELATIVE pool difference (pools below abs_floor ignored). Greedy: each
 # state joins the first cluster it matches, else starts a new one.
@@ -82,8 +82,8 @@ soil_pools_of <- function(nm) setdiff(nm, c("Earthworm","Detritivore","RootHerb"
 #------------------------------------------------------------------------#
 # test_scenario() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/5_multistability_test.R (section: run all scenarios)
-# Needs (set in 5_multistability_test.R): model, n_starts, scen, span_dec, use_treatment
+# Used in: Scripts/6_multistability_test.R (section: run all scenarios)
+# Needs (set in 6_multistability_test.R): model, n_starts, scen, span_dec, use_treatment
 test_scenario <- function(scenario) {
   obj <- setup_scenario(model, scen, scenario, animals = use_treatment)
   y0  <- obj$working_state

@@ -7,7 +7,7 @@
 #------------------------------------------------------------------------#
 # debugonce_functions() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/1_ ... 5_*.R, right after the source() calls at the top.
+# Used in: Scripts/1_ ... 6_*.R, right after the source() calls at the top.
 # Does nothing unless the option sfw.debugonce is TRUE. When it is, every
 # function currently defined in `envir` (by default the global environment,
 # i.e. everything the script has just sourced from R/) is flagged with

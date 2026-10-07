@@ -1,28 +1,32 @@
 #------------------------------------------------------------------------#
 # SCENARIO PARAMETER UNCERTAINTY ----
 #------------------------------------------------------------------------#
-# Reads the per-scenario parameter uncertainty (Value, SD, Min, Max, Category)
-# from the "scenarios" sheet of Data/scenarios.xlsx and turns it into a usable
-# +/- range for each scenario x parameter, following this precedence:
+# Reads the per-scenario parameter values and uncertainty (Value, SD, Min, Max,
+# Category) from the "scenarios" sheet of Data/scenarios.xlsx and gives every
+# row a standard deviation:
 #
-#   1. SD present (and > 0)     -> range = Value +/- 2* SD          (source "SD")
-#   2. else Min AND Max present -> range = [Min, Max]            (source "MinMax")
-#   3. else                     -> CV = 2 assumed: SD = 2*|Value|,
-#                                  range = Value +/- 2*|Value|,  (source "CV2")
-#                                  with a WARNING (very wide, placeholder only).
+#   1. SD reported (> 0)  -> that SD                                 ("SD")
+#   2. otherwise          -> CV = cv_fallback (default from cv_default, else 1) ("CV-default")
+#   3. ... but if Min AND Max are reported and imply a smaller spread,
+#      the CV is reduced so that Min..Max spans +/- 2 SD:
+#      SD = (Max - Min) / 4                                         ("CV-MinMax")
+#   lo / hi = Value +/- 2 SD, cut to the reported Min / Max when present.
+#
+# Physical bounds (proportions in [0, 1], sign, pH ...) are applied later by
+# param_bounds() in R/sensitivity_helpers.R, for spreadsheet and model
+# parameters alike.
 #
 # USAGE
 #   source("R/scenario_uncertainty.R")
-#   u <- read_param_uncertainty()                 # tidy data frame
+#   u <- read_param_uncertainty()                      # tidy data frame
 #   u <- read_param_uncertainty(category = "Animal")   # animal params only
-# Columns: scenario, parameter, units, category, value, sd, min, max,
-#          lo, hi, unc_source (SD / MinMax / CV2), bounded (TRUE if the range
-#          was truncated to a physical bound, e.g. a_*/p_* to [0,1]).
+# Columns: scenario, parameter, units, category, value, sd_reported, sd (used),
+#          cv (used), min, max, lo, hi, unc_source (SD / CV-MinMax / CV-default).
 
 read_param_uncertainty <- function(path = "Data/scenarios.xlsx",
                                     sheet = "scenarios",
                                     category = NULL,
-                                    cv_fallback = 2,
+                                    cv_fallback = if (exists("cv_default")) cv_default else 1,
                                     warn_cv = TRUE) {
   if (!requireNamespace("readxl", quietly = TRUE))
     stop("read_param_uncertainty() needs the 'readxl' package.")
@@ -52,87 +56,36 @@ read_param_uncertainty <- function(path = "Data/scenarios.xlsx",
   if (!is.null(category))
     out <- out[!is.na(out$category) & out$category %in% category, , drop = FALSE]
 
-  # resolve a lo/hi range per row via the precedence above
-  has_sd <- is.finite(out$sd) & out$sd > 0
+  # ---- standard deviation for every row (SD rule) ----
+  #   SD reported (> 0)        -> sd = SD                          source "SD"
+  #   otherwise                -> sd = cv_fallback * |value|       source "CV-default"
+  #     ... unless Min/Max is reported and implies a smaller spread:
+  #         sd = (Max - Min) / 4, i.e. Min..Max spans +/- 2 SD     source "CV-MinMax"
+  # lo / hi = value +/- 2 sd, cut to the reported Min / Max when present.
+  # Physical bounds (proportions in [0, 1], sign constraints, ...) are NOT
+  # applied here; param_bounds() in R/sensitivity_helpers.R does that, so the
+  # same rules apply to parameters that are not in the spreadsheet.
+  out$sd_reported <- ifelse(is.finite(out$sd) & out$sd > 0, out$sd, NA_real_)
   has_mm <- is.finite(out$min) & is.finite(out$max) & (out$max > out$min)
+  sd_cv  <- cv_fallback * abs(out$value)
+  sd_mm  <- ifelse(has_mm, (out$max - out$min) / 4, NA_real_)
+  use_mm <- is.na(out$sd_reported) & has_mm & sd_mm < sd_cv
 
-  out$unc_source <- ifelse(has_sd, "SD", ifelse(has_mm, "MinMax", "CV2"))
-  out$lo <- NA_real_; out$hi <- NA_real_
+  out$unc_source <- ifelse(!is.na(out$sd_reported), "SD",
+                           ifelse(use_mm, "CV-MinMax", "CV-default"))
+  out$sd <- ifelse(out$unc_source == "SD", out$sd_reported,
+                   ifelse(use_mm, sd_mm, sd_cv))
+  out$cv <- ifelse(out$value != 0, out$sd / abs(out$value), NA_real_)
+  out$lo <- out$value - 2 * out$sd
+  out$hi <- out$value + 2 * out$sd
+  out$lo[has_mm] <- pmax(out$lo[has_mm], out$min[has_mm])
+  out$hi[has_mm] <- pmin(out$hi[has_mm], out$max[has_mm])
 
-  out$lo[has_sd] <- out$value[has_sd] - 2*out$sd[has_sd]
-  out$hi[has_sd] <- out$value[has_sd] + 2*out$sd[has_sd]
-
-  mm <- has_mm & !has_sd
-  out$lo[mm] <- out$min[mm]
-  out$hi[mm] <- out$max[mm]
-
-  cv <- out$unc_source == "CV2"
-  if (any(cv)) {
-    out$sd[cv] <- cv_fallback * abs(out$value[cv])
-    out$lo[cv] <- out$value[cv] - cv_fallback * abs(out$value[cv])
-    out$hi[cv] <- out$value[cv] + cv_fallback * abs(out$value[cv])
-    if (warn_cv)
-      warning("No SD or Min/Max for ", sum(cv), " parameter row(s); assumed ",
-              "CV = ", cv_fallback, " (range = value +/- ", cv_fallback,
-              "*|value|). These are placeholders: ",
-              paste(unique(paste0(out$scenario[cv], ":", out$parameter[cv])),
-                    collapse = ", "))
-  }
-
-  #------------------------------------------------------------------------#
-  # PHYSICAL BOUNDS ----
-  #------------------------------------------------------------------------#
-  # PHYSICAL BOUNDS. Some parameters are constrained to a fixed range and their
-  # uncertainty range must not exceed it:
-  #   a_* (assimilation eff.), p_* (production eff.)  in [0, 1]
-  #   LigFrac, a_root_herb, root_to_organic,
-  #     prop_feaces_earthworm_LMWC                    in [0, 1]
-  #   pct_claysilt                                    in [0, 100]
-  # Any other strictly-positive rate/pool parameter gets a lower floor > 0
-  # (negative rate constants are non-physical), while genuinely signed params
-  # (e.g. k_b_slope_pint < 0) are left alone.
-  # exact-name bounds
-  bounds_named <- list(
-    LigFrac                    = c(0, 1),
-    a_root_herb                = c(0, 1),
-    root_to_organic            = c(0, 1),
-    prop_feaces_earthworm_LMWC = c(0, 1),
-    p_a                        = c(0, 1),
-    p_b                        = c(0, 1),
-    pH                         = c(1, 14),
-    MAtheta                    = c(0, 1),
-    pct_claysilt               = c(0, 100))
-  # prefix-family bounds: assimilation (a_*) and production (p_*) efficiencies.
-  # The soil partition/scaling coefficients p_a, p_b (fractions, [0,1]) and p_c
-  # (an unbounded scaling coefficient) are handled by name below, not here.
-  in_unit_family <- grepl("^(a_|p_)", out$parameter) &
-                    !out$parameter %in% c("p_a", "p_b", "p_c")
-
-  lo_bound <- rep(-Inf, nrow(out)); hi_bound <- rep(Inf, nrow(out))
-  lo_bound[in_unit_family] <- 0;  hi_bound[in_unit_family] <- 1
-  for (nm in names(bounds_named)) {
-    hit <- out$parameter == nm
-    lo_bound[hit] <- bounds_named[[nm]][1]
-    hi_bound[hit] <- bounds_named[[nm]][2]
-  }
-
-  # clamp the resolved range to the physical bounds
-  out$lo <- pmax(out$lo, lo_bound)
-  out$hi <- pmin(out$hi, hi_bound)
-  # flag rows whose reported range was truncated by a bound (for transparency)
-  out$bounded <- (is.finite(lo_bound) & lo_bound > -Inf) |
-                 (is.finite(hi_bound) & hi_bound <  Inf)
-
-  # remaining strictly-positive rate/pool params: keep a small positive floor
-  # when a bound has not already been applied.
-  positive_only <- grepl("^(k_|K_|alpha_|d_|c_|NPP|BD|depth|rho_|CUE|theta_opt)",
-                         out$parameter) & is.finite(out$value) & out$value > 0
-  needs_floor <- positive_only & !out$bounded & is.finite(out$lo) & out$lo <= 0
-  out$lo[needs_floor] <- pmax(out$value[needs_floor] * 1e-3, .Machine$double.eps)
-
-  # guard: never let clamping invert the interval
-  bad_int <- is.finite(out$lo) & is.finite(out$hi) & out$lo > out$hi
-  out$lo[bad_int] <- pmin(out$value[bad_int], out$hi[bad_int])
+  cv <- out$unc_source == "CV-default"
+  if (warn_cv && any(cv))
+    warning("No SD and no narrowing Min/Max for ", sum(cv), " parameter row(s); assumed ",
+            "CV = ", cv_fallback, ": ",
+            paste(unique(paste0(out$scenario[cv], ":", out$parameter[cv])), collapse = ", "))
 
   rownames(out) <- NULL
   out

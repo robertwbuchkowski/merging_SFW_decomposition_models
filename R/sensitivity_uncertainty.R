@@ -1,7 +1,7 @@
 #------------------------------------------------------------------------#
 # Sensitivity analysis: uncertainty propagation (Latin hypercube) ----
 #------------------------------------------------------------------------#
-# Helper functions for Scripts/4_sensitivity_animal_effects.R. They were moved here from the script so
+# Helper functions for Scripts/5_uncertainty_animal_effect.R. They were moved here from the scripts so
 # that every custom function is defined BEFORE the script's analysis code
 # runs (sourced at the top of the script), which also lets
 # debugonce_functions() flag them all for step-through debugging.
@@ -21,59 +21,25 @@ q_trunc_norm <- function(u, mean, sd, lo, hi) {
 }
 
 #------------------------------------------------------------------------#
-# q_trunc_lnorm() ----
-#------------------------------------------------------------------------#
-# Used in: called by up_quantile()
-q_trunc_lnorm <- function(u, centre, gsd, lo, hi) {        # centre, lo, hi > 0
-  ml <- log(centre); sl <- log(gsd)
-  a <- pnorm(log(lo), ml, sl); b <- pnorm(log(hi), ml, sl)
-  exp(qnorm(a + u * (b - a), ml, sl))
-}
-
-#------------------------------------------------------------------------#
-# q_triangular() ----
-#------------------------------------------------------------------------#
-# Used in: called by up_quantile()
-q_triangular <- function(u, lo, mode, hi) {
-  mode <- min(max(mode, lo), hi); fc <- (mode - lo) / (hi - lo)
-  ifelse(u < fc, lo + sqrt(u * (hi - lo) * (mode - lo)),
-                 hi - sqrt((1 - u) * (hi - lo) * (hi - mode)))
-}
-
-#------------------------------------------------------------------------#
 # up_distribution() ----
 #------------------------------------------------------------------------#
 # Used in: called by run_uncertainty_propagation_fn()
-# Needs (set in 4_sensitivity_animal_effects.R): up_gsd, up_minmax_dist
-# up_distribution(): sampling distribution for one scenario x parameter
+# Sampling distribution for one scenario x parameter: a normal centred on the
+# model value with the standard deviation from param_sd_info() (reported SD,
+# else CV = cv_default, reduced by a reported Min/Max), truncated to the
+# analysed range (+/- 2 SD, reported Min/Max, physical bounds).
 up_distribution <- function(scenario, p, d0) {
-  rg <- range_for(scenario, p, d0, "main"); r <- unc_row(scenario, p)
-  if (rg$source == "SD" && !is.null(r) && is.finite(r$sd) && r$sd > 0)
-    return(list(dist = "truncated normal", lo = rg$lo, hi = rg$hi,
-                centre = r$value, spread = r$sd))
-  if (rg$source == "MinMax")
-    return(list(dist = if (up_minmax_dist == "uniform") "uniform" else "triangular",
-                lo = rg$lo, hi = rg$hi, centre = min(max(d0, rg$lo), rg$hi), spread = NA_real_))
-  if (rg$lo * rg$hi > 0)                                    # same sign: log-normal on magnitude
-    return(list(dist = "truncated log-normal", lo = rg$lo, hi = rg$hi,
-                centre = d0, spread = up_gsd))
-  list(dist = "uniform", lo = rg$lo, hi = rg$hi, centre = d0, spread = NA_real_)
+  s <- param_sd_info(scenario, p, d0)
+  list(dist = "truncated normal", lo = s$lo, hi = s$hi, centre = s$centre,
+       spread = s$sd, cv = s$cv, sd_source = s$source, bound_hit = s$bound_hit)
 }
 
 #------------------------------------------------------------------------#
 # up_quantile() ----
 #------------------------------------------------------------------------#
 # Used in: called by run_uncertainty_propagation_fn()
-up_quantile <- function(u, ds) {
-  switch(ds$dist,
-    "truncated normal"     = q_trunc_norm(u, ds$centre, ds$spread, ds$lo, ds$hi),
-    "triangular"           = q_triangular(u, ds$lo, ds$centre, ds$hi),
-    "truncated log-normal" = {
-      s  <- sign(ds$centre); mg <- sort(abs(c(ds$lo, ds$hi)))
-      s * q_trunc_lnorm(u, abs(ds$centre), ds$spread, mg[1], mg[2])
-    },
-    ds$lo + u * (ds$hi - ds$lo))                            # uniform
-}
+# Inverse CDF of the sampling distribution from up_distribution() at u in (0,1).
+up_quantile <- function(u, ds) q_trunc_norm(u, ds$centre, ds$spread, ds$lo, ds$hi)
 
 #------------------------------------------------------------------------#
 # lhs_unit() ----
@@ -88,7 +54,7 @@ lhs_unit <- function(n, k) {
 # baseline_values() ----
 #------------------------------------------------------------------------#
 # Used in: called by headline_effects(), targets_for()
-# Needs (set in 4_sensitivity_animal_effects.R): animal_pools
+# Needs (set in R/sensitivity_settings.R): animal_pools
 # baseline values used by the realism filter ("TotalC" = all non-animal pools)
 baseline_values <- function(eb, pools) {
   soil <- setdiff(names(eb), animal_pools)
@@ -101,7 +67,7 @@ baseline_values <- function(eb, pools) {
 # headline_effects() ----
 #------------------------------------------------------------------------#
 # Used in: called by make_headline_fun(), run_uncertainty_propagation_fn()
-# Needs (set in 4_sensitivity_animal_effects.R): animal_pools, eq_max_time
+# Needs (set in R/sensitivity_settings.R): animal_pools, eq_max_time
 # total and direct equilibrium effects + baseline values for one parameter vector
 headline_effects <- function(base_pair, pv, pools) {
   pair <- base_pair
@@ -110,7 +76,7 @@ headline_effects <- function(base_pair, pv, pools) {
     pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
   }
   out <- c(total = NA_real_, direct = NA_real_, converged = 0,
-           microbe_collapse = 0, kb_floor = 0, infeasible = 0,
+           microbe_collapse = 0, kb_floor = 0, infeasible = 0, base_min_pool = NA_real_,
            setNames(rep(NA_real_, length(pools)), paste0("base_", pools)))
   if (nzchar(infeasible_soil(pair$baseline$parms))) { out[["infeasible"]] <- 1; return(out) }
   tryCatch({
@@ -131,6 +97,7 @@ headline_effects <- function(base_pair, pv, pools) {
       microbe_collapse = as.numeric(grepl("microbe_collapse", paste(rg_t, rg_d))),
       kb_floor         = as.numeric(grepl("kb_floor", rg_t)),
       infeasible       = 0,
+      base_min_pool    = min(eb[setdiff(names(eb), animal_pools)]),  # realism: all pools > 0
       baseline_values(eb, pools))
   }, error = function(e) out)
 }
@@ -149,7 +116,8 @@ make_headline_fun <- function(base_pair, pools) {
 # targets_for() ----
 #------------------------------------------------------------------------#
 # Used in: called by run_uncertainty_propagation_fn()
-# Needs (set in 4_sensitivity_animal_effects.R): eq_max_time, up_filter_factor, up_filter_factor_by_pool, up_filter_pools
+# Needs (set in 5_uncertainty_animal_effect.R): up_filter_factor, up_filter_factor_by_pool, up_filter_pools
+# Needs (set in R/sensitivity_settings.R): eq_max_time
 # realism targets for one scenario: defaults from the all-default baseline,
 # overridden / extended by rows in up_targets_file
 targets_for <- function(scenario, base_pair, user_targets) {
@@ -180,8 +148,9 @@ targets_for <- function(scenario, base_pair, user_targets) {
 #------------------------------------------------------------------------#
 # run_uncertainty_propagation_fn() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/4_sensitivity_animal_effects.R (section: UNCERTAINTY PROPAGATION TO THE HEADLINE ANIMAL EFFECT)
-# Needs (set in 4_sensitivity_animal_effects.R): cl, scenarios, up_n, up_seed, up_targets_file
+# Used in: Scripts/5_uncertainty_animal_effect.R (section: UNCERTAINTY PROPAGATION TO THE HEADLINE ANIMAL EFFECT)
+# Needs (set in 5_uncertainty_animal_effect.R): cl, scenarios, up_n, up_pool_floor, up_seed,
+#   up_targets_file
 run_uncertainty_propagation_fn <- function() {
   user_targets <- if (file.exists(up_targets_file)) {
     u <- read.csv(up_targets_file, stringsAsFactors = FALSE)
@@ -213,8 +182,10 @@ run_uncertainty_propagation_fn <- function() {
       scenario = scenario, parameter = pn, parameter_label = pretty_param(pn),
       param_type = ps$ptype[pn], default = vapply(pn, function(p) parms_here[[p]], 0),
       distribution = vapply(dists, `[[`, "", "dist"),
+      sd_source = vapply(dists, `[[`, "", "sd_source"),
+      sd = vapply(dists, `[[`, 0, "spread"), cv = vapply(dists, `[[`, 0, "cv"),
       lo = vapply(dists, `[[`, 0, "lo"), hi = vapply(dists, `[[`, 0, "hi"),
-      centre = vapply(dists, `[[`, 0, "centre"), spread = vapply(dists, `[[`, 0, "spread"),
+      bound_hit = vapply(dists, `[[`, "", "bound_hit"),
       row.names = NULL)
 
     # realism targets
@@ -245,7 +216,10 @@ run_uncertainty_propagation_fn <- function() {
       is.finite(v) & v >= tg$lower[j] & v <= tg$upper[j]
     }, logical(up_n))
     if (up_n == 1) pass_pool <- matrix(pass_pool, nrow = 1)
-    accepted <- ok & apply(pass_pool, 1, all)
+    # realism filter: every listed pool within its target AND every baseline
+    # pool positive and non-zero (above up_pool_floor)
+    pos_ok   <- is.finite(Y[, "base_min_pool"]) & Y[, "base_min_pool"] > up_pool_floor
+    accepted <- ok & apply(pass_pool, 1, all) & pos_ok
 
     n_inf <- sum(inf); n_bad <- sum(!ok) - n_inf
     cat(sprintf("  %d/%d realistic samples converged; %d unrealistic soils removed\n",
@@ -262,7 +236,8 @@ run_uncertainty_propagation_fn <- function() {
     samp_rows[[scenario]] <- data.frame(scenario = scenario, sample = seq_len(up_n),
                                         accepted = accepted, Y, X, check.names = FALSE)
 
-    rej <- setNames(colSums(!pass_pool[ok, , drop = FALSE]), paste0("n_reject_", tg$pool))
+    rej <- c(setNames(colSums(!pass_pool[ok, , drop = FALSE]), paste0("n_reject_", tg$pool)),
+             n_reject_nonpositive_pool = sum(!pos_ok[ok]))
     diag_rows[[scenario]] <- data.frame(
       scenario = scenario, n_samples = up_n, n_infeasible = n_inf,
       n_nonconverged = n_bad, n_converged = sum(ok),

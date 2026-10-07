@@ -1,7 +1,7 @@
 #------------------------------------------------------------------------#
 # Sensitivity analysis: Morris drivers, outputs and figures ----
 #------------------------------------------------------------------------#
-# Helper functions for Scripts/4_sensitivity_animal_effects.R. They were moved here from the script so
+# Helper functions for the sensitivity scripts. They were moved here from the scripts so
 # that every custom function is defined BEFORE the script's analysis code
 # runs (sourced at the top of the script), which also lets
 # debugonce_functions() flag them all for step-through debugging.
@@ -31,15 +31,21 @@ run_morris <- function(mode = c("main", "standardized")) {
     pnames <- ps$pnames; ptype <- ps$ptype; a_here <- ps$animal
 
     lo <- hi <- setNames(numeric(length(pnames)), pnames)
-    src <- setNames(character(length(pnames)), pnames)
+    src <- hit <- setNames(character(length(pnames)), pnames)
+    sdv <- cvv <- setNames(rep(NA_real_, length(pnames)), pnames)
     for (p in pnames) {
       d0 <- parms_here[[p]]
       if (!is.finite(d0) || d0 == 0) { lo[p] <- hi[p] <- NA; next }
       rg <- range_for(scenario, p, d0, mode)
       lo[p] <- rg$lo; hi[p] <- rg$hi; src[p] <- rg$source
+      sdv[p] <- rg$sd; cvv[p] <- rg$cv; hit[p] <- rg$bound_hit
     }
     keep <- names(lo)[is.finite(lo) & is.finite(hi) & (hi > lo)]
     lo <- lo[keep]; hi <- hi[keep]; src <- src[keep]
+    hits <- hit[keep][nzchar(hit[keep])]
+    if (length(hits))
+      cat(sprintf("  %d parameters reach a bound: %s\n", length(hits),
+                  paste(sprintf("%s (%s)", names(hits), hits), collapse = ", ")))
 
     cat("Morris [", mode, "]: ", scenario, " - ", length(keep), " parameters, ",
         morris_r, " trajectories\n", sep = "")
@@ -90,6 +96,9 @@ run_morris <- function(mode = c("main", "standardized")) {
     ee_all[[scenario]] <- ee
     sm$scenario       <- scenario
     sm$range_source   <- src[sm$parameter]
+    sm$sd_used        <- sdv[sm$parameter]
+    sm$cv_used        <- cvv[sm$parameter]
+    sm$bound_hit      <- hit[sm$parameter]
     sm$range_lo       <- lo[sm$parameter]
     sm$range_hi       <- hi[sm$parameter]
     sm$default        <- vapply(sm$parameter, function(p) parms_here[[p]], numeric(1))
@@ -117,7 +126,8 @@ run_morris <- function(mode = c("main", "standardized")) {
     mutate(rank_clean = rank(-mu_star_clean, ties.method = "first", na.last = "keep")) %>%
     ungroup() %>%
     select(scenario, parameter, parameter_label, param_type, is_animal,
-           range_source, default, range_lo, range_hi, default_in_range,
+           range_source, sd_used, cv_used, default, range_lo, range_hi, bound_hit,
+           default_in_range,
            mu_star, mu_star_lo, mu_star_hi, sigma, sigma_lo, sigma_hi,
            n_ee, rank, rank_median, rank_lo, rank_hi, p_top_k,
            mu_star_clean, sigma_clean, n_ee_clean, rank_clean, n_ee_flagged,
