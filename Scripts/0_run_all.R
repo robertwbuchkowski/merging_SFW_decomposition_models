@@ -41,7 +41,7 @@ run_step1 <- TRUE    # fit animal parameters
 run_step2 <- TRUE    # equilibrium + seasonal spin-up (slow)
 run_step3 <- TRUE    # follow-up add/remove experiments
 run_step4 <- TRUE    # Morris sensitivity of the animal effect
-run_step5 <- TRUE    # uncertainty of the headline animal effect (Latin hypercube)
+run_step5 <- FALSE    # uncertainty of the headline animal effect (Latin hypercube)
 run_step6 <- FALSE   # multiple-stable-states test (diagnostic; off by default)
 
 steps <- c(
