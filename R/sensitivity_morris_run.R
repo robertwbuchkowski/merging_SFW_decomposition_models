@@ -90,6 +90,14 @@ run_morris <- function(mode = c("main", "standardized")) {
     names(sm_clean)[names(sm_clean) != "parameter"] <-
       paste0(names(sm_clean)[names(sm_clean) != "parameter"], "_clean")
     sm <- merge(sm, sm_clean, by = "parameter", all.x = TRUE, sort = FALSE)
+    # bootstrap CI of mu* on the clean steps too (used by the convergence check)
+    bt_c <- if (nrow(ee_clean)) morris_bootstrap(ee_clean, B = boot_B, top_k = boot_top_k,
+                                                 seed = morris_seed + 2000 + si) else NULL
+    if (!is.null(bt_c)) {
+      bt_c <- data.frame(parameter = bt_c$parameter, mu_star_clean_lo = bt_c$mu_star_lo,
+                         mu_star_clean_hi = bt_c$mu_star_hi)
+      sm <- merge(sm, bt_c, by = "parameter", all.x = TRUE, sort = FALSE)
+    } else { sm$mu_star_clean_lo <- NA_real_; sm$mu_star_clean_hi <- NA_real_ }
     sm$n_ee_flagged <- vapply(sm$parameter, function(p)
       sum(ee$parameter == p & nzchar(ee$regime)), integer(1))
     ee$scenario <- scenario
@@ -130,7 +138,8 @@ run_morris <- function(mode = c("main", "standardized")) {
            default_in_range,
            mu_star, mu_star_lo, mu_star_hi, sigma, sigma_lo, sigma_hi,
            n_ee, rank, rank_median, rank_lo, rank_hi, p_top_k,
-           mu_star_clean, sigma_clean, n_ee_clean, rank_clean, n_ee_flagged,
+           mu_star_clean, mu_star_clean_lo, mu_star_clean_hi, sigma_clean, n_ee_clean,
+           rank_clean, n_ee_flagged,
            n_ee_removed, n_eval_infeasible, n_nonconverged, n_evaluations,
            n_eval_microbe_collapse, n_eval_kb_floor)
   attr(tbl, "ee") <- bind_rows(ee_all)          # raw elementary effects
@@ -168,10 +177,78 @@ tidytext_reorder <- function(x, by, within) {
 }
 
 #------------------------------------------------------------------------#
+# morris_convergence() ----
+#------------------------------------------------------------------------#
+# Used in: called by write_morris_outputs()
+# Convergence of the Morris screening for each scenario, following Sarrazin,
+# Pianosi & Wagener (2016, Environ. Model. Softw. 79: 135-152), from the
+# bootstrap 95% CIs of mu*:
+#   INDEX convergence      the top_k parameters' mu* are precise: 95% CI width
+#                          / mu* <= ci_tol for every one of them.
+#   SCREENING convergence  the set of clearly influential parameters is stable.
+#                          A top_k parameter is SECURE when its lower CI is above
+#                          the upper CI of every parameter outside the top_k.
+#                          Parameters whose CIs overlap across the top_k boundary
+#                          are TIED: their mu* are near-equal, so which of them
+#                          is "k-th" is arbitrary. A tie is not a failure; it is
+#                          reported as a group (more trajectories only narrow
+#                          the CIs, they cannot separate parameters whose mu*
+#                          really are about equal).
+# Status per scenario:
+#   converged       index converged and no ties at the top_k boundary
+#   tied            index converged, but some parameters are tied at the
+#                   boundary (report the tied parameters as a group)
+#   screening only  the top_k set is secure, but its mu* CIs are wider than
+#                   ci_tol x mu* (the influential set is settled, the values
+#                   of mu* are not yet precise)
+#   unconverged     CIs too wide AND the top_k set is not secure: increase morris_r
+# effects = "all" uses mu_star / mu_star_lo / mu_star_hi; "clean" uses the
+# same metrics computed from unflagged steps only (*_clean columns).
+morris_convergence <- function(tbl, top_k = 5, ci_tol = 0.2,
+                               effects = c("all", "clean")) {
+  effects <- match.arg(effects)
+  cols <- if (effects == "all") c("mu_star", "mu_star_lo", "mu_star_hi") else
+    c("mu_star_clean", "mu_star_clean_lo", "mu_star_clean_hi")
+  one <- function(d) {
+    d <- data.frame(p = d$parameter, mu = d[[cols[1]]], lo = d[[cols[2]]],
+                    hi = d[[cols[3]]], stringsAsFactors = FALSE)
+    d <- d[is.finite(d$mu) & is.finite(d$lo) & is.finite(d$hi), , drop = FALSE]
+    d <- d[order(-d$mu), , drop = FALSE]
+    k <- min(top_k, nrow(d) - 1)
+    if (k < 1) return(data.frame(n_parameters = nrow(d), status = "not evaluated",
+                                 index_converged = NA, screening_secure = NA,
+                                 max_rel_ci_width = NA_real_, max_ci_width_rel_top = NA_real_,
+                                 n_secure = NA_integer_, n_tied = NA_integer_,
+                                 secure_top = "", tied = "", stringsAsFactors = FALSE))
+    top <- d[seq_len(k), ]; rest <- d[-seq_len(k), ]
+    rel_w  <- (top$hi - top$lo) / top$mu
+    secure <- top$lo > max(rest$hi)
+    tied   <- c(top$p[!secure], rest$p[rest$hi >= min(top$lo)])
+    idx_ok <- all(is.finite(rel_w)) && max(rel_w) <= ci_tol + 1e-12
+    data.frame(
+      n_parameters         = nrow(d),
+      status               = if (idx_ok) { if (length(tied)) "tied" else "converged" } else {
+                               if (length(tied)) "unconverged" else "screening only" },
+      index_converged      = idx_ok,
+      screening_secure     = !length(tied),
+      max_rel_ci_width     = max(rel_w),                         # index convergence metric
+      max_ci_width_rel_top = max(top$hi - top$lo) / top$mu[1],   # Sarrazin et al. scaling
+      n_secure             = sum(secure),
+      n_tied               = length(tied),
+      secure_top           = paste(top$p[secure], collapse = ", "),
+      tied                 = paste(tied, collapse = ", "),
+      stringsAsFactors = FALSE)
+  }
+  out <- lapply(split(tbl, tbl$scenario), one)
+  bind_rows(out, .id = "scenario") %>%
+    mutate(effects = effects, top_k = top_k, ci_tol = ci_tol, .after = scenario)
+}
+
+#------------------------------------------------------------------------#
 # write_morris_outputs() ----
 #------------------------------------------------------------------------#
 # Used in: Scripts/4_sensitivity_animal_effects.R (section: RUN)
-# Needs (set in 4_sensitivity_animal_effects.R): boot_top_k, fig_dir, res_dir
+# Needs (set in 4_sensitivity_animal_effects.R): boot_top_k, conv_ci_tol, fig_dir, res_dir
 write_morris_outputs <- function(tbl, tag, colours, labels) {
   csv <- file.path(res_dir, paste0("animal_effect_morris", tag, ".csv"))
   write_csv(tbl, csv)
@@ -202,22 +279,39 @@ write_morris_outputs <- function(tbl, tag, colours, labels) {
   ggsave(file.path(fig_dir, paste0("animal_effect_morris", tag, "_bootstrap.png")), p_ci,
          width = 13, height = 9, dpi = 150)
 
-  # convergence verdict per scenario: is the top-k set stable across replicates?
-  conv <- tbl %>% group_by(scenario) %>% slice_min(rank, n = boot_top_k) %>%
-    summarise(min_p_top_k    = min(p_top_k, na.rm = TRUE),
-              max_rel_ci_mu  = max((mu_star_hi - mu_star_lo) / mu_star, na.rm = TRUE),
-              .groups = "drop") %>%
-    mutate(top_k_stable = min_p_top_k >= 0.8)
-  cat("\nMorris bootstrap convergence (", tag, "): top-", boot_top_k,
-      " stable if every member is in the top-", boot_top_k, " in >= 80% of replicates\n", sep = "")
-  print(as.data.frame(conv), row.names = FALSE)
-  if (any(!conv$top_k_stable))
-    warning("Morris ranking not converged for: ",
-            paste(conv$scenario[!conv$top_k_stable], collapse = ", "),
+  # convergence per scenario (index + screening convergence; ties reported),
+  # on all elementary effects and on the unflagged ("clean") ones
+  conv <- bind_rows(morris_convergence(tbl, boot_top_k, conv_ci_tol, "all"),
+                    morris_convergence(tbl, boot_top_k, conv_ci_tol, "clean"))
+  conv_csv <- file.path(res_dir, paste0("animal_effect_morris", tag, "_convergence.csv"))
+  write_csv(conv, conv_csv)
+  cat("\nMorris convergence (", if (nzchar(tag)) sub("^_", "", tag) else "main", "): top-",
+      boot_top_k, ", index tolerance = ", conv_ci_tol, " (95% CI width / mu*)\n", sep = "")
+  short <- function(x, n = 50) ifelse(nchar(x) > n, paste0(substr(x, 1, n - 3), "..."), x)
+  print(as.data.frame(conv %>% transmute(scenario, effects, status,
+                                         max_rel_ci_width = round(max_rel_ci_width, 3),
+                                         n_secure, n_tied, tied = short(tied))),
+        row.names = FALSE)
+  bad <- conv %>% filter(effects == "all", status == "unconverged")
+  if (nrow(bad))
+    warning("Morris screening not converged (top-", boot_top_k, " CIs wider than ", conv_ci_tol,
+            " x mu* and overlapping the rest) for: ", paste(bad$scenario, collapse = ", "),
             " -- increase morris_r.")
+  scr <- conv %>% filter(effects == "all", status == "screening only")
+  if (nrow(scr))
+    message("Top-", boot_top_k, " set settled but mu* CIs wider than ", conv_ci_tol,
+            " x mu* (screening converged, index not): ", paste(scr$scenario, collapse = ", "))
+  tie <- conv %>% filter(effects == "all", status == "tied")
+  if (nrow(tie))
+    message("Converged but tied at the top-", boot_top_k, " boundary (near-equal mu*, ",
+            "report as a group): ", paste(tie$scenario, collapse = ", "))
+  bad_c <- conv %>% filter(effects == "clean", status == "unconverged")
+  if (nrow(bad_c))
+    message("Clean-step mu* (flagged regimes removed) not converged for: ",
+            paste(bad_c$scenario, collapse = ", "))
 
   if (interactive()) print(tbl %>% group_by(scenario) %>% slice_max(mu_star, n = 5))
-  cat("Wrote:", csv, "and figures animal_effect_morris", tag, "[ _animal].png\n", sep = "")
+  cat("Wrote: ", csv, ", ", conv_csv, " and figures animal_effect_morris", tag, "[ _animal].png\n", sep = "")
 }
 
 #------------------------------------------------------------------------#

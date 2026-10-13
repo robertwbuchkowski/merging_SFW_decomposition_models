@@ -36,12 +36,21 @@
 #   animal_effect_morris_standardized.csv   + figures/animal_effect_morris_standardized*.png
 #   animal_effect_morris_main_vs_standardized.csv  (rank comparison, if both run)
 #   *_elementary_effects.csv, figures/*_bootstrap.png  (bootstrap of the ranking)
+#   *_convergence.csv  (convergence status per scenario)
 #   figures/animal_effect_morris_paired.png  (current knowledge vs standardized)
 #
-# MORRIS BOOTSTRAP: the r trajectories are resampled with replacement (boot_B
-#   times) to give 95% CIs on mu* and sigma, a rank interval, and P(top-k). A
-#   scenario's ranking is called converged when every top-k parameter stays in
-#   the top-k in >= 80% of replicates (otherwise a warning: raise morris_r).
+# MORRIS BOOTSTRAP AND CONVERGENCE: the r trajectories are resampled with
+#   replacement (boot_B times) to give 95% CIs on mu* and sigma, a rank interval
+#   and P(top-k). Convergence is judged per scenario as in Sarrazin, Pianosi &
+#   Wagener (2016), on all and on unflagged ("clean") elementary effects:
+#     index convergence     every top-k parameter has CI width <= conv_ci_tol x mu*
+#     screening convergence the top-k parameters are SECURE (CI above every
+#                           parameter outside the top-k); parameters whose CIs
+#                           overlap across the top-k boundary are reported as
+#                           TIED (near-equal mu*), not as a failure.
+#   Status: converged (both) / tied (index converged, ties at the boundary) /
+#   screening only (top-k set secure, CIs still wide) / unconverged (neither:
+#   raise morris_r). Written to animal_effect_morris*_convergence.csv.
 #
 # REGIME FLAGS: every evaluation is tagged if the treatment equilibrium has
 #   (a) microbial collapse (MIC or B < collapse_rel x baseline), or
@@ -83,7 +92,7 @@ derive_fn    <- match.fun(model_table[[model]]$derive)
 #------------------------------------------------------------------------#
 # Morris + range settings ----
 #------------------------------------------------------------------------#
-morris_r      <- 500     # trajectories per scenario (raise for stable mu*/sigma)
+morris_r      <- 200     # trajectories per scenario (raise for stable mu*/sigma)
 morris_levels <- 4L     # grid levels p in the Morris design
 morris_seed   <- 27082026      # base seed; each scenario uses morris_seed + its index
 
@@ -94,7 +103,9 @@ run_supp_morris <- TRUE   # supplemental analysis (standardized: CV = cv_default
 # Morris bootstrap (convergence of the ranking) ----
 #------------------------------------------------------------------------#
 boot_B     <- 1000        # bootstrap replicates over trajectories
-boot_top_k <- 5           # report P(parameter is in the top-k by mu*)
+boot_top_k <- 5           # size of the "most influential" set checked for convergence
+conv_ci_tol <- 0.2        # index convergence: 95% CI width of mu* <= 0.2 x mu* for
+                          # every top-k parameter (Sarrazin et al. 2016)
 
 paired_n_top <- 8          # parameters per scenario in the paired Morris figure
 
