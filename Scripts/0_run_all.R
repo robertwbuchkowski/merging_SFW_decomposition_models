@@ -10,6 +10,8 @@
 # HOW TO USE
 #   * Toggle which steps run below. Later steps depend on earlier ones:
 #       1 fit_all_animals        -> Results/fitted_animal_params.csv
+#                                      (fit at the seasonal steady state by default;
+#                                       fit_forcing in the script)
 #       2 spinup_dynamic         -> Data/spinup/*.rds, Results/animal_eq_effect.csv
 #       3 followup_analysis      -> Data/followup/*.rds, Plots/*
 #       4 sensitivity_animal_effects -> Results/animal_effect_morris*.csv, figures
@@ -21,6 +23,11 @@
 #       7 parameter_identifiability  -> Results/identifiability_*.csv, figures
 #                                      (FME: which parameters artificial steady-state
 #                                       and animal-introduction data can identify)
+#     Steps 4, 5 and 7 evaluate the model at its SEASONAL steady state (annual
+#     limit cycle) by default; forcing_mode in R/sensitivity_settings.R switches
+#     them back to constant mean forcing. Seasonal is ~50-100x slower: step 4
+#     needs ~400 CPU-hours at morris_r = 100 and step 5 ~80 CPU-hours at
+#     up_n = 2000 (divide by n_cores); step 7 takes ~10 min per scenario.
 #   * Each script sources the R/ helpers it needs and is self-contained. This
 #     wrapper runs each one in the GLOBAL environment (as if you ran it by
 #     hand), optionally clearing it first so every step starts fresh, and

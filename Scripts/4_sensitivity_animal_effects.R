@@ -1,7 +1,7 @@
 #------------------------------------------------------------------------#
 # MORRIS SENSITIVITY OF THE ANIMAL EFFECT TO ALL PARAMETERS ----
 #------------------------------------------------------------------------#
-# MORRIS SENSITIVITY OF THE ANIMAL EFFECT TO ALL PARAMETERS (equilibrium)
+# MORRIS SENSITIVITY OF THE ANIMAL EFFECT TO ALL PARAMETERS (steady state)
 # One combined Morris elementary-effects screening over the GENERAL model
 # parameters, the SCENARIO-SPECIFIC parameters (Environment / Productivity rows
 # of scenarios.xlsx) and the ANIMAL parameters (Animal / Effect rows, only in the
@@ -9,8 +9,17 @@
 # along random Morris trajectories; per parameter it reports:
 #   mu_star  mean |elementary effect|  -> TOTAL sensitivity (rank on this)
 #   sigma    sd of elementary effect   -> interactions / non-linearity
-# The scalar output is the equilibrium animal effect on total soil + root C
-# (treatment - baseline), constant forcing, no dynamic spin-up.
+# The scalar output is the steady-state animal effect on total soil + root C
+# (treatment - baseline). With forcing_mode = "seasonal" (R/sensitivity_settings.R)
+# the steady state is the annual limit cycle under the seasonal climate forcing
+# and the effect is the difference of annual means; "constant" uses the
+# equilibrium under constant mean forcing (~50-100x faster, but the model is
+# nonlinear, so it can differ strongly from the seasonal result).
+# RUN TIME (seasonal, measured): ~10-50 s per evaluation (both arms; mean
+#   ~20-35 s by scenario; ~0.4 s with constant forcing), r x (k + 1) evaluations per scenario
+#   and range mode (k ~ 50 parameters). r = 100 is ~50 CPU-hours per scenario
+#   and mode, i.e. ~400 CPU-hours for 4 scenarios x 2 modes, divided by n_cores.
+#   Points that are impossible soils are skipped at no cost.
 #
 # TWO RANGE DEFINITIONS (toggle each below):
 #   MAIN (run_main_morris) - every parameter varies over its model value
@@ -26,8 +35,16 @@
 #   Both are cut to the physical bounds (proportions in [0, 1] including p_a
 #   and p_b, sign kept, pH, clay+silt). Every cut is reported in the
 #   bound_hit column and printed per scenario.
-#   Both use the SAME Morris trajectories (same seed per scenario), so any rank
-#   change between them is caused by the ranges alone.
+#   Both start from the same seed per scenario, so the trajectories are the
+#   same unless one mode has to redraw trajectories (below).
+# IMPOSSIBLE SOILS are excluded BEFORE any simulation:
+#   * the seasonal moisture amplitude is varied RELATIVE to the room available,
+#     theta_amp_rel = theta_amp / min(MAtheta, porosity - MAtheta) in [0, 1]
+#     (moisture_amp_relative in R/sensitivity_settings.R), so moisture never
+#     leaves [0, porosity] because of the amplitude;
+#   * every trajectory is checked point by point (mean moisture < porosity,
+#     porosity > 0; only BD, MAtheta and the amplitude matter) and redrawn if
+#     any point is impossible. The count is printed and kept in n_traj_redrawn.
 #   Shared settings (parameter list, SD rule, bounds, solver) are in
 #   R/sensitivity_settings.R.
 #
@@ -52,7 +69,7 @@
 #   screening only (top-k set secure, CIs still wide) / unconverged (neither:
 #   raise morris_r). Written to animal_effect_morris*_convergence.csv.
 #
-# REGIME FLAGS: every evaluation is tagged if the treatment equilibrium has
+# REGIME FLAGS: every evaluation is tagged if the treatment steady state has
 #   (a) microbial collapse (MIC or B < collapse_rel x baseline), or
 #   (b) aggregate breakdown at the model's 0.001 floor (kb_floor, earthworms).
 #   Flagged points are kept; Morris also reports mu*/sigma/rank from unflagged
@@ -70,6 +87,7 @@ source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 source("R/scenario_uncertainty.R"); source("R/morris_sensitivity.R")
 source("R/sensitivity_settings.R")    # shared: parameter list, SD rule, bounds, solver
+source("R/seasonal_steady_state.R")  # steady state under seasonal / constant forcing
 source("R/sensitivity_helpers.R")     # parameter sets, ranges, model evaluation
 source("R/sensitivity_morris_run.R")  # run_morris(), outputs, figures
 source("R/millennial_model.R"); source("R/init_millennial_state.R")
@@ -161,7 +179,8 @@ cl <- morris_cluster(
   source_files = c("R/climate_forcing.R", "R/spinup.R", "R/derive_millennial_parms.R",
                    "R/millennial_model.R", "R/init_millennial_state.R",
                    "R/setup.R", "R/compare_functions.R", "R/fit_animals.R",
-                   "R/sensitivity_settings.R", "R/sensitivity_helpers.R"),
+                   "R/sensitivity_settings.R", "R/seasonal_steady_state.R",
+                   "R/sensitivity_helpers.R"),
   export = c("derive_fn"))
 if (!is.null(cl)) cat("Running model evaluations on", length(cl), "worker processes.\n")
 

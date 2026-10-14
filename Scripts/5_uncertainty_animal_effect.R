@@ -1,11 +1,16 @@
 #------------------------------------------------------------------------#
 # UNCERTAINTY OF THE HEADLINE ANIMAL EFFECT (Latin hypercube) ----
 #------------------------------------------------------------------------#
-# Propagates parameter uncertainty to the headline result: the equilibrium
+# Propagates parameter uncertainty to the headline result: the steady-state
 # TOTAL and DIRECT animal effect on total soil + root C, per scenario.
 # All parameters screened by the Morris analysis (Scripts/4) are sampled
-# JOINTLY by Latin hypercube; every sample is solved to equilibrium (baseline,
-# treatment, treatment with indirect effects off).
+# JOINTLY by Latin hypercube; every sample is solved to its steady state
+# (baseline, treatment, treatment with indirect effects off).
+# STEADY STATE: forcing_mode in R/sensitivity_settings.R. "seasonal" = the
+#   annual limit cycle under the seasonal climate forcing, summarised by its
+#   annual mean (~30-40 s per sample, measured; 2000 samples x 4 scenarios
+#   ~80 CPU-hours, divided by n_cores); "constant" = equilibrium under constant
+#   mean forcing (fast, but can differ strongly from the seasonal result).
 #
 # SAMPLING: each parameter is drawn from a normal distribution centred on its
 #   model value, with SD = the SD reported in scenarios.xlsx, else a CV of
@@ -15,9 +20,13 @@
 #   including p_a and p_b, sign kept, pH, clay+silt). Parameters reaching a bound are
 #   listed in animal_effect_uncertainty_inputs.csv (bound_hit). Same rule as
 #   the Morris main analysis; shared settings are in R/sensitivity_settings.R.
+#   The seasonal moisture amplitude is sampled RELATIVE to the room available
+#   (theta_amp_rel, moisture_amp_relative), so moisture stays in [0, porosity];
+#   samples whose mean moisture >= porosity are skipped without solving.
 #
 # BASELINE REALISM FILTER: a sample is ACCEPTED only if its no-animal
-#   equilibrium (a) keeps EVERY pool positive and non-zero (> up_pool_floor) and
+#   steady state (annual mean) (a) keeps EVERY pool positive and non-zero
+#   (> up_pool_floor) and
 #   (b) stays within target ranges for the listed pools (defaults: each
 #   scenario's all-default baseline, reference / factor .. x factor; editable
 #   in Data/baseline_targets.csv).
@@ -31,6 +40,7 @@ source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 source("R/scenario_uncertainty.R"); source("R/morris_sensitivity.R")   # morris_cluster()
 source("R/sensitivity_settings.R")    # shared: parameter list, SD rule, bounds, solver
+source("R/seasonal_steady_state.R")  # steady state under seasonal / constant forcing
 source("R/sensitivity_helpers.R")     # parameter sets, SD rule, model evaluation
 source("R/sensitivity_uncertainty.R") # sampling, headline effects, realism filter
 source("R/millennial_model.R"); source("R/init_millennial_state.R")
@@ -53,12 +63,12 @@ derive_fn <- match.fun(model_table[[model]]$derive)
 #------------------------------------------------------------------------#
 # Sampling and filter settings ----
 #------------------------------------------------------------------------#
-up_n        <- 2000       # Latin-hypercube samples per scenario (3 equilibria each);
+up_n        <- 2000       # Latin-hypercube samples per scenario (3 steady states each);
                           # ~10-30% pass the realism filter, so keep this large
 up_seed     <- 20260827
 
 # Baseline realism filter. Defaults: each scenario's all-default baseline
-# equilibrium, accepted range = reference / factor .. x factor.
+# steady state (annual mean if seasonal), accepted range = reference / factor .. x factor.
 up_filter_pools  <- c("TotalC", "P", "M", "MIC", "B")   # TotalC = all non-animal pools
 up_filter_factor <- 2                 # default accepted range: reference / 2 .. x 2
 up_filter_factor_by_pool <- c(MIC = 10) # per-pool overrides: organic-horizon microbial
@@ -92,7 +102,8 @@ cl <- morris_cluster(
   source_files = c("R/climate_forcing.R", "R/spinup.R", "R/derive_millennial_parms.R",
                    "R/millennial_model.R", "R/init_millennial_state.R",
                    "R/setup.R", "R/compare_functions.R", "R/fit_animals.R",
-                   "R/sensitivity_settings.R", "R/sensitivity_helpers.R",
+                   "R/sensitivity_settings.R", "R/seasonal_steady_state.R",
+                   "R/sensitivity_helpers.R",
                    "R/sensitivity_uncertainty.R"),
   export = c("derive_fn"))
 if (!is.null(cl)) cat("Running model evaluations on", length(cl), "worker processes.\n")

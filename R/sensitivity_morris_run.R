@@ -15,6 +15,7 @@
 #------------------------------------------------------------------------#
 # Used in: Scripts/4_sensitivity_animal_effects.R (section: RUN)
 # Needs (set in 4_sensitivity_animal_effects.R): boot_B, boot_top_k, cl, morris_levels, morris_r, morris_seed, scenarios
+# Needs (set in R/sensitivity_settings.R): forcing_mode
 # run_morris(): Morris screening for every scenario under one range mode.
 # Each scenario is seeded with morris_seed + its index, so the main and
 # standardized runs share the same unit-hypercube trajectories.
@@ -48,9 +49,17 @@ run_morris <- function(mode = c("main", "standardized")) {
                   paste(sprintf("%s (%s)", names(hits), hits), collapse = ", ")))
 
     cat("Morris [", mode, "]: ", scenario, " - ", length(keep), " parameters, ",
-        morris_r, " trajectories\n", sep = "")
+        morris_r, " trajectories, ", forcing_mode, " forcing\n", sep = "")
     set.seed(morris_seed + si)
-    trajs <- morris_trajectories(length(keep), morris_r, levels = morris_levels)
+    # impossible soils are caught BEFORE any simulation: trajectories with a
+    # point whose mean moisture >= porosity (or other infeasible soil) are redrawn
+    accept_fun <- function(X) trajectory_feasible(X, lo, hi, parms_here)
+    trajs <- morris_trajectories(length(keep), morris_r, levels = morris_levels,
+                                 accept = accept_fun)
+    n_redrawn <- attr(trajs, "n_redrawn")
+    if (n_redrawn > 0)
+      cat(sprintf("  %d trajectories redrawn before running (contained an impossible soil)\n",
+                  n_redrawn))
     ee    <- morris_run(trajs, lo, hi,
                         eval_fun = make_effect_fun(base_pair),
                         verbose = FALSE, cl = cl)
@@ -60,7 +69,7 @@ run_morris <- function(mode = c("main", "standardized")) {
     n_inf <- if (length(sr)) sum(sr[grepl("^infeasible soil", names(sr))]) else 0L
     n_bad <- n_bad - n_inf
     if (n_inf > 0)
-      message(sprintf("Morris [%s] %s: %d of %d points are unrealistic soils (porosity <= 0 or <= soil moisture) and were removed.",
+      message(sprintf("Morris [%s] %s: %d of %d points are unrealistic soils (porosity <= 0, or soil moisture < 0 or >= porosity) and were removed.",
                       mode, scenario, n_inf, n_tot))
     rc    <- attr(ee, "regime_counts")
     n_mic <- if ("microbe_collapse" %in% names(rc)) rc[["microbe_collapse"]] else 0L
@@ -120,6 +129,7 @@ run_morris <- function(mode = c("main", "standardized")) {
     sm$n_ee_removed <- vapply(sm$parameter, function(p)
       sum(ee$parameter == p & !is.finite(ee$ee)), integer(1))
     sm$n_eval_infeasible <- n_inf
+    sm$n_traj_redrawn    <- n_redrawn
     sm$n_nonconverged <- n_bad
     sm$n_evaluations  <- n_tot
     sm$n_eval_microbe_collapse <- n_mic
@@ -140,7 +150,7 @@ run_morris <- function(mode = c("main", "standardized")) {
            n_ee, rank, rank_median, rank_lo, rank_hi, p_top_k,
            mu_star_clean, mu_star_clean_lo, mu_star_clean_hi, sigma_clean, n_ee_clean,
            rank_clean, n_ee_flagged,
-           n_ee_removed, n_eval_infeasible, n_nonconverged, n_evaluations,
+           n_ee_removed, n_eval_infeasible, n_traj_redrawn, n_nonconverged, n_evaluations,
            n_eval_microbe_collapse, n_eval_kb_floor)
   attr(tbl, "ee") <- bind_rows(ee_all)          # raw elementary effects
   tbl

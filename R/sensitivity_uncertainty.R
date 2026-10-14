@@ -67,8 +67,9 @@ baseline_values <- function(eb, pools) {
 # headline_effects() ----
 #------------------------------------------------------------------------#
 # Used in: called by make_headline_fun(), run_uncertainty_propagation_fn()
-# Needs (set in R/sensitivity_settings.R): animal_pools, eq_max_time
-# total and direct equilibrium effects + baseline values for one parameter vector
+# Needs (set in R/sensitivity_settings.R): animal_pools, forcing_mode (via steady_state())
+# total and direct steady-state effects + baseline values for one parameter vector
+# (steady state under forcing_mode: seasonal = annual mean of the limit cycle)
 headline_effects <- function(base_pair, pv, pools) {
   pair <- base_pair
   for (nm in names(pv)) {
@@ -80,19 +81,19 @@ headline_effects <- function(base_pair, pv, pools) {
            setNames(rep(NA_real_, length(pools)), paste0("base_", pools)))
   if (nzchar(infeasible_soil(pair$baseline$parms))) { out[["infeasible"]] <- 1; return(out) }
   tryCatch({
-    b  <- spinup_equilibrium(pair$baseline, max_time = eq_max_time, verbose = FALSE)
-    eb <- b$init_state_spin
-    tr <- spinup_equilibrium(pair$treatment, warm_start = eb, max_time = eq_max_time,
-                             verbose = FALSE)
-    td <- spinup_equilibrium(zero_indirect_effects(pair$treatment, verbose = FALSE),
-                             warm_start = eb, max_time = eq_max_time, verbose = FALSE)
-    soil <- setdiff(intersect(names(eb), names(tr$init_state_spin)), animal_pools)
+    # steady states under forcing_mode (seasonal: annual means of the limit cycles)
+    b  <- steady_state(pair$baseline, ref = pair$ref_b)
+    eb <- b$ss_mean
+    tr <- steady_state(pair$treatment, ref = pair$ref_t, warm_start = b$ss_const)
+    td <- steady_state(zero_indirect_effects(pair$treatment, verbose = FALSE),
+                       ref = pair$ref_t, warm_start = b$ss_const)
+    soil <- setdiff(intersect(names(eb), names(tr$ss_mean)), animal_pools)
     conv <- isTRUE(b$spin_info$converged) && isTRUE(tr$spin_info$converged) &&
             isTRUE(td$spin_info$converged)
-    rg_t <- regime_flags(eb, tr$init_state_spin, pair$treatment$parms)
-    rg_d <- regime_flags(eb, td$init_state_spin, pair$treatment$parms)
-    c(total  = sum(tr$init_state_spin[soil]) - sum(eb[soil]),
-      direct = sum(td$init_state_spin[soil]) - sum(eb[soil]),
+    rg_t <- regime_flags(eb, tr$ss_mean, pair$treatment$parms)
+    rg_d <- regime_flags(eb, td$ss_mean, pair$treatment$parms)
+    c(total  = sum(tr$ss_mean[soil]) - sum(eb[soil]),
+      direct = sum(td$ss_mean[soil]) - sum(eb[soil]),
       converged = as.numeric(conv),
       microbe_collapse = as.numeric(grepl("microbe_collapse", paste(rg_t, rg_d))),
       kb_floor         = as.numeric(grepl("kb_floor", rg_t)),
@@ -117,12 +118,11 @@ make_headline_fun <- function(base_pair, pools) {
 #------------------------------------------------------------------------#
 # Used in: called by run_uncertainty_propagation_fn()
 # Needs (set in 5_uncertainty_animal_effect.R): up_filter_factor, up_filter_factor_by_pool, up_filter_pools
-# Needs (set in R/sensitivity_settings.R): eq_max_time
+# Uses base_pair$nominal_b (make_base_pair(), steady state under forcing_mode)
 # realism targets for one scenario: defaults from the all-default baseline,
 # overridden / extended by rows in up_targets_file
 targets_for <- function(scenario, base_pair, user_targets) {
-  eb  <- spinup_equilibrium(base_pair$baseline, max_time = eq_max_time,
-                            verbose = FALSE)$init_state_spin
+  eb  <- base_pair$nominal_b         # nominal steady state (make_base_pair(), forcing_mode)
   ref <- baseline_values(eb, up_filter_pools)
   fac <- ifelse(up_filter_pools %in% names(up_filter_factor_by_pool),
                 up_filter_factor_by_pool[up_filter_pools], up_filter_factor)
@@ -194,7 +194,7 @@ run_uncertainty_propagation_fn <- function() {
     pools <- tg$pool
 
     cat("Uncertainty propagation: ", scenario, " - ", k, " parameters, ",
-        up_n, " LHS samples\n", sep = "")
+        up_n, " LHS samples, ", forcing_mode, " forcing\n", sep = "")
     set.seed(up_seed + si)
     U <- lhs_unit(up_n, k)
     X <- vapply(seq_len(k), function(j) up_quantile(U[, j], dists[[pn[j]]]), numeric(up_n))

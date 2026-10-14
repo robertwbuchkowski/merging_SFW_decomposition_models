@@ -32,7 +32,7 @@ param_bound_table <- list(
   root_to_organic = c(0, 1), a_root_herb = c(0, 1), LigFrac = c(0, 1), fCLAY = c(0, 1),
   prop_feaces_earthworm_LMWC = c(0, 1), winter_root_act_prop = c(0, 1),
   k_litterfall_ann = c(0, 1), k_litterfall_herb_ann = c(0, 1),
-  MAtheta = c(0, 1),
+  MAtheta = c(0, 1), theta_amp_rel = c(0, 1),
   pct_claysilt = c(0, 100),
   pH = c(1, 14))
 # All other parameters keep their sign: a positive value cannot go below
@@ -86,6 +86,7 @@ param_labels <- c(
   k_litterfall_herb_ann = "Herb. annual litterfall prop.",
   k_mort_root_tree = "Tree root mortality", k_mort_root_herb = "Herb. root mortality",
   T_amp = "Temperature amplitude", theta_amp = "Moisture amplitude",
+  theta_amp_rel = "Moisture amplitude (fraction of room)",
   fCLAY = "Clay fraction", LigFrac = "Lignin fraction",
   # animal parameters
   c_earthworm_om = "Earthworm organic matter consumption",
@@ -117,3 +118,40 @@ kb_floor     <- 0.001
 # (> 1e7 d); the solver stops as soon as it is steady, so a long horizon only
 # costs time where it is needed.
 eq_max_time <- 1e9
+
+#------------------------------------------------------------------------#
+# Forcing used for the steady state (Scripts/4, 5, 7) ----
+#------------------------------------------------------------------------#
+# "seasonal": the steady state is the annual LIMIT CYCLE under the seasonal
+#             climate forcing (R/seasonal_steady_state.R); effects and the
+#             realism filter use its ANNUAL MEAN. Realistic; ~10-30x slower.
+# "constant": equilibrium under constant mean forcing (runsteady), as before.
+forcing_mode <- "seasonal"
+
+#------------------------------------------------------------------------#
+# Seasonal soil moisture amplitude (Scripts/4 and 5) ----
+#------------------------------------------------------------------------#
+# Soil moisture swings MAtheta +/- theta_amp over the year and must stay
+# within [0, porosity]. Varying MAtheta, theta_amp and BD (porosity =
+# 1 - BD / rho_p) independently creates impossible soils. With
+# moisture_amp_relative = TRUE the Morris screening and the uncertainty
+# propagation vary the amplitude RELATIVE to the room available:
+#   theta_amp_rel = theta_amp / min(MAtheta, porosity - MAtheta),  in [0, 1]
+# so every sampled amplitude is physically possible; theta_amp is recomputed
+# from theta_amp_rel whenever MAtheta or BD change. Its SD is the SD of
+# theta_amp (reported or CV rule) divided by the default room, i.e. the same
+# CV. The remaining impossible combination (mean moisture >= porosity) is
+# removed before any simulation: Morris trajectories containing such a point
+# are redrawn (see run_morris()). The identifiability analysis (Scripts/7)
+# keeps the absolute amplitude.
+moisture_amp_relative <- TRUE
+# parameters that decide whether a soil is physically possible
+soil_feasibility_params <- c("BD", "rho_p", "MAtheta", "theta_amp", "theta_amp_rel")
+# default room per scenario, filled by make_base_pair()
+moisture_room_default <- new.env()
+lc_tol       <- 1e-6   # limit cycle: max relative |Phi(y) - y| over one year
+lc_ode_tol   <- 1e-7   # ODE rtol/atol of the one-year solves (must be < lc_tol)
+lc_reuse_jacobian <- FALSE  # FALSE: fresh Jacobian per evaluation (Morris / LHS points
+                            # are far from nominal); identifiability uses TRUE
+# (the identifiability analysis, Scripts/7, tightens both: it differentiates
+#  the solution numerically)

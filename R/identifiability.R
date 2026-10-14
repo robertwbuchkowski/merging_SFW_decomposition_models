@@ -6,7 +6,9 @@
 # Res. 37: 1015-1030) as implemented in the FME package (Soetaert & Petzoldt
 # 2010, J. Stat. Softw. 33(3)):
 #   1. The model generates ARTIFICIAL observations for three data types
-#      (ident_observations()):
+#      (ident_observations()), at the SEASONAL steady state (annual limit
+#      cycle under the seasonal climate forcing) unless settings$forcing =
+#      "constant":
 #        ss_noanimal  steady-state pools without the animal
 #        ss_animal    steady-state pools with the animal (incl. animal biomass)
 #        ts_y1..yN    pools (incl. animal biomass) once per year for N years
@@ -49,57 +51,56 @@ set_params <- function(obj, pv) {
 #------------------------------------------------------------------------#
 # Used in: called by make_ident_fun(), ident_reference()
 # Needs (set in R/sensitivity_settings.R): animal_pools
-# The artificial data set for one parameter vector `pv` (named numeric):
-#   ss_noanimal:<pool>  no-animal equilibrium (constant mean forcing)
-#   ss_animal:<pool>    with-animal equilibrium (constant mean forcing)
-#   ts_y<k>:<pool>      k = 1..ts_years after introducing the animal into the
-#                       no-animal soil (seeded at ts_seed_mod x its input
-#                       biomass). ts_forcing = "seasonal": the run starts from
-#                       the no-animal SEASONAL limit cycle (Newton shooting) and
-#                       is sampled on the same calendar day each year;
-#                       "constant": starts from the no-animal equilibrium and
-#                       uses constant mean forcing (fast; no seasonal signal).
-# `ref` (from ident_reference()) supplies nominal states used as warm starts,
-# so a small parameter change stays on the same solution branch.
-# Stops with an error if an equilibrium or limit cycle is not reached (a
-# finite-difference sensitivity from an unconverged solve is meaningless).
+# The artificial data set for one parameter vector `pv` (named numeric).
+# Steady states are taken under settings$forcing (see steady_state() in
+# R/seasonal_steady_state.R): "seasonal" = the annual limit cycle under the
+# seasonal climate forcing, "constant" = equilibrium under constant mean forcing.
+#   ss_noanimal:<pool>  no-animal steady state
+#   ss_animal:<pool>    with-animal steady state (incl. animal biomass)
+#       ss_stat = "sampling_day": pools on day sample_doy of the cycle (as a
+#                 field survey on that date); "annual_mean": annual means
+#   ts_y<k>:<pool>      k = 1..ts_years after the animal is introduced into the
+#                       no-animal soil on day sample_doy of its cycle (seeded at
+#                       ts_seed_mod x its input biomass), measured on the same
+#                       calendar day every year
+# `ref` = list(b, t): nominal steady-state references (first guess and
+# Jacobian), so a small parameter change stays on the same solution branch.
+# Stops with an error if a steady state is not reached (a finite-difference
+# sensitivity from an unconverged solve is meaningless). The returned vector
+# carries attr "ref" = the references of this run.
 ident_observations <- function(pv, base_pair, settings, ref = NULL) {
   s <- settings
   pair <- base_pair
   pair$baseline  <- set_params(pair$baseline,  pv)
   pair$treatment <- set_params(pair$treatment, pv)
-  why <- infeasible_soil(pair$baseline$parms)
+  why <- infeasible_soil(pair$baseline$parms, mode = s$forcing)
   if (nzchar(why)) stop(why)
 
-  b <- spinup_equilibrium(pair$baseline, warm_start = ref$ss_noanimal,
-                          max_time = s$eq_max_time, stol = s$eq_stol, verbose = FALSE)
-  t <- spinup_equilibrium(pair$treatment,
-                          warm_start = if (is.null(ref)) b$init_state_spin else ref$ss_animal,
-                          max_time = s$eq_max_time, stol = s$eq_stol, verbose = FALSE)
+  # small perturbations: start from the nominal Jacobian (reuse_jacobian = TRUE)
+  b <- steady_state(pair$baseline, ref = ref$b, mode = s$forcing, tol = s$lc_tol,
+                    rtol = s$lc_ode_tol, atol = s$lc_ode_tol, reuse_jacobian = TRUE)
+  t <- steady_state(pair$treatment, ref = ref$t, warm_start = b$ss_const, mode = s$forcing,
+                    tol = s$lc_tol, rtol = s$lc_ode_tol, atol = s$lc_ode_tol,
+                    reuse_jacobian = TRUE)
   if (!isTRUE(b$spin_info$converged) || !isTRUE(t$spin_info$converged))
-    stop("equilibrium not reached")
-  ss0 <- b$init_state_spin; ss1 <- t$init_state_spin
+    stop(s$forcing, " steady state not reached")
+  obs_state <- function(o) if (s$ss_stat == "annual_mean") o$ss_mean else
+    cycle_state_on(o, s$sample_doy)
+  ss0 <- obs_state(b); ss1 <- obs_state(t)
 
-  # starting state of the introduction experiment (no-animal soil)
-  if (s$ts_forcing == "seasonal") {
-    lc <- dynamic_spinup_newton(b, from = if (is.null(ref)) ss0 else ref$lc_noanimal,
-                                by = 73, tol = s$lc_tol, verbose = FALSE)
-    if (!isTRUE(lc$converged))
-      stop(sprintf("no-animal limit cycle not reached (residual %.1e > lc_tol %.0e)",
-                   lc$residual, s$lc_tol))
-    start <- lc$final_state
-  } else start <- ss0
-
+  # introduction experiment: no-animal soil on the sampling day, animal added
+  start   <- cycle_state_on(b, s$sample_doy)
   ws      <- pair$treatment$working_state
   shared  <- intersect(names(ws), names(start))
   ws[shared] <- start[shared]
   animals <- intersect(animal_pools, names(ws))
   ws[animals] <- pair$treatment$working_state[animals] * s$ts_seed_mod
   parms <- pair$treatment$parms
-  parms$climate_forcing <- if (s$ts_forcing == "seasonal") make_climate_forcing(parms) else
+  parms$climate_forcing <- if (s$forcing == "seasonal") make_climate_forcing(parms) else
     make_climate_forcing_equilibrium(parms)
-  out <- deSolve::ode(y = ws, times = 365 * (0:s$ts_years), func = pair$treatment$wrapped_model,
-                      parms = parms, atol = 1e-9, rtol = 1e-9)
+  out <- deSolve::ode(y = ws, times = s$sample_doy + 365 * (0:s$ts_years),
+                      func = pair$treatment$wrapped_model, parms = parms,
+                      rtol = s$lc_ode_tol, atol = s$lc_ode_tol)
   out <- as.data.frame(out)
   if (nrow(out) < s$ts_years + 1) stop("introduction run failed")
   pools <- names(ws)
@@ -108,7 +109,7 @@ ident_observations <- function(pv, base_pair, settings, ref = NULL) {
 
   y <- c(setNames(ss0, paste0("ss_noanimal:", names(ss0))),
          setNames(ss1, paste0("ss_animal:",   names(ss1))), ts)
-  if (s$ts_forcing == "seasonal") attr(y, "lc") <- start   # nominal cycle for warm starts
+  attr(y, "ref") <- list(b = b$ss_ref, t = t$ss_ref)
   y
 }
 
@@ -116,16 +117,15 @@ ident_observations <- function(pv, base_pair, settings, ref = NULL) {
 # ident_reference() ----
 #------------------------------------------------------------------------#
 # Used in: called by ident_sensitivity()
-# Nominal run (all parameters at their model values): the reference
-# observations and the nominal states used as warm starts by every perturbed run.
+# Nominal run (all parameters at their model values) at the identifiability
+# tolerances: the reference observations and the nominal steady-state
+# references used as first guesses by every perturbed run. Starts from the
+# references stored by make_base_pair().
 ident_reference <- function(pv, base_pair, settings) {
-  y <- ident_observations(pv, base_pair, settings, ref = NULL)
-  grab <- function(prefix) {
-    v <- y[startsWith(names(y), prefix)]
-    setNames(as.numeric(v), sub(prefix, "", names(v), fixed = TRUE))
-  }
-  list(y = c(y), ss_noanimal = grab("ss_noanimal:"), ss_animal = grab("ss_animal:"),
-       lc_noanimal = attr(y, "lc"))
+  y <- ident_observations(pv, base_pair, settings,
+                          ref = list(b = base_pair$ref_b, t = base_pair$ref_t))
+  r <- attr(y, "ref"); attr(y, "ref") <- NULL
+  list(y = y, b = r$b, t = r$t)
 }
 
 #------------------------------------------------------------------------#
@@ -143,11 +143,12 @@ make_ident_fun <- function(base_pair, settings, ref, pv0) {
   force(base_pair); force(settings); force(ref); force(pv0)
   function(m) {
     m <- m[names(pv0)]
-    y <- tryCatch(ident_observations(pv0 * m, base_pair, settings, ref),
+    y <- tryCatch(ident_observations(pv0 * m, base_pair, settings,
+                                     ref = list(b = ref$b, t = ref$t)),
                   error = function(e) stop("perturbed run failed (",
                     paste(names(m)[m != 1], collapse = ", "), "): ", conditionMessage(e),
                     call. = FALSE))
-    attr(y, "lc") <- NULL
+    attr(y, "ref") <- NULL
     y
   }
 }
@@ -166,7 +167,7 @@ make_ident_fun <- function(base_pair, settings, ref, pv0) {
 # Returns list(scenario, sens = sensFun object, ptype, animal, obs, time_s).
 ident_sensitivity <- function(scenario, settings) {
   t0 <- Sys.time()
-  bp    <- make_base_pair(scenario)
+  bp    <- make_base_pair(scenario, relative_moisture = FALSE)   # absolute amplitude
   parms <- bp$treatment$parms
   ps    <- param_set_for(scenario, parms)
   val   <- vapply(ps$pnames, function(p) as.numeric(parms[[p]]), numeric(1))

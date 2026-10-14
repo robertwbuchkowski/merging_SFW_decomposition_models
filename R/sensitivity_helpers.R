@@ -66,9 +66,27 @@ clamp_to_bounds <- function(v, param, default = NA_real_) {
 # set_param(): change ONE parameter and rebuild derived params + forcing.
 set_param <- function(obj, param, value) {
   obj$parms[[param]]        <- value
-  obj$parms                 <- derive_fn(obj$parms)
+  obj$parms                 <- apply_relative_moisture(derive_fn(obj$parms))
   obj$parms$climate_forcing <- make_climate_forcing(obj$parms)
   obj
+}
+
+#------------------------------------------------------------------------#
+# moisture_room() / apply_relative_moisture() ----
+#------------------------------------------------------------------------#
+# Used in: called by set_param(), make_base_pair(), trajectory_feasible()
+# moisture_room(): how far soil moisture can swing around its mean and stay in
+# [0, porosity]: min(MAtheta, porosity - MAtheta). Needs phi_por (derive_fn).
+moisture_room <- function(parms) min(parms$MAtheta, parms$phi_por - parms$MAtheta)
+
+# apply_relative_moisture(): when the parameter list carries theta_amp_rel
+# (relative amplitude, R/sensitivity_settings.R), set the absolute amplitude
+# theta_amp = theta_amp_rel x room for the CURRENT MAtheta and porosity.
+# Without theta_amp_rel the parameters are returned unchanged.
+apply_relative_moisture <- function(parms) {
+  if (is.null(parms$theta_amp_rel)) return(parms)
+  parms$theta_amp <- parms$theta_amp_rel * max(moisture_room(parms), 0)
+  parms
 }
 
 #------------------------------------------------------------------------#
@@ -77,12 +95,20 @@ set_param <- function(obj, param, value) {
 # Used in: called by effect_scalar(), headline_effects()
 # infeasible_soil(): parameter sets that describe an impossible soil. Porosity
 # (1 - BD / rho_p) must be positive and exceed the mean soil moisture, otherwise
-# the moisture functions take the square root of a negative number. Returns ""
-# or a short reason; such evaluations are skipped and reported, not solved.
-infeasible_soil <- function(parms) {
+# the moisture functions take the square root of a negative number. Under
+# SEASONAL forcing (forcing_mode, R/sensitivity_settings.R) the moisture
+# MAtheta +/- theta_amp must also stay >= 0 and <= porosity all year.
+# Returns "" or a short reason; such evaluations are skipped and reported, not solved.
+infeasible_soil <- function(parms, mode = if (exists("forcing_mode")) forcing_mode else "constant") {
   phi <- parms$phi_por
   if (!is.finite(phi) || phi <= 0) return("infeasible soil: porosity <= 0 (BD >= rho_p)")
   if (phi <= parms$MAtheta)        return("infeasible soil: porosity <= mean soil moisture")
+  if (mode == "seasonal" && is.finite(parms$theta_amp)) {
+    if (parms$MAtheta - abs(parms$theta_amp) < 0)
+      return("infeasible soil: seasonal soil moisture < 0 (theta_amp > MAtheta)")
+    if (parms$MAtheta + abs(parms$theta_amp) > phi)
+      return("infeasible soil: seasonal soil moisture > porosity")
+  }
   ""
 }
 
@@ -110,24 +136,25 @@ regime_flags <- function(eq_b, eq_t, parms) {
 # animal_effect_totalC() ----
 #------------------------------------------------------------------------#
 # Used in: called by effect_scalar()
-# Needs (set in R/sensitivity_settings.R): animal_pools, eq_max_time
-# equilibrium TOTAL animal effect on total soil + root C (scalar, g C m-2).
+# Needs (set in R/sensitivity_settings.R): animal_pools, forcing_mode
+# Steady-state TOTAL animal effect on total soil + root C (scalar, g C m-2):
+# treatment minus baseline, both at their steady state under forcing_mode
+# (seasonal: annual mean of the limit cycle; constant: equilibrium under
+# constant mean forcing; see steady_state() in R/seasonal_steady_state.R).
+# The nominal solutions stored by make_base_pair() (pair$ref_b, pair$ref_t)
+# are used as first guesses.
 # Attaches `converged` (TRUE only if BOTH arms reached a stable steady state)
 # and `regime` (see regime_flags) for the Morris driver.
 animal_effect_totalC <- function(pair) {
-  pair$baseline  <- spinup_equilibrium(pair$baseline, max_time = eq_max_time,
-                                       verbose = FALSE)
-  pair$treatment <- spinup_equilibrium(pair$treatment,
-                                       warm_start = pair$baseline$init_state_spin,
-                                       max_time = eq_max_time, verbose = FALSE)
-  eq_b <- pair$baseline$init_state_spin
-  eq_t <- pair$treatment$init_state_spin
-  conv <- isTRUE(pair$baseline$spin_info$converged) &&
-          isTRUE(pair$treatment$spin_info$converged)
+  b <- steady_state(pair$baseline, ref = pair$ref_b)
+  t <- steady_state(pair$treatment, ref = pair$ref_t, warm_start = b$ss_const)
+  eq_b <- b$ss_mean
+  eq_t <- t$ss_mean
+  conv <- isTRUE(b$spin_info$converged) && isTRUE(t$spin_info$converged)
   soil <- setdiff(intersect(names(eq_b), names(eq_t)), animal_pools)
   val  <- sum(eq_t[soil]) - sum(eq_b[soil])
   attr(val, "converged") <- conv
-  attr(val, "regime")    <- if (conv) regime_flags(eq_b, eq_t, pair$treatment$parms) else ""
+  attr(val, "regime")    <- if (conv) regime_flags(eq_b, eq_t, t$parms) else ""
   val
 }
 
@@ -191,6 +218,21 @@ unc_row <- function(scenario, param) {
 # standardized Morris analysis.
 param_sd_info <- function(scenario, param, default, use_reported_sd = TRUE,
                           use_minmax = TRUE) {
+  if (param == "theta_amp_rel") {
+    # relative moisture amplitude: the rule applied to the ABSOLUTE amplitude
+    # theta_amp (its reported SD, Min/Max and bounds), divided by the default
+    # room min(MAtheta, porosity - MAtheta); the upper end is cut at 1 (the
+    # amplitude that just reaches 0 or porosity)
+    room <- get0(scenario, envir = moisture_room_default, inherits = FALSE)
+    if (is.null(room)) stop("theta_amp_rel: run make_base_pair(\"", scenario, "\") first")
+    s <- param_sd_info(scenario, "theta_amp", default * room, use_reported_sd, use_minmax)
+    lo <- s$lo / room; hi <- s$hi / room
+    hit <- if (nzchar(s$bound_hit)) s$bound_hit else character(0)
+    if (hi > 1) { hi <- 1; hit <- c(hit, "upper:moisture room") }
+    if (lo > hi) lo <- hi
+    return(list(sd = s$sd / room, cv = s$cv, source = s$source, lo = lo, hi = hi,
+                centre = default, bound_hit = paste(hit, collapse = "; ")))
+  }
   r <- unc_row(scenario, param)
   has_mm <- use_minmax && !is.null(r) && is.finite(r$min) && is.finite(r$max) && r$max > r$min
   if (use_reported_sd && !is.null(r) && is.finite(r$sd_reported)) {
@@ -243,7 +285,9 @@ range_for <- function(scenario, param, default, mode = c("main", "standardized")
 # Needs (set in R/sensitivity_settings.R): sweep_params
 # param_set_for(): the parameters screened in one scenario and their class
 # (general / scenario-specific / animal). Shared by Morris and the uncertainty
-# propagation so both use exactly the same parameter set.
+# propagation so both use exactly the same parameter set. When the base pair
+# carries theta_amp_rel (relative moisture amplitude, see make_base_pair()),
+# it is screened in place of theta_amp.
 param_set_for <- function(scenario, parms_here) {
   a_here <- if (!is.null(animal_unc)) {
     a <- animal_unc[animal_unc$scenario == scenario, , drop = FALSE]
@@ -258,19 +302,76 @@ param_set_for <- function(scenario, parms_here) {
   ptype  <- setNames(rep("general", length(pnames)), pnames)
   ptype[pnames %in% s_here] <- "scenario-specific"
   ptype[pnames %in% a_here] <- "animal"
+  # relative moisture amplitude (make_base_pair(relative_moisture = TRUE)):
+  # screen theta_amp_rel in place of theta_amp
+  if (!is.null(parms_here$theta_amp_rel) && "theta_amp" %in% pnames) {
+    pnames[pnames == "theta_amp"] <- "theta_amp_rel"
+    names(ptype)[names(ptype) == "theta_amp"] <- "theta_amp_rel"
+  }
   list(pnames = pnames, ptype = ptype, animal = a_here)
 }
 
 #------------------------------------------------------------------------#
 # make_base_pair() ----
 #------------------------------------------------------------------------#
-# Used in: called by run_morris(), run_uncertainty_propagation_fn()
-# Needs (set in Scripts/4 and Scripts/5): fitted_params, model, scen
-# base scenario pair with the fitted animal parameters applied
-make_base_pair <- function(scenario) {
+# Used in: called by run_morris(), run_uncertainty_propagation_fn(),
+#   ident_sensitivity()
+# Needs (set in Scripts/4, 5 and 7): fitted_params, model, scen
+# Needs (set in R/sensitivity_settings.R): forcing_mode
+# Base scenario pair with the fitted animal parameters applied, plus the
+# NOMINAL steady states under forcing_mode (all parameters at their values):
+#   ref_b, ref_t      references for steady_state() (first guess + Jacobian)
+#   nominal_b, nominal_t  steady states used as "the" nominal values (annual
+#                     mean for seasonal forcing), e.g. for the realism filter
+make_base_pair <- function(scenario, with_reference = TRUE,
+                           relative_moisture = moisture_amp_relative) {
   bp <- setup_scenario_pair(model, scen, scenario)
   if (!is.null(fitted_params))
     bp$treatment <- apply_fitted_params(bp$treatment, fitted_params,
                                         model, scenario, verbose = FALSE)
+  if (relative_moisture) {
+    # express the moisture amplitude relative to the room available at the
+    # default MAtheta and porosity (same value of theta_amp at the default)
+    pr   <- derive_fn(bp$baseline$parms)
+    room <- moisture_room(pr)
+    if (is.finite(room) && room > 0 && is.finite(pr$theta_amp) && pr$theta_amp <= room) {
+      for (arm in c("baseline", "treatment"))
+        bp[[arm]]$parms$theta_amp_rel <- pr$theta_amp / room
+      assign(scenario, room, envir = moisture_room_default)
+    } else warning("Default soil moisture of ", scenario, " leaves the range [0, porosity]",
+                   " during the year; the moisture amplitude stays absolute.", call. = FALSE)
+  }
+  if (with_reference) {
+    b <- steady_state(bp$baseline)
+    t <- steady_state(bp$treatment, warm_start = b$ss_const)
+    if (!isTRUE(b$spin_info$converged) || !isTRUE(t$spin_info$converged))
+      warning("Nominal ", forcing_mode, " steady state not reached for ", scenario, call. = FALSE)
+    bp$ref_b <- b$ss_ref; bp$ref_t <- t$ss_ref
+    bp$nominal_b <- b$ss_mean; bp$nominal_t <- t$ss_mean
+  }
   bp
+}
+
+#------------------------------------------------------------------------#
+# trajectory_feasible() ----
+#------------------------------------------------------------------------#
+# Used in: called by run_morris() (as the accept rule of morris_trajectories())
+# Needs (set in R/sensitivity_settings.R): soil_feasibility_params, forcing_mode
+# TRUE when every point of a Morris trajectory X (unit scale, columns =
+# parameters in the order of lo/hi) describes a physically possible soil
+# (infeasible_soil() returns ""). Only the soil parameters (BD, rho_p,
+# MAtheta, theta_amp / theta_amp_rel) decide this, so only those are mapped
+# to parameter values and checked, without solving the model.
+trajectory_feasible <- function(X, lo, hi, base_parms) {
+  cols <- which(names(lo) %in% soil_feasibility_params)
+  if (!length(cols)) return(TRUE)
+  U <- unique(X[, cols, drop = FALSE])
+  for (i in seq_len(nrow(U))) {
+    p <- base_parms
+    v <- lo[cols] + U[i, ] * (hi[cols] - lo[cols])
+    for (j in seq_along(cols)) p[[names(lo)[cols[j]]]] <- v[[j]]
+    p <- apply_relative_moisture(derive_fn(p))
+    if (nzchar(infeasible_soil(p))) return(FALSE)
+  }
+  TRUE
 }

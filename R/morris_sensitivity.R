@@ -27,7 +27,7 @@
 # standard Morris construction with a p-level grid and step delta = p/(2(p-1)).
 # Returns a list of (k+1) x k matrices in [0,1]; each row is a design point and
 # consecutive rows differ in exactly one coordinate by +/- delta.
-morris_trajectories <- function(k, r, levels = 4L) {
+morris_trajectories <- function(k, r, levels = 4L, accept = NULL, max_draws = 1000L * r) {
   p     <- as.integer(levels)
   delta <- p / (2 * (p - 1))                 # canonical Morris step (in [0,1])
   grid  <- seq(0, 1 - delta, length.out = p / 2)   # feasible starting levels
@@ -45,7 +45,18 @@ morris_trajectories <- function(k, r, levels = 4L) {
     # clamp into [0,1] against floating error
     pmin(pmax(Bstar, 0), 1)
   }
-  replicate(r, make_one(), simplify = FALSE)
+  if (is.null(accept)) return(replicate(r, make_one(), simplify = FALSE))
+  # keep only trajectories whose every point passes accept(X); redraw others
+  out <- vector("list", r); n_draw <- 0L; n_ok <- 0L
+  while (n_ok < r) {
+    if (n_draw >= max_draws)
+      stop(sprintf("morris_trajectories: only %d of %d trajectories passed accept() after %d draws",
+                   n_ok, r, n_draw))
+    X <- make_one(); n_draw <- n_draw + 1L
+    if (isTRUE(accept(X))) { n_ok <- n_ok + 1L; out[[n_ok]] <- X }
+  }
+  attr(out, "n_redrawn") <- n_draw - r
+  out
 }
 
 #------------------------------------------------------------------------#

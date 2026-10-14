@@ -10,9 +10,20 @@
 #
 # Both responses are monotonic (verified), so each goal is a 1-D root-find
 # (stats::uniroot) with an automatically expanded bracket. The two are fit by
-# coordinate descent because they interact weakly. Equilibria are obtained
-# with the robust runsteady spin-up (spinup_equilibrium), warm-started across
-# iterations for speed.
+# coordinate descent because they interact weakly.
+#
+# FORCING (argument `forcing`):
+#   "seasonal" (default)  the steady state is the annual LIMIT CYCLE under the
+#       seasonal climate forcing; biomass and pool effects are ANNUAL MEANS of
+#       the cycle (steady_state() in R/seasonal_steady_state.R) -- the same
+#       steady state as the sensitivity, uncertainty and identifiability
+#       analyses (Scripts/4, 5, 7). Needs R/sensitivity_settings.R and
+#       R/seasonal_steady_state.R sourced. The constant-forcing fit is run
+#       first (seconds) and its values start the seasonal search, which then
+#       uses small bracketing steps: a limit cycle at a far-off trial rate (e.g.
+#       the uncalibrated adj_* = 1) can take minutes to solve. ~1-8 min per animal.
+#   "constant"  equilibrium under constant mean forcing (runsteady,
+#       spinup_equilibrium); fast (< 1 s per evaluation).
 #
 # Returns the calibrated treatment object plus a full iteration $history so
 # you can see exactly what happened. Requires setup.R, spinup.R sourced.
@@ -178,7 +189,11 @@ fit_animal_params <- function(treatment, baseline,
                               tol_effect  = 1.0,    # percentage points
                               max_outer   = 6,
                               max_time = 1e7, stol = 1e-8,
+                              forcing = c("seasonal", "constant"),
                               verbose = TRUE) {
+  forcing <- match.arg(forcing)
+  if (forcing == "seasonal" && !exists("steady_state", mode = "function"))
+    stop("forcing = \"seasonal\" needs R/sensitivity_settings.R and R/seasonal_steady_state.R sourced.")
 
   animals_all    <- c("Earthworm", "Detritivore", "RootHerb")
   active_animals <- intersect(animals_all, treatment$active)
@@ -207,10 +222,40 @@ fit_animal_params <- function(treatment, baseline,
   if (do_effect && (is.null(effect_param) || is.na(effect_param)))
     stop("Effect fitting requested but no effect_param for ", animal, " - pass effect_param=.")
 
-  # baseline equilibrium (animal params do not affect it) -- compute once
-  if (is.null(baseline$init_state_spin))
-    baseline <- spinup_equilibrium(baseline, max_time = max_time, stol = stol, verbose = FALSE)
-  base_eq <- baseline$init_state_spin
+  # seasonal fit: start from the (fast) constant-forcing fit, which is usually
+  # within a factor of ~2 of the seasonal answer
+  constant_start <- NULL
+  if (forcing == "seasonal") {
+    pre <- suppressWarnings(fit_animal_params(
+      treatment, baseline, animal = animal, scenario = scenario,
+      target_biomass = target_biomass, biomass_param = biomass_param,
+      effect_pool = if (do_effect) effect_pool else NULL,
+      target_effect_pct = if (do_effect) target_effect_pct else NULL,
+      effect_param = effect_param, tol_biomass = tol_biomass, tol_effect = tol_effect,
+      max_outer = max_outer, max_time = max_time, stol = stol,
+      forcing = "constant", verbose = FALSE))
+    treatment$parms[[biomass_param]] <- pre$parms[[biomass_param]]
+    if (do_effect) treatment$parms[[effect_param]] <- pre$parms[[effect_param]]
+    constant_start <- pre$fit$fitted_biomass_param
+    if (verbose) message(sprintf("constant-forcing fit: %s = %.4g (start of the seasonal fit)",
+                                 biomass_param, constant_start))
+  }
+  bracket_step <- if (forcing == "seasonal") 0.1 else 0.4   # log10 units for the feeding rate
+
+  # baseline steady state (animal params do not affect it) -- compute once.
+  # base_const = constant-forcing equilibrium (the fixed starting state below);
+  # base_eq    = the steady state the targets refer to (annual mean if seasonal)
+  if (forcing == "seasonal") {
+    bs <- steady_state(baseline, mode = "seasonal")
+    if (!isTRUE(bs$spin_info$converged))
+      warning(sprintf("fit_animal_params(%s): baseline limit cycle not reached.", scenario))
+    base_const <- bs$ss_const
+    base_eq    <- bs$ss_mean
+  } else {
+    if (is.null(baseline$init_state_spin))
+      baseline <- spinup_equilibrium(baseline, max_time = max_time, stol = stol, verbose = FALSE)
+    base_const <- base_eq <- baseline$init_state_spin
+  }
 
   # Equilibrium evaluator for the treatment. EVERY evaluation starts from the
   # SAME state: the baseline equilibrium for the shared pools plus the animal at
@@ -220,14 +265,33 @@ fit_animal_params <- function(treatment, baseline,
   # regrowth from ~0 is so slow that the steady-state test is met in a false
   # "microbe-free" state. Chained warm starts then carry that false state into
   # the next trials and the calibration lands on the wrong feeding rate.
+  # Seasonal forcing: the constant-forcing equilibrium from that same fixed
+  # start is the first guess for the limit cycle, scaled pool by pool by the
+  # ratio cycle / equilibrium of the NO-ANIMAL baseline (ref_t). Not the
+  # treatment at its starting parameters: an uncalibrated feeding rate (e.g.
+  # adj_* = 1) can collapse the microbes, and scaling by that state starts
+  # every trial in the false microbe-free cycle. The Jacobian of the previous
+  # trial is reused (it is not a state; a poor one is refreshed automatically).
   ref_start <- treatment$working_state
-  shared0   <- intersect(names(ref_start), names(base_eq))
-  ref_start[shared0] <- base_eq[shared0]
-  last_conv <- TRUE
+  shared0   <- intersect(names(ref_start), names(base_const))
+  ref_start[shared0] <- base_const[shared0]
+  last_conv  <- TRUE
+  last_const <- NULL
+  ref_t <- if (forcing == "seasonal")
+    list(const = bs$ss_ref$const, cycle = bs$ss_ref$cycle, J = NULL) else NULL
   eq_now <- function() {
+    if (forcing == "seasonal") {
+      sp <- steady_state(treatment, ref = ref_t, warm_start = ref_start, mode = "seasonal",
+                         reuse_jacobian = TRUE)
+      last_conv  <<- isTRUE(sp$spin_info$converged)
+      if (last_conv && !is.null(sp$ss_ref$J)) ref_t$J <<- sp$ss_ref$J
+      last_const <<- sp$ss_const
+      return(sp$ss_mean)
+    }
     sp <- spinup_equilibrium(treatment, warm_start = ref_start,
                              max_time = max_time, stol = stol, verbose = FALSE)
-    last_conv <<- isTRUE(sp$spin_info$converged)
+    last_conv  <<- isTRUE(sp$spin_info$converged)
+    last_const <<- sp$init_state_spin
     sp$init_state_spin
   }
   effect_of <- function(eq) 100 * (eq[effect_pool] - base_eq[effect_pool]) /
@@ -244,7 +308,7 @@ fit_animal_params <- function(treatment, baseline,
       unname(eq_now()[animal]) - target_biomass
     }
     x0 <- log10(treatment$parms[[biomass_param]])
-    br <- .bracket_root(fb, x0, step = 0.4)
+    br <- .bracket_root(fb, x0, step = bracket_step)
     if (is.null(br)) {
       warning("Could not bracket a feeding rate for target biomass ", target_biomass,
               " (target may be outside the achievable range).")
@@ -264,7 +328,7 @@ fit_animal_params <- function(treatment, baseline,
         unname(effect_of(eq_now())) - target_effect_pct
       }
       e0 <- treatment$parms[[effect_param]]
-      step_e <- max(abs(e0), 0.1) * 0.5
+      step_e <- max(abs(e0), 0.1) * (if (forcing == "seasonal") 0.15 else 0.5)
       bre <- .bracket_root(fe, e0, step = step_e)
       if (is.null(bre)) {
         warning("Target effect ", target_effect_pct, "% on ", effect_pool,
@@ -301,12 +365,13 @@ fit_animal_params <- function(treatment, baseline,
     if (ok_b && ok_e) break
   }
 
-  treatment$init_state_spin <- eq_now()
+  eq_fin <- eq_now()                    # steady state at the fitted values
+  treatment$init_state_spin <- last_const   # constant-forcing equilibrium (warm start)
+  treatment$fit_state       <- eq_fin       # = init_state_spin for constant forcing
 
   #------------------------------------------------------------------------#
   # verification: did the fit hit its target, in a healthy state? ----
   #------------------------------------------------------------------------#
-  eq_fin  <- treatment$init_state_spin
   B_fin   <- unname(eq_fin[animal])
   hit_target <- is.finite(B_fin) &&
     abs(B_fin - target_biomass) / max(abs(target_biomass), 1e-8) < tol_biomass
@@ -330,11 +395,12 @@ fit_animal_params <- function(treatment, baseline,
     hit_target = hit_target,
     microbes_collapsed = paste(collapsed, collapse = " "),
     biomass_param = biomass_param, fitted_biomass_param = treatment$parms[[biomass_param]],
-    target_biomass = target_biomass, achieved_biomass = unname(treatment$init_state_spin[animal]),
+    forcing = forcing, constant_start_biomass_param = constant_start,
+    target_biomass = target_biomass, achieved_biomass = unname(eq_fin[animal]),
     effect_param = if (do_effect) effect_param else NA,
     fitted_effect_param = if (do_effect) treatment$parms[[effect_param]] else NA,
     effect_pool = effect_pool, target_effect_pct = target_effect_pct,
-    achieved_effect_pct = if (do_effect) unname(effect_of(treatment$init_state_spin)) else NA,
+    achieved_effect_pct = if (do_effect) unname(effect_of(eq_fin)) else NA,
     history = do.call(rbind, history)
   )
   treatment
@@ -467,7 +533,7 @@ save_fitted_params <- function(summary_long,
   need <- c("model", "scenario", "animal", "param", "fitted", "role")
   if (!all(need %in% names(summary_long)))
     stop("save_fitted_params(): summary_long needs columns ", paste(need, collapse = ", "))
-  keep <- summary_long[, need]
+  keep <- summary_long[, c(need, intersect("forcing", names(summary_long)))]  # forcing used in the fit
   names(keep)[names(keep) == "fitted"] <- "value"
   keep <- keep[!is.na(keep$param) & is.finite(keep$value), , drop = FALSE]
   dir.create(dirname(file), showWarnings = FALSE, recursive = TRUE)
