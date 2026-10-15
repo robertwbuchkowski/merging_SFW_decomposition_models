@@ -126,7 +126,17 @@ eq_max_time <- 1e9
 #             climate forcing (R/seasonal_steady_state.R); effects and the
 #             realism filter use its ANNUAL MEAN. Realistic; ~10-30x slower.
 # "constant": equilibrium under constant mean forcing (runsteady), as before.
-forcing_mode <- "seasonal"
+# Set it for a whole run from Scripts/0_run_all.R (forcing_run), or for one
+# script with options(sfw.forcing = "constant") before sourcing it.
+forcing_mode <- getOption("sfw.forcing", "seasonal")
+if (!forcing_mode %in% c("seasonal", "constant"))
+  stop("option sfw.forcing must be \"seasonal\" or \"constant\"")
+
+# Where Scripts/1, 4, 5 and 7 read and write their results, by forcing, so a
+# run under one forcing never overwrites the other. Seasonal results stay in
+# Results/ (as before); Scripts/8_compare_forcing.R compares the two.
+results_dir_by_forcing <- c(seasonal = "Results", constant = "Results/constant_forcing")
+res_dir_forcing <- results_dir_by_forcing[[forcing_mode]]
 
 #------------------------------------------------------------------------#
 # Seasonal soil moisture amplitude (Scripts/4 and 5) ----

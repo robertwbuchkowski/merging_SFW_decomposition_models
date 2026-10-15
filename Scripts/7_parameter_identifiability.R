@@ -45,7 +45,8 @@
 #   sensitivities imply equal relative measurement error for all observations.
 #
 # Run from the project root (needs Results/fitted_animal_params.csv from
-# Scripts/1). Outputs (Results/):
+# Scripts/1, same forcing). Outputs (Results/ with seasonal forcing,
+# Results/constant_forcing/ with constant forcing):
 #   identifiability_summary.csv        one row per scenario x parameter set x design
 #   identifiability_parameters.csv     status of every parameter (identifiable /
 #                                      collinear / no information), L1, L2
@@ -75,11 +76,19 @@ scen      <- read_scenarios("Data/scenarios.xlsx")
 scenarios <- names(scen)
 
 use_fitted_params <- TRUE
-fitted_params <- if (use_fitted_params && file.exists("Results/fitted_animal_params.csv"))
-  load_fitted_params("Results/fitted_animal_params.csv") else NULL
+# results go to a folder per forcing (R/sensitivity_settings.R): seasonal ->
+# Results/, constant -> Results/constant_forcing/; the fitted animal parameters
+# are read from the same folder (Scripts/1 run under the same forcing)
+res_dir <- res_dir_forcing;           dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
+fig_dir <- file.path(res_dir, "figures"); dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
+fitted_file <- file.path(res_dir, "fitted_animal_params.csv")
+fitted_params <- if (use_fitted_params && file.exists(fitted_file))
+  load_fitted_params(fitted_file, fallback = file.path(res_dir, "animal_fit_summary_long.csv")) else NULL
+if (use_fitted_params && is.null(fitted_params))
+  stop("No ", fitted_file, ": run Scripts/1 with the same forcing first ",
+       "(or set use_fitted_params <- FALSE to use the uncalibrated animal parameters).")
+cat("Forcing:", forcing_mode, "| results ->", res_dir, "\n")
 
-fig_dir <- "Results/figures"; dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
-res_dir <- "Results";         dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
 
 derive_fn <- match.fun(model_table[[model]]$derive)
 
@@ -197,4 +206,4 @@ ggsave(file.path(fig_dir, "identifiability_animal_params.png"), p_an, width = 11
 p_all <- plot_ident_params(idf$params, names(designs), set = "all")
 ggsave(file.path(fig_dir, "identifiability_all_params.png"), p_all, width = 13, height = 14, dpi = 150, bg = "white")
 if (interactive()) print(p_sum)
-cat("\nWrote Results/identifiability_*.csv and figures/identifiability_*.png\n")
+cat("\nWrote ", res_dir, "/identifiability_*.csv and figures/identifiability_*.png\n", sep = "")

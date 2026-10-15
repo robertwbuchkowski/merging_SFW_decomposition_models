@@ -31,7 +31,7 @@
 #   scenario's all-default baseline, reference / factor .. x factor; editable
 #   in Data/baseline_targets.csv).
 #
-# Run from the project root (needs Results/fitted_animal_params.csv from
+# Run from the project root (needs fitted_animal_params.csv in the results folder of the same forcing, from
 # Scripts/1). Helper functions: R/sensitivity_helpers.R, R/sensitivity_uncertainty.R.
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
@@ -52,11 +52,19 @@ scen      <- read_scenarios("Data/scenarios.xlsx")
 scenarios <- names(scen)
 
 use_fitted_params <- TRUE
-fitted_params <- if (use_fitted_params && file.exists("Results/fitted_animal_params.csv"))
-  load_fitted_params("Results/fitted_animal_params.csv") else NULL
+# results go to a folder per forcing (R/sensitivity_settings.R): seasonal ->
+# Results/, constant -> Results/constant_forcing/; the fitted animal parameters
+# are read from the same folder (Scripts/1 run under the same forcing)
+res_dir <- res_dir_forcing;           dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
+fig_dir <- file.path(res_dir, "figures"); dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
+fitted_file <- file.path(res_dir, "fitted_animal_params.csv")
+fitted_params <- if (use_fitted_params && file.exists(fitted_file))
+  load_fitted_params(fitted_file, fallback = file.path(res_dir, "animal_fit_summary_long.csv")) else NULL
+if (use_fitted_params && is.null(fitted_params))
+  stop("No ", fitted_file, ": run Scripts/1 with the same forcing first ",
+       "(or set use_fitted_params <- FALSE to use the uncalibrated animal parameters).")
+cat("Forcing:", forcing_mode, "| results ->", res_dir, "\n")
 
-fig_dir <- "Results/figures"; dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
-res_dir <- "Results";         dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
 
 derive_fn <- match.fun(model_table[[model]]$derive)
 

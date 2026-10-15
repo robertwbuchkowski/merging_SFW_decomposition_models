@@ -39,8 +39,9 @@
 #             than 1e-9)
 #   max_forced  times a full Newton step is taken although it does not lower
 #             the residual (Newton often overshoots far from the cycle)
-#   shrink_max  a pool can shrink at most this factor per Newton step (keeps
-#             pools positive without clipping them to an absorbing 0)
+#   shrink_max  the Newton step is shortened so that no pool shrinks by more
+#             than this factor in one step (keeps pools positive without
+#             clipping them to an absorbing 0)
 # Returns list(state, converged, residual, J, J_fresh, n_solves, iterations).
 limit_cycle_solve <- function(y0, parms, model_fn, J0 = NULL, tol = 1e-6,
                               max_iter = 40, max_forced = 3, fd_rel = 1e-5, floor = 1e-6,
@@ -83,12 +84,14 @@ limit_cycle_solve <- function(y0, parms, model_fn, J0 = NULL, tol = 1e-6,
       tryCatch(-solve(J + 1e-8 * diag(length(y)), G), error = function(e) NULL))
     ok <- FALSE; best <- NULL
     if (!is.null(step) && all(is.finite(step))) {
-      lam <- 1
+      # positivity (fraction to the boundary): shorten the WHOLE step so that
+      # no pool shrinks more than shrink_max-fold. Clipping single pools at 0
+      # (absorbing: MIC = 0 stays 0) or at a floor (changes the step direction)
+      # both let Newton walk into a false, microbe-free cycle.
+      dn  <- step < 0 & y > 0
+      lam <- if (any(dn)) min(1, min(y[dn] * (1 - 1 / shrink_max) / -step[dn])) else 1
       for (ls in seq_len(if (fresh) 8 else 3)) {   # short search on a Broyden Jacobian
-        # positivity: a pool may shrink at most shrink_max-fold per step. Clipping
-        # an overshoot to exactly 0 is absorbing (e.g. MIC = 0 stays 0) and
-        # lets Newton converge to a false, microbe-free cycle.
-        y_new <- pmax(y + lam * step, y / shrink_max)
+        y_new <- pmax(y + lam * step, 0)
         G_new <- Phi(y_new) - y_new
         if (all(is.finite(G_new))) {
           rn_new <- rel_norm(G_new, y_new)
@@ -153,6 +156,10 @@ cycle_trajectory <- function(state, parms, model_fn, rtol = 1e-7, atol = 1e-7) {
 #               from nominal (Morris, Latin hypercube)
 #   fallback_years  if Newton fails from the scaled guess and from the
 #               equilibrium, integrate this many years forward and try again
+#   collapse_check_rel  a cycle whose annual mean of some pool is below this
+#               fraction of that pool at the constant-forcing equilibrium is
+#               re-solved from the equilibrium; the collapse-free cycle is kept
+#               if one is found (a real collapse is kept and flagged downstream)
 # Adds to obj:
 #   ss_mean     the state used as "the steady state": annual mean of the
 #               limit cycle (seasonal) or the equilibrium (constant)
@@ -163,7 +170,8 @@ cycle_trajectory <- function(state, parms, model_fn, rtol = 1e-7, atol = 1e-7) {
 #   spin_info   converged (TRUE/FALSE), method, n_solves, residual
 steady_state <- function(obj, ref = NULL, warm_start = NULL, mode = forcing_mode,
                          tol = lc_tol, rtol = lc_ode_tol, atol = lc_ode_tol,
-                         fallback_years = 20, reuse_jacobian = lc_reuse_jacobian) {
+                         fallback_years = 20, reuse_jacobian = lc_reuse_jacobian,
+                         collapse_check_rel = 1e-4) {
   mode <- match.arg(mode, c("seasonal", "constant"))
   if (mode == "constant") ref <- NULL      # constant forcing: same as before (cold start)
   ce <- spinup_equilibrium(obj, warm_start = if (!is.null(warm_start)) warm_start else ref$const,
@@ -188,6 +196,24 @@ steady_state <- function(obj, ref = NULL, warm_start = NULL, mode = forcing_mode
   lc <- limit_cycle_solve(y0, obj$parms, obj$wrapped_model, J0 = J0, tol = tol,
                           rtol = rtol, atol = atol)
   n_sol <- lc$n_solves
+  # a cycle in which a pool has (nearly) vanished although it is clearly
+  # present at the constant-forcing equilibrium is suspect: near-zero
+  # microbes regrow so slowly that the cycle condition is met in a false,
+  # microbe-free state. Re-solve from the equilibrium itself (no scaling) and
+  # keep that cycle if it is free of collapse.
+  collapsed <- function(st) {
+    if (is.null(st)) return(FALSE)
+    m <- colMeans(cycle_trajectory(st, obj$parms, obj$wrapped_model, rtol = rtol,
+                                   atol = atol)[1:365, , drop = FALSE])
+    ce_v <- ce$init_state_spin[names(m)]
+    any(ce_v > 1e-9 & m < collapse_check_rel * ce_v)
+  }
+  if (lc$converged && collapsed(lc$state)) {
+    lc2 <- limit_cycle_solve(ce$init_state_spin, obj$parms, obj$wrapped_model, J0 = NULL,
+                             tol = tol, rtol = rtol, atol = atol)
+    n_sol <- n_sol + lc2$n_solves
+    if (lc2$converged && !collapsed(lc2$state)) lc <- lc2
+  }
   if (!lc$converged) {                       # retry 1: plain Newton from the equilibrium
     lc <- limit_cycle_solve(ce$init_state_spin, obj$parms, obj$wrapped_model, J0 = NULL,
                             tol = tol, rtol = rtol, atol = atol)

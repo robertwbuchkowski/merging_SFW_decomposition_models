@@ -5,7 +5,8 @@
 # fitted parameters differ across models (with the baseline/default value for
 # reference). Run from project root.
 #
-# FORCING (fit_forcing below):
+# FORCING (fit_forcing below; follows forcing_mode in R/sensitivity_settings.R,
+# i.e. option sfw.forcing / forcing_run in Scripts/0_run_all.R):
 #   "seasonal" (default)  calibrate at the SEASONAL steady state (annual limit
 #       cycle under the seasonal climate): the target biomass and effect refer
 #       to ANNUAL MEANS of the cycle. Consistent with Scripts/4, 5 and 7
@@ -15,6 +16,8 @@
 #   "constant"  calibrate at the equilibrium under constant mean forcing
 #       (fast; a few minutes in total), as before.
 # The forcing used is stored in the 'forcing' column of the output files.
+# Outputs go to the folder for that forcing: Results/ (seasonal) or
+# Results/constant_forcing/ (constant), so the two never overwrite each other.
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
@@ -29,7 +32,9 @@ debugonce_functions()   # only active when options(sfw.debugonce = TRUE); see Sc
 scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("millennial")
 do_effect_fitting = FALSE
-fit_forcing <- "seasonal"   # "seasonal" (annual limit cycle) or "constant" (mean forcing)
+fit_forcing <- forcing_mode   # "seasonal" (annual limit cycle) or "constant" (mean forcing)
+res_dir     <- res_dir_forcing  # Results/ or Results/constant_forcing/
+cat("Forcing:", fit_forcing, "| results ->", res_dir, "\n")
 
 #------------------------------------------------------------------------#
 # EFFECT fitting -- OPT-IN and EXPLICIT ----
@@ -138,15 +143,15 @@ for (model in models) {
 
 if (!length(rows)) stop("No fits succeeded - check the model/scenario setup.")
 summary_long <- do.call(rbind, rows)
-dir.create("Results", showWarnings = FALSE)
-write.csv(summary_long, "Results/animal_fit_summary_long.csv", row.names = FALSE)
+dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
+write.csv(summary_long, file.path(res_dir, "animal_fit_summary_long.csv"), row.names = FALSE)
 
 # Calibration check: list any fit that missed its target, did not converge, or
 # collapsed the microbial pools. Such rows are NOT safe to use downstream.
 bad_fit <- summary_long[!summary_long$converged | !summary_long$solver_converged |
                         nzchar(summary_long$microbes_collapsed), , drop = FALSE]
 if (nrow(bad_fit)) {
-  warning("Calibration problems (check before using Results/fitted_animal_params.csv):\n",
+  warning("Calibration problems (check before using ", file.path(res_dir, "fitted_animal_params.csv"), "):\n",
           paste(sprintf("  %s / %s / %s: target %.4g, achieved %.4g%s", bad_fit$scenario,
                         bad_fit$animal, bad_fit$param, bad_fit$target, bad_fit$achieved,
                         ifelse(nzchar(bad_fit$microbes_collapsed),
@@ -156,7 +161,7 @@ if (nrow(bad_fit)) {
 
 # Save the fitted parameters (keyed by MODEL x scenario x param) for reuse in
 # Scripts/spinup_dynamic.R -- so the spin-up reads them instead of re-fitting.
-save_fitted_params(summary_long, "Results/fitted_animal_params.csv")
+save_fitted_params(summary_long, file.path(res_dir, "fitted_animal_params.csv"))
 
 cat("\n================= FITTED ANIMAL PARAMETERS (long) =================\n")
 print(summary_long, digits = 4)
@@ -172,12 +177,12 @@ wide <- reshape(
   idvar = c("scenario", "animal", "param", "baseline"),
   timevar = "model", direction = "wide")
 names(wide) <- sub("^fitted\\.", "fitted_", names(wide))
-write.csv(wide, "Results/animal_fit_feeding_rate_by_model.csv", row.names = FALSE)
+write.csv(wide, file.path(res_dir, "animal_fit_feeding_rate_by_model.csv"), row.names = FALSE)
 
 cat("\n========= FITTED FEEDING RATE BY MODEL (baseline = default) =========\n")
 print(wide, digits = 4)
 
-cat("\nSaved Results/animal_fit_summary_long.csv and Results/animal_fit_feeding_rate_by_model.csv\n")
+cat("\nSaved animal_fit_summary_long.csv and animal_fit_feeding_rate_by_model.csv in", res_dir, "\n")
 
 #------------------------------------------------------------------------#
 # Interactive single scan + plot (run by hand while tuning) ----
@@ -197,7 +202,7 @@ if (FALSE) {
   plot_animal_scan(sc, target_biomass = pair$treatment$working_state[a], log_x = TRUE)
   
   # Add in the fitted parameter:
-  pair$treatment <- apply_fitted_params(pair$treatment, load_fitted_params("Results/fitted_animal_params.csv"), model, scenario)
+  pair$treatment <- apply_fitted_params(pair$treatment, load_fitted_params(file.path(res_dir, "fitted_animal_params.csv")), model, scenario)
   
   grid <- fit_param_grid(pair$treatment$parms[[spec$effect_param]], buffer = 2, n = 15, scale = "linear")
   

@@ -156,6 +156,10 @@ morris_cluster <- function(n_cores, source_files, packages = c("deSolve", "rootS
   if (is.null(n_cores) || n_cores <= 1) return(NULL)
   cl <- parallel::makeCluster(n_cores)
   wd <- getwd()
+  # workers are fresh R sessions: give them the same forcing option
+  # (sfw.forcing, read by R/sensitivity_settings.R) before they source files
+  parallel::clusterCall(cl, function(f) options(sfw.forcing = f),
+                        getOption("sfw.forcing", "seasonal"))
   parallel::clusterCall(cl, function(wd, pkgs, files) {
     setwd(wd)
     for (p in pkgs) suppressPackageStartupMessages(library(p, character.only = TRUE))

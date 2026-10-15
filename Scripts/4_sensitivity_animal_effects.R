@@ -48,7 +48,8 @@
 #   Shared settings (parameter list, SD rule, bounds, solver) are in
 #   R/sensitivity_settings.R.
 #
-# Run from the project root. Outputs (Results/):
+# Run from the project root. Outputs (Results/ with seasonal forcing,
+# Results/constant_forcing/ with constant forcing):
 #   animal_effect_morris.csv                + figures/animal_effect_morris*.png   (main)
 #   animal_effect_morris_standardized.csv   + figures/animal_effect_morris_standardized*.png
 #   animal_effect_morris_main_vs_standardized.csv  (rank comparison, if both run)
@@ -99,18 +100,26 @@ scen    <- read_scenarios("Data/scenarios.xlsx")
 scenarios <- names(scen)
 
 use_fitted_params <- TRUE
-fitted_params <- if (use_fitted_params && file.exists("Results/fitted_animal_params.csv"))
-  load_fitted_params("Results/fitted_animal_params.csv") else NULL
+# results go to a folder per forcing (R/sensitivity_settings.R): seasonal ->
+# Results/, constant -> Results/constant_forcing/; the fitted animal parameters
+# are read from the same folder (Scripts/1 run under the same forcing)
+res_dir <- res_dir_forcing;           dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
+fig_dir <- file.path(res_dir, "figures"); dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
+fitted_file <- file.path(res_dir, "fitted_animal_params.csv")
+fitted_params <- if (use_fitted_params && file.exists(fitted_file))
+  load_fitted_params(fitted_file, fallback = file.path(res_dir, "animal_fit_summary_long.csv")) else NULL
+if (use_fitted_params && is.null(fitted_params))
+  stop("No ", fitted_file, ": run Scripts/1 with the same forcing first ",
+       "(or set use_fitted_params <- FALSE to use the uncalibrated animal parameters).")
+cat("Forcing:", forcing_mode, "| results ->", res_dir, "\n")
 
-fig_dir <- "Results/figures"; dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
-res_dir <- "Results";         dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
 
 derive_fn    <- match.fun(model_table[[model]]$derive)
 
 #------------------------------------------------------------------------#
 # Morris + range settings ----
 #------------------------------------------------------------------------#
-morris_r      <- 100     # trajectories per scenario (raise for stable mu*/sigma)
+morris_r      <- 200     # trajectories per scenario (raise for stable mu*/sigma)
 morris_levels <- 4L     # grid levels p in the Morris design
 morris_seed   <- 27082026      # base seed; each scenario uses morris_seed + its index
 
