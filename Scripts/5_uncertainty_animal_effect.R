@@ -75,15 +75,8 @@ up_n        <- 2000       # Latin-hypercube samples per scenario (3 steady state
                           # ~10-30% pass the realism filter, so keep this large
 up_seed     <- 20260827
 
-# Baseline realism filter. Defaults: each scenario's all-default baseline
-# steady state (annual mean if seasonal), accepted range = reference / factor .. x factor.
-up_filter_pools  <- c("TotalC", "P", "M", "MIC", "B")   # TotalC = all non-animal pools
-up_filter_factor <- 2                 # default accepted range: reference / 2 .. x 2
-up_filter_factor_by_pool <- c(MIC = 10) # per-pool overrides: organic-horizon microbial
-                                        # biomass is tiny and volatile, so allow / 10 .. x 10
-up_targets_file  <- "Data/baseline_targets.csv"   # optional; overrides the defaults
-up_pool_floor    <- 1e-9  # every baseline pool must also be above this (g C m-2):
-                          # positive and non-zero (1e-9 = numerically zero)
+# Baseline realism filter (up_filter_pools, up_filter_factor, ..., up_targets_file):
+# set in R/sensitivity_settings.R, shared with Scripts/9 (Sobol' analysis).
 
 #------------------------------------------------------------------------#
 # Parallel execution ----

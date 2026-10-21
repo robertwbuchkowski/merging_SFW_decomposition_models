@@ -171,7 +171,8 @@ plot_morris <- function(tbl, colours, labels, legend_name = "Range source") {
     scale_colour_manual(values = colours, labels = labels, name = legend_name, drop = FALSE) +
     scale_shape_manual(values = c(general = 16, `scenario-specific` = 15, animal = 17),
                        name = "Parameter type") +
-    labs(x = expression(mu*"* (mean |elementary effect|, g C m"^-2*")"),
+    labs(x = if (identical(effect_output, "pct")) "mu* (mean |elementary effect|, % of no-animal soil C)" else
+           expression(mu*"* (mean |elementary effect|, g C m"^-2*")"),
          y = expression(sigma*" (sd of elementary effect)")) +
     theme_minimal(base_size = 11) + theme(legend.position = "bottom")
 }
@@ -261,6 +262,7 @@ morris_convergence <- function(tbl, top_k = 5, ci_tol = 0.2,
 # Needs (set in 4_sensitivity_animal_effects.R): boot_top_k, conv_ci_tol, fig_dir, res_dir
 write_morris_outputs <- function(tbl, tag, colours, labels) {
   csv <- file.path(res_dir, paste0("animal_effect_morris", tag, ".csv"))
+  tbl$effect_output <- effect_output          # output screened (read by Scripts/9)
   write_csv(tbl, csv)
   p_all <- plot_morris(tbl, colours, labels)
   ggsave(file.path(fig_dir, paste0("animal_effect_morris", tag, ".png")), p_all,
@@ -284,7 +286,8 @@ write_morris_outputs <- function(tbl, tag, colours, labels) {
     scale_colour_manual(values = colours, labels = labels, name = "Range source", drop = FALSE) +
     scale_shape_manual(values = c(general = 16, `scenario-specific` = 15, animal = 17),
                        name = "Parameter type") +
-    labs(x = expression(mu*"* with "*95*"% bootstrap CI (g C m"^-2*")"), y = NULL) +
+    labs(x = if (identical(effect_output, "pct")) "mu* with 95% bootstrap CI (% of no-animal soil C)" else
+           expression(mu*"* with "*95*"% bootstrap CI (g C m"^-2*")"), y = NULL) +
     theme_minimal(base_size = 10) + theme(legend.position = "bottom")
   ggsave(file.path(fig_dir, paste0("animal_effect_morris", tag, "_bootstrap.png")), p_ci,
          width = 13, height = 9, dpi = 150)

@@ -114,6 +114,22 @@ make_headline_fun <- function(base_pair, pools) {
 }
 
 #------------------------------------------------------------------------#
+# read_user_targets() ----
+#------------------------------------------------------------------------#
+# Used in: called by run_uncertainty_propagation_fn(), run_sobol_scenario()
+# Needs (set in R/sensitivity_settings.R): up_targets_file
+# User-edited realism targets (columns scenario, pool, lower, upper), or NULL.
+read_user_targets <- function(file = up_targets_file) {
+  if (!file.exists(file)) return(NULL)
+  u <- read.csv(file, stringsAsFactors = FALSE)
+  if (!all(c("scenario", "pool", "lower", "upper") %in% names(u)))
+    stop(file, " needs columns scenario, pool, lower, upper")
+  u$scenario <- rename_scenarios(u$scenario)
+  cat("Baseline realism targets: using", file, "\n")
+  u
+}
+
+#------------------------------------------------------------------------#
 # targets_for() ----
 #------------------------------------------------------------------------#
 # Used in: called by run_uncertainty_propagation_fn()
@@ -152,13 +168,7 @@ targets_for <- function(scenario, base_pair, user_targets) {
 # Needs (set in 5_uncertainty_animal_effect.R): cl, scenarios, up_n, up_pool_floor, up_seed,
 #   up_targets_file
 run_uncertainty_propagation_fn <- function() {
-  user_targets <- if (file.exists(up_targets_file)) {
-    u <- read.csv(up_targets_file, stringsAsFactors = FALSE)
-    if (!all(c("scenario", "pool", "lower", "upper") %in% names(u)))
-      stop(up_targets_file, " needs columns scenario, pool, lower, upper")
-    u$scenario <- rename_scenarios(u$scenario)
-    cat("Baseline realism targets: using", up_targets_file, "\n"); u
-  } else NULL
+  user_targets <- read_user_targets()
 
   samp_rows <- summ_rows <- diag_rows <- input_rows <- target_rows <- list()
   q <- function(v, p) if (length(v)) unname(stats::quantile(v, p, na.rm = TRUE)) else NA_real_

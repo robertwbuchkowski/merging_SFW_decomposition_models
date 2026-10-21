@@ -136,7 +136,8 @@ regime_flags <- function(eq_b, eq_t, parms) {
 # animal_effect_totalC() ----
 #------------------------------------------------------------------------#
 # Used in: called by effect_scalar()
-# Needs (set in R/sensitivity_settings.R): animal_pools, forcing_mode
+# Needs (set in R/sensitivity_settings.R): animal_pools, forcing_mode, effect_output
+# effect_output = "pct": the effect as % of the no-animal soil + root C.
 # Steady-state TOTAL animal effect on total soil + root C (scalar, g C m-2):
 # treatment minus baseline, both at their steady state under forcing_mode
 # (seasonal: annual mean of the limit cycle; constant: equilibrium under
@@ -153,6 +154,7 @@ animal_effect_totalC <- function(pair) {
   conv <- isTRUE(b$spin_info$converged) && isTRUE(t$spin_info$converged)
   soil <- setdiff(intersect(names(eq_b), names(eq_t)), animal_pools)
   val  <- sum(eq_t[soil]) - sum(eq_b[soil])
+  if (identical(effect_output, "pct")) val <- 100 * val / sum(eq_b[soil])   # % of no-animal C
   attr(val, "converged") <- conv
   attr(val, "regime")    <- if (conv) regime_flags(eq_b, eq_t, t$parms) else ""
   val

@@ -10,7 +10,8 @@
 #   mu_star  mean |elementary effect|  -> TOTAL sensitivity (rank on this)
 #   sigma    sd of elementary effect   -> interactions / non-linearity
 # The scalar output is the steady-state animal effect on total soil + root C
-# (treatment - baseline). With forcing_mode = "seasonal" (R/sensitivity_settings.R)
+# (treatment - baseline), as a PERCENTAGE of the no-animal value by default
+# (effect_output = "pct" in R/sensitivity_settings.R; "abs" = g C m-2). With forcing_mode = "seasonal" (R/sensitivity_settings.R)
 # the steady state is the annual limit cycle under the seasonal climate forcing
 # and the effect is the difference of annual means; "constant" uses the
 # equilibrium under constant mean forcing (~50-100x faster, but the model is

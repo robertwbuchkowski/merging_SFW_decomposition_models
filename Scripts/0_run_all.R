@@ -3,7 +3,7 @@
 #------------------------------------------------------------------------#
 # RUN ALL  -  regenerate the whole project end to end.
 #
-# Sources Scripts/1..8 in order, so a single call reproduces every saved
+# Sources Scripts/1..9 in order, so a single call reproduces every saved
 # output (fitted params -> spin-up states -> follow-up runs -> sensitivity).
 # Run from the project root:  source("Scripts/0_run_all.R")
 #
@@ -25,9 +25,13 @@
 #                                       and animal-introduction data can identify)
 #       8 compare_forcing            -> Results/forcing_comparison/ (seasonal vs
 #                                      constant: tables, figures, one PDF)
-#     Steps 4, 5 and 7 evaluate the model at its SEASONAL steady state (annual
-#     limit cycle) by default; forcing_run (below) switches
-#     them back to constant mean forcing. Seasonal is ~50-100x slower: step 4
+#       9 sobol_variance_partition   -> <results>/sobol_*.csv, figures/sobol_*.png
+#                                      (Morris screening of step 4 -> Sobol' indices
+#                                       of the shortlist + all animal parameters;
+#                                       constant forcing; needs steps 1 and 4 first)
+#     Steps 1, 4, 5, 7 and 9 evaluate the model at the steady state chosen by
+#     forcing_run (below): "constant" mean forcing (current default) or the
+#     "seasonal" annual limit cycle. Seasonal is ~50-100x slower: step 4
 #     needs ~400 CPU-hours at morris_r = 100 and step 5 ~80 CPU-hours at
 #     up_n = 2000 (divide by n_cores); step 7 takes ~10 min per scenario.
 #   * Each script sources the R/ helpers it needs and is self-contained. This
@@ -46,13 +50,14 @@
 stopifnot(file.exists("R/setup.R"))        # guard: must be run from project root
 source("R/run_utils.R")                     # run_one(), debugonce_functions()
 
-# FORCING of the steady state in steps 1, 4, 5 and 7 (and where they save):
-#   "seasonal" -> Results/                    (annual limit cycle; default)
-#   "constant" -> Results/constant_forcing/   (constant mean forcing)
+# FORCING of the steady state in steps 1, 4, 5, 7 and 9 (and where they save):
+#   "seasonal" -> Results/                    (annual limit cycle)
+#   "constant" -> Results/constant_forcing/   (constant mean forcing; current
+#                                              default, used for the Sobol' step 9)
 # To compare the two: run once with "seasonal", once with "constant" (only
 # steps 1, 4, 5, 7 use it; steps 2, 3, 6 are skipped under "constant" so the
 # seasonal spin-ups and follow-ups in Data/ are never overwritten), then step 8.
-forcing_run <- "seasonal"
+forcing_run <- "constant"
 
 debug_functions         <- FALSE  # TRUE = debugonce() on every function loaded by each script
 clean_env_between_steps <- TRUE   # TRUE = clear the global environment before each step
@@ -65,6 +70,7 @@ run_step5 <- TRUE    # uncertainty of the headline animal effect (Latin hypercub
 run_step6 <- FALSE   # multiple-stable-states test (diagnostic; off by default)
 run_step7 <- TRUE    # parameter identifiability with artificial data (FME)
 run_step8 <- FALSE   # compare seasonal vs constant forcing results (needs both runs)
+run_step9 <- TRUE    # Sobol' variance partition after Morris screening (constant forcing)
 
 steps <- c(
   "1" = "Scripts/1_fit_all_animals.R",
@@ -74,22 +80,23 @@ steps <- c(
   "5" = "Scripts/5_uncertainty_animal_effect.R",
   "6" = "Scripts/6_multistability_test.R",
   "7" = "Scripts/7_parameter_identifiability.R",
-  "8" = "Scripts/8_compare_forcing.R")
+  "8" = "Scripts/8_compare_forcing.R",
+  "9" = "Scripts/9_sobol_variance_partition.R")
 run <- c(run_step1, run_step2, run_step3, run_step4, run_step5, run_step6, run_step7,
-         run_step8)
+         run_step8, run_step9)
 stopifnot(forcing_run %in% c("seasonal", "constant"))
 if (forcing_run == "constant" && any(run[c(2, 3, 6)])) {
   message("forcing_run = \"constant\": skipping steps 2, 3 and 6 (seasonal spin-up, ",
           "follow-up and multistability are not forcing-specific and would overwrite Data/).")
   run[c(2, 3, 6)] <- FALSE
 }
-options(sfw.forcing = forcing_run)          # read by R/sensitivity_settings.R (steps 1, 4, 5, 7)
+options(sfw.forcing = forcing_run)          # read by R/sensitivity_settings.R (steps 1, 4, 5, 7, 9)
 
 
 options(sfw.debugonce = debug_functions)   # read by debugonce_functions() in each script
 keep_objs <- c("run_one", "debugonce_functions", "steps", "run", "i", "t_all",
                "debug_functions", "clean_env_between_steps", "keep_objs",
-               "forcing_run", paste0("run_step", 1:8))
+               "forcing_run", paste0("run_step", 1:9))
 
 t_all <- Sys.time()
 for (i in seq_along(steps)) if (run[i]) run_one(steps[[i]], clean = clean_env_between_steps,

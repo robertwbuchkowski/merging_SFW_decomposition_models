@@ -165,3 +165,32 @@ lc_reuse_jacobian <- FALSE  # FALSE: fresh Jacobian per evaluation (Morris / LHS
                             # are far from nominal); identifiability uses TRUE
 # (the identifiability analysis, Scripts/7, tightens both: it differentiates
 #  the solution numerically)
+
+#------------------------------------------------------------------------#
+# Baseline realism filter (Scripts/5 and 9) ----
+#------------------------------------------------------------------------#
+# A parameter sample is "realistic" when its no-animal steady state (annual
+# mean if seasonal) keeps every pool positive (> up_pool_floor) and the pools
+# listed here inside a target range. Defaults: each scenario's all-default
+# baseline, accepted range = reference / factor .. x factor; rows in
+# up_targets_file (columns scenario, pool, lower, upper) override them.
+up_filter_pools  <- c("TotalC", "P", "M", "MIC", "B")   # TotalC = all non-animal pools
+up_filter_factor <- 2                 # default accepted range: reference / 2 .. x 2
+up_filter_factor_by_pool <- c(MIC = 10) # per-pool overrides: organic-horizon microbial
+                                        # biomass is tiny and volatile, so allow / 10 .. x 10
+up_targets_file  <- "Data/baseline_targets.csv"   # optional; overrides the defaults
+up_pool_floor    <- 1e-9  # every baseline pool must also be above this (g C m-2):
+                          # positive and non-zero (1e-9 = numerically zero)
+
+#------------------------------------------------------------------------#
+# Output of the Morris screening and Sobol' analysis (Scripts/4 and 9) ----
+#------------------------------------------------------------------------#
+# "pct": animal effect on total soil + root C as a PERCENTAGE of the
+#        no-animal value (default). Across the parameter distributions the
+#        baseline soil C spans orders of magnitude (runaway carbon at
+#        implausible parameter combinations); the absolute effect scales with
+#        it, so its elementary effects and variance are dominated by a few
+#        extreme runs. The relative effect is far better behaved.
+# "abs": the effect in g C m-2 (the earlier behaviour of Scripts/4).
+# The Sobol' step (Scripts/9) should screen on the same output it analyses.
+effect_output <- "pct"
