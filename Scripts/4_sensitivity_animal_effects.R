@@ -72,7 +72,7 @@
 #   raise morris_r). Written to animal_effect_morris*_convergence.csv.
 #
 # REGIME FLAGS: every evaluation is tagged if the treatment steady state has
-#   (a) microbial collapse (MIC or B < collapse_rel x baseline), or
+#   (a) microbial collapse (B < collapse_rel x baseline), or
 #   (b) aggregate breakdown at the model's 0.001 floor (kb_floor, earthworms).
 #   Flagged points are kept; Morris also reports mu*/sigma/rank from unflagged
 #   steps only (*_clean columns).

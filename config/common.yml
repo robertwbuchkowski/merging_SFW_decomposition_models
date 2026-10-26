@@ -11,13 +11,8 @@ N_theta_peaks: 2
 
 # Texture / site
 pct_claysilt: 70
-fCLAY: 0.40           # clay fraction (0–1) (MIMICS)
-
-# Lignin fraction
-LigFrac: 0.2 # MIMICS and Century
 
 # Calendar
-year_length_d: 365
 litter_peak_doy: 288
 litter_width_d: 30
 leaf_litter_summer_frac: 0.2   # fraction of leaf litter delivered as a growing-season trickle; the rest (0.8) is the autumn litterfall pulse at litter_peak_doy
@@ -41,24 +36,14 @@ a_root_tree: 0.25
 a_root_herb: 0.25
 
 # ---- Turnover and flux rates ----
-k_litterfall_ann: 0.35
-k_litterfall_herb_ann: 1
-
-k_mort_leaf_tree: 0.00005479    # 0.02/365
-k_mort_leaf_herb: 0.00005479    # 0.02/365
-
-k_mort_wood_tree: 0.00006849    # 0.025/365
-
 k_mort_root_tree: 0.00021918   # 0.08/365
 k_mort_root_herb: 0.00021918   # 0.08/365
 
 k_exudate_tree: 0.00002740     # 0.01/365
-k_exudate_herb: 0.00002740     # 0.01/365
 
 k_root_dormancy: 0.5
 
-# ---- Mortality partitioning ----
-root_to_organic: 0.7
+# ---- Root winter dormancy ----
 winter_root_act_prop: 0.01
 root_dormancy_temp: 5
 
@@ -66,11 +51,8 @@ root_dormancy_temp: 5
 d_detritivores: 0.00567
 a_detritivores: 0.5
 p_detritivores: 0.35
-E_detritivores: 0
 c_detritivores: 0.0000216
 slope_pint_det_k_frag_litter: 27.42039
-slope_pint_det_k_frag_organic: 0
-
 
 # ---- Earthworm parameters ----
 d_earthworm: 0.01764422 #0.0084692232/0.48
@@ -80,7 +62,6 @@ p_earthworm: 0.053 #0.35 #0.053
 E_earthworm: 0
 c_earthworm_litter: 0
 c_earthworm_soil: 0.0001892022
-c_earthworm_om: 0
 prop_feaces_earthworm_LMWC: 0
 k_b_slope_pint: -1 # Reduction in aggregate loss with earthworm biomass
 
@@ -98,8 +79,5 @@ c_rootherb: 0.001
 d_rootherb: 0.5 # 36 days life span, corrected for density-dependence and modified
 a_rootherb: 0.4
 p_rootherb: 0.37 # default of 1
-E_root_herb: 0 # default of 0
 k_exudate_intercept: 0.00002740  #default of 0.00002740 #JY slope: 0.946
 k_exudate_slope: 0.000013  #0.013 #default of 0 
-
-

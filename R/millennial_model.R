@@ -14,10 +14,23 @@
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
+#------------------------------------------------------------------------#
+# Simplified pool structure ----
+#------------------------------------------------------------------------#
+# The separate organic-horizon pools of the earlier version were merged into
+# the mineral-soil pools of Millennial v2:
+#   Organic (fragmented litter)  -> P (particulate organic C, POM)
+#   DOM (dissolved organic C)    -> L (low molecular weight C, LMWC)
+#   MIC (organic-horizon microbes) -> B (microbial biomass)
+# Litter and CWD therefore fragment straight into P, and soil microbes (B)
+# depolymerize litter and CWD into L with the same enzyme kinetics they use
+# on POM (alpha_pl, Ea_pl, K_pl). All dissolved C (litter/CWD
+# depolymerization, root exudates, microbial necromass) enters L.
+
 .POOLS_MILLENNIAL <- c(
   "C_root_herb", "C_root_tree",
   "Earthworm", "Detritivore", "RootHerb",
-  "Litter", "CWD", "Organic", "DOM", "MIC",
+  "Litter", "CWD",
   "P", "L", "A", "M", "B"
 )
 
@@ -32,8 +45,6 @@ millennial_model_wplant <- function(time, state, parms){
   Ea_pl                        <- parms[["Ea_pl"]]
   K_lb                         <- parms[["K_lb"]]
   K_ld                         <- parms[["K_ld"]]
-  K_ob                         <- parms[["K_ob"]]
-  K_ol                         <- parms[["K_ol"]]
   K_pl                         <- parms[["K_pl"]]
   NPP_herb                     <- parms[["NPP_herb"]]
   NPP_tree                     <- parms[["NPP_tree"]]
@@ -51,12 +62,9 @@ millennial_model_wplant <- function(time, state, parms){
   adj_earthworm                <- parms[["adj_earthworm"]]
   adj_rootherb                 <- parms[["adj_rootherb"]]
   alpha_lb                     <- parms[["alpha_lb"]]
-  alpha_ob                     <- parms[["alpha_ob"]]
-  alpha_ol                     <- parms[["alpha_ol"]]
   alpha_pl                     <- parms[["alpha_pl"]]
   c_detritivores               <- parms[["c_detritivores"]]
   c_earthworm_litter           <- parms[["c_earthworm_litter"]]
-  c_earthworm_om               <- parms[["c_earthworm_om"]]
   c_earthworm_soil             <- parms[["c_earthworm_soil"]]
   c_rootherb                   <- parms[["c_rootherb"]]
   climate_forcing              <- parms[["climate_forcing"]]
@@ -64,7 +72,6 @@ millennial_model_wplant <- function(time, state, parms){
   d_earthworm                  <- parms[["d_earthworm"]]
   d_rootherb                   <- parms[["d_rootherb"]]
   depth                        <- parms[["depth"]]
-  k_MICd                       <- parms[["k_MICd"]]
   k_a_min                      <- parms[["k_a_min"]]
   k_b                          <- parms[["k_b"]]
   k_b_slope_pint               <- parms[["k_b_slope_pint"]]
@@ -74,9 +81,7 @@ millennial_model_wplant <- function(time, state, parms){
   k_exudate_tree               <- parms[["k_exudate_tree"]]
   k_frag_CWD                   <- parms[["k_frag_CWD"]]
   k_frag_litter                <- parms[["k_frag_litter"]]
-  k_frag_organic               <- parms[["k_frag_organic"]]
   k_l                          <- parms[["k_l"]]
-  k_l_o                        <- parms[["k_l_o"]]
   k_ma                         <- parms[["k_ma"]]
   k_mort_root_herb             <- parms[["k_mort_root_herb"]]
   k_mort_root_tree             <- parms[["k_mort_root_tree"]]
@@ -98,9 +103,7 @@ millennial_model_wplant <- function(time, state, parms){
   prop_feaces_earthworm_LMWC   <- parms[["prop_feaces_earthworm_LMWC"]]
   psi_matric                   <- parms[["psi_matric"]]
   root_dormancy_temp           <- parms[["root_dormancy_temp"]]
-  root_to_organic              <- parms[["root_to_organic"]]
   slope_pint_det_k_frag_litter <- parms[["slope_pint_det_k_frag_litter"]]
-  slope_pint_det_k_frag_organic <- parms[["slope_pint_det_k_frag_organic"]]
   theta_opt                    <- parms[["theta_opt"]]
   winter_root_act_prop         <- parms[["winter_root_act_prop"]]
 
@@ -116,9 +119,6 @@ millennial_model_wplant <- function(time, state, parms){
   RootHerb   <- if ("RootHerb" %in% .ns) state[["RootHerb"]] else 0
   Litter     <- if ("Litter" %in% .ns) state[["Litter"]] else 0
   CWD        <- if ("CWD" %in% .ns) state[["CWD"]] else 0
-  Organic    <- if ("Organic" %in% .ns) state[["Organic"]] else 0
-  DOM        <- if ("DOM" %in% .ns) state[["DOM"]] else 0
-  MIC        <- if ("MIC" %in% .ns) state[["MIC"]] else 0
   P          <- if ("P" %in% .ns) state[["P"]] else 0
   L          <- if ("L" %in% .ns) state[["L"]] else 0
   A          <- if ("A" %in% .ns) state[["A"]] else 0
@@ -136,7 +136,6 @@ millennial_model_wplant <- function(time, state, parms){
     # food preferences while its overall feeding rate goes up or down.
     c_earthworm_litter <- adj_earthworm    * c_earthworm_litter
     c_earthworm_soil   <- adj_earthworm    * c_earthworm_soil
-    c_earthworm_om     <- adj_earthworm    * c_earthworm_om
     c_detritivores     <- adj_detritivores * c_detritivores
     c_rootherb         <- adj_rootherb     * c_rootherb
     #------------------------------------------------------------------------#
@@ -199,20 +198,20 @@ millennial_model_wplant <- function(time, state, parms){
     # Root winter dormancy: activity index with a winter floor.
     act <- winter_root_act_prop + (1 - winter_root_act_prop) * activity
 
-    root_mortality_herb <- k_mort_root_herb * C_root_herb*act
-    root_mortality_tree <- k_mort_root_tree * C_root_tree*act
+    root_mortality_herb <- k_mort_root_herb * C_root_herb*act   # -> P
+    root_mortality_tree <- k_mort_root_tree * C_root_tree*act   # -> P
 
-
-    exudates_herb       <- (k_exudate_intercept + RootHerb*k_exudate_slope)* C_root_herb*act
-    exudates_tree       <- k_exudate_tree* C_root_tree*act
+    exudates_herb       <- (k_exudate_intercept + RootHerb*k_exudate_slope)* C_root_herb*act  # -> L
+    exudates_tree       <- k_exudate_tree* C_root_tree*act                                  # -> L
 
     #------------------------------------------------------------------------#
     # Earthworm rates ----
     #------------------------------------------------------------------------#
+    # Earthworms eat surface litter (c_earthworm_litter, assimilation
+    # a_earthworm) and mineral soil: P, L, A, M (c_earthworm_soil, assimilation
+    # a_earthworm_soil). Faeces go to L (prop_feaces_earthworm_LMWC) and A.
 
     Fed_earthworm_litter = c_earthworm_litter*Litter*Earthworm
-
-    Fed_earthworm_om = c_earthworm_om*Organic*Earthworm
 
     Fed_earthworm_M = c_earthworm_soil*Earthworm*M
 
@@ -222,30 +221,37 @@ millennial_model_wplant <- function(time, state, parms){
 
     Fed_earthworm_A = c_earthworm_soil*Earthworm*A
 
+    Fed_earthworm_soil = Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A
 
-    Waste_earthworm_L = prop_feaces_earthworm_LMWC*((1-a_earthworm)*(Fed_earthworm_litter + Fed_earthworm_om) + (1-a_earthworm_soil)*(Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A))
+    Waste_earthworm = (1-a_earthworm)*Fed_earthworm_litter + (1-a_earthworm_soil)*Fed_earthworm_soil
+
+    Waste_earthworm_L = prop_feaces_earthworm_LMWC*Waste_earthworm
+
+    Waste_earthworm_A = (1-prop_feaces_earthworm_LMWC)*Waste_earthworm
 
     Carcass_earthworm_P = d_earthworm*Earthworm^2
 
-    Waste_earthworm_A = (1-prop_feaces_earthworm_LMWC)*((1-a_earthworm)*(Fed_earthworm_litter + Fed_earthworm_om) + (1-a_earthworm_soil)*(Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A))
-
-    Respiration_earthworm = (1-p_earthworm)*(a_earthworm*(Fed_earthworm_litter + Fed_earthworm_om) + a_earthworm_soil*(Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A)) + E_earthworm*Earthworm
+    Respiration_earthworm = (1-p_earthworm)*(a_earthworm*Fed_earthworm_litter + a_earthworm_soil*Fed_earthworm_soil) + E_earthworm*Earthworm
 
     #------------------------------------------------------------------------#
-    # Detritiviory rates ----
+    # Detritivory rates ----
     #------------------------------------------------------------------------#
+    # Detritivores eat litter, particulate organic C (P) and microbes (B);
+    # faeces and carcasses go to P.
 
-    Fed_det_mic = c_detritivores*MIC*Detritivore
+    Fed_det_mic = c_detritivores*B*Detritivore
 
-    Fed_det_om = c_detritivores*Organic*Detritivore
+    Fed_det_P = c_detritivores*P*Detritivore
 
     Fed_det_lit = c_detritivores*Litter*Detritivore
 
-    Carcass_det_om = d_detritivores*Detritivore^2
+    Fed_det = Fed_det_mic + Fed_det_P + Fed_det_lit
 
-    Waste_det_om = (1-a_detritivores)*(Fed_det_mic + Fed_det_om + Fed_det_lit)
+    Carcass_det_P = d_detritivores*Detritivore^2
 
-    Respiration_detritivore = (1-p_detritivores)*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit)
+    Waste_det_P = (1-a_detritivores)*Fed_det
+
+    Respiration_detritivore = (1-p_detritivores)*a_detritivores*Fed_det
 
     #------------------------------------------------------------------------#
     # Root herbivores ----
@@ -259,11 +265,10 @@ millennial_model_wplant <- function(time, state, parms){
     Respiration_rootherb = (1-p_rootherb)*a_rootherb*Fed_rootherb_herb
 
     #------------------------------------------------------------------------#
-    # Fragmentation and physical transfer to organic and mineral soil ----
+    # Fragmentation of surface detritus into POM ----
     #------------------------------------------------------------------------#
-    fragmentation_litter   <- (k_frag_litter + k_frag_litter*slope_pint_det_k_frag_litter*Detritivore)  * Litter   # -> Organic
-    fragmentation_CWD      <- k_frag_CWD     * CWD      # -> Organic
-    fragmentation_organic  <- (k_frag_organic + k_frag_organic*slope_pint_det_k_frag_organic*Detritivore) * Organic  # -> POM
+    fragmentation_litter   <- (k_frag_litter + k_frag_litter*slope_pint_det_k_frag_litter*Detritivore)  * Litter   # -> P
+    fragmentation_CWD      <- k_frag_CWD     * CWD      # -> P
 
     #------------------------------------------------------------------------#
     # Sorption capacity Qmax (Eq. 11) ----
@@ -280,9 +285,6 @@ millennial_model_wplant <- function(time, state, parms){
     #------------------------------------------------------------------------#
     V_pl <- alpha_pl * exp(-Ea_pl / (Rgas*(T_t + 273.15)))
     V_lb <- alpha_lb * exp(-Ea_lb / (Rgas*(T_t + 273.15)))
-
-    V_ol <- alpha_ol * exp(-Ea_pl / (Rgas*(T_t + 273.15)))
-    V_ob <- alpha_ob * exp(-Ea_pl / (Rgas*(T_t + 273.15)))
 
     #------------------------------------------------------------------------#
     # Moisture sensitivity ----
@@ -301,40 +303,30 @@ millennial_model_wplant <- function(time, state, parms){
     CUE <- max(0, min(1, CUE))
 
     #------------------------------------------------------------------------#
-    # KINETICS: depolymerization (F_pl) & uptake (F_lb) ----
+    # KINETICS: depolymerization (F_pl, litter, CWD) & uptake (F_lb) ----
     #------------------------------------------------------------------------#
+    # Microbial enzymes depolymerize POM (P), litter and CWD into L with the
+    # same kinetics (V_pl, K_pl), each substrate on its own.
     if(kinetics == 1){
       # Reverse MM for depolymerization; forward MM for uptake
-      F_pl <- V_pl * S_wD * P * B / (K_pl + B)
+      F_pl      <- V_pl * S_wD * P      * B / (K_pl + B)
+      F_Litter_L <- V_pl * S_wD * Litter * B / (K_pl + B)
+      F_CWD_L    <- V_pl * S_wD * CWD    * B / (K_pl + B)
       F_lb <- V_lb * S_wB * B * L / (K_lb + L)
-
-      # Degradation in the organic horizon:
-      F_Litter_DOM  <- V_ol * S_wD * Litter  * MIC / (K_ol + MIC)
-      F_CWD_DOM     <- V_ol * S_wD * CWD     * MIC / (K_ol + MIC)
-      F_Organic_DOM <- V_ol * S_wD * Organic * MIC / (K_ol + MIC)
-      F_DOM_MIC     <- V_ob * S_wB * MIC * DOM / (K_ob + DOM)
 
     } else if(kinetics == 2){
       # Equilibrium Chemistry Approximation (Eqs. 2a, 13a)
-      F_pl <- V_pl * S_wD * P * B / (K_pl + B + P)
+      F_pl      <- V_pl * S_wD * P      * B / (K_pl + B + P)
+      F_Litter_L <- V_pl * S_wD * Litter * B / (K_pl + B + Litter)
+      F_CWD_L    <- V_pl * S_wD * CWD    * B / (K_pl + B + CWD)
       F_lb <- V_lb * S_wB * B * L / (K_lb + L + B)
-
-      # Degradation in the organic horizon:
-      F_Litter_DOM  <- V_ol * S_wD * Litter  * MIC / (K_ol + MIC + Litter)
-      F_CWD_DOM     <- V_ol * S_wD * CWD     * MIC / (K_ol + MIC + CWD)
-      F_Organic_DOM <- V_ol * S_wD * Organic * MIC / (K_ol + MIC + Organic)
-      F_DOM_MIC     <- V_ob * S_wB * MIC * DOM / (K_ob + DOM + MIC)
 
     } else if(kinetics == 3){
       # Linear kinetics (Eqs. 2b, 13b)
-      F_pl <- V_pl * S_wD * P * B / K_pl
+      F_pl      <- V_pl * S_wD * P      * B / K_pl
+      F_Litter_L <- V_pl * S_wD * Litter * B / K_pl
+      F_CWD_L    <- V_pl * S_wD * CWD    * B / K_pl
       F_lb <- V_lb * S_wB * B * L / K_lb
-
-      # Degradation in the organic horizon:
-      F_Litter_DOM  <- V_ol * S_wD * Litter  * MIC / K_ol
-      F_CWD_DOM     <- V_ol * S_wD * CWD     * MIC / K_ol
-      F_Organic_DOM <- V_ol * S_wD * Organic * MIC / K_ol
-      F_DOM_MIC     <- V_ob * S_wB * MIC * DOM / K_ob
 
     } else {
       stop("Unknown kinetics option. Use 1, 2, or 3")
@@ -360,8 +352,7 @@ millennial_model_wplant <- function(time, state, parms){
     #------------------------------------------------------------------------#
     # Leaching ----
     #------------------------------------------------------------------------#
-    F_l <- k_l * S_wD * L             # Eq. 8
-    F_l_organic <- k_l_o * S_wD * DOM # organic horizon leaching
+    F_l <- k_l * S_wD * L             # Eq. 8 (loss from the system)
 
     #------------------------------------------------------------------------#
     # Microbial mortality + respiration partitioning ----
@@ -369,10 +360,6 @@ millennial_model_wplant <- function(time, state, parms){
     F_bm <- k_bd * B^2                # Eq. 16
     F_bg <- F_lb * CUE
     F_mr <- F_lb * (1 - CUE)
-
-    # Organic horizon microbial mortality/resp
-    F_MIC_mortality  <- k_MICd * MIC^2
-    F_MIC_respiration <- F_DOM_MIC * (1 - CUE)
 
     #------------------------------------------------------------------------#
     # Plant differential equations ----
@@ -388,60 +375,40 @@ millennial_model_wplant <- function(time, state, parms){
 
     # Earthworms:
     dEarthworm <-
-      p_earthworm*(
-        a_earthworm*(Fed_earthworm_litter + Fed_earthworm_om) +
-          a_earthworm_soil*(Fed_earthworm_M + Fed_earthworm_P + Fed_earthworm_L + Fed_earthworm_A)) -
+      p_earthworm*(a_earthworm*Fed_earthworm_litter + a_earthworm_soil*Fed_earthworm_soil) -
       Carcass_earthworm_P -
       E_earthworm*Earthworm
 
     # Detritivore:
-    dDetritivore <- p_detritivores*a_detritivores*(Fed_det_mic + Fed_det_om + Fed_det_lit) - Carcass_det_om
+    dDetritivore <- p_detritivores*a_detritivores*Fed_det - Carcass_det_P
 
     # Root herbivores:
     dRootHerb <- p_rootherb*a_rootherb*Fed_rootherb_herb - Carcass_rootherb_P
 
     #------------------------------------------------------------------------#
-    # Organic horizon pools ----
+    # Surface detritus pools ----
     #------------------------------------------------------------------------#
 
-    # Detritus pools
-    dLitter  <- leaf_litter_input - F_Litter_DOM - fragmentation_litter - Fed_earthworm_litter - Fed_det_lit
+    dLitter  <- leaf_litter_input - F_Litter_L - fragmentation_litter - Fed_earthworm_litter - Fed_det_lit
 
-    dCWD     <- cwd_input - F_CWD_DOM - fragmentation_CWD
-
-    dOrganic <- fragmentation_litter + fragmentation_CWD +
-      root_to_organic * (root_mortality_tree + root_mortality_herb) -
-      F_Organic_DOM - fragmentation_organic -
-      Fed_earthworm_om -
-      Fed_det_om + Carcass_det_om + Waste_det_om
-
-    dDOM <- F_Litter_DOM + F_CWD_DOM + F_Organic_DOM + F_MIC_mortality - F_DOM_MIC - F_l_organic
-
-    dMIC <- F_DOM_MIC - F_MIC_mortality - F_MIC_respiration - Fed_det_mic
-
-    # Transfer to mineral:
-    Fi_t_part <- (1 - root_to_organic) * (root_mortality_tree + root_mortality_herb) +
-      fragmentation_organic
-
-    Fi_t_dissolved <- F_l_organic + exudates_tree + exudates_herb
-
-    Fi_t <- Fi_t_part + Fi_t_dissolved
-
-    # Guard against Fi_t = 0
-    Fi_safe <- max(Fi_t, .Machine$double.eps)
-    p_i <- Fi_t_part / Fi_safe
+    dCWD     <- cwd_input - F_CWD_L - fragmentation_CWD
 
     #------------------------------------------------------------------------#
     # Millennial model pools ----
     #------------------------------------------------------------------------#
 
-    # Eq. 1
-    dP <- p_i * Fi_t + p_a * F_a - F_pa - F_pl -
-      Fed_earthworm_P + Carcass_earthworm_P +
-      Carcass_rootherb_P+ Waste_rootherb_P
+    # Eq. 1 (POM): fragmented litter and CWD, dead roots, animal carcasses,
+    # detritivore and root-herbivore faeces
+    dP <- fragmentation_litter + fragmentation_CWD +
+      root_mortality_tree + root_mortality_herb +
+      p_a * F_a - F_pa - F_pl -
+      Fed_earthworm_P + Carcass_earthworm_P -
+      Fed_det_P + Carcass_det_P + Waste_det_P +
+      Carcass_rootherb_P + Waste_rootherb_P
 
-    # Eq. 7
-    dL <- Fi_t * (1 - p_i) - F_l + F_pl - F_lm - F_lb + (1 - p_b) * F_bm + F_ld - Fed_earthworm_L + Waste_earthworm_L
+    # Eq. 7 (LMWC): depolymerized POM, litter and CWD, root exudates
+    dL <- F_Litter_L + F_CWD_L + exudates_tree + exudates_herb -
+      F_l + F_pl - F_lm - F_lb + (1 - p_b) * F_bm + F_ld - Fed_earthworm_L + Waste_earthworm_L
 
     # Eq. 17
     dA <- F_ma + F_pa - F_a - Fed_earthworm_A + Waste_earthworm_A
@@ -450,7 +417,7 @@ millennial_model_wplant <- function(time, state, parms){
     dM <- F_lm - F_ld + p_b * F_bm - F_ma + F_a * (1 - p_a) - Fed_earthworm_M
 
     # Eq. 20
-    dB <- F_lb - F_bm - F_mr
+    dB <- F_lb - F_bm - F_mr - Fed_det_mic
 
     # --------------------#
     # MASS BALANCE CHECK:
@@ -458,14 +425,14 @@ millennial_model_wplant <- function(time, state, parms){
     mass_balance_check <- (
       dC_root_herb + dC_root_tree +
         dEarthworm + dDetritivore + dRootHerb +
-        dLitter + dCWD + dOrganic + dDOM + dMIC +
+        dLitter + dCWD +
         dP + dL + dA + dM + dB
     ) + (
       # add respiration losses back
         Respiration_earthworm +
         Respiration_detritivore +
         Respiration_rootherb +
-        F_mr + F_MIC_respiration
+        F_mr
     ) + (
       # add leaching losses back
       F_l
@@ -473,8 +440,6 @@ millennial_model_wplant <- function(time, state, parms){
       # subtract external inputs (annual NPP delivered via the timing forcings)
       total_plant_input
     )
-
-    # browser()
 
     #------------------------------------------------------------------------#
     # Return list for deSolve ----
@@ -489,14 +454,11 @@ millennial_model_wplant <- function(time, state, parms){
         dDetritivore,
         dRootHerb,
 
-        # Organic horizons:
+        # Surface detritus:
         dLitter,
         dCWD,
-        dOrganic,
-        dDOM,
-        dMIC,
 
-        # Mineral horizons:
+        # Mineral soil:
         dP,
         dL,
         dA,

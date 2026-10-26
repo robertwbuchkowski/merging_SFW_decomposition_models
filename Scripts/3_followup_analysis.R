@@ -150,5 +150,5 @@ p_combined <- plot_followup_with_eq("millennial", by = 365,
                                     eq_csv = "Results/animal_eq_effect.csv",
                                     eq_type = "total")
 ggsave("Plots/followup_added_with_equilibrium.png", p_combined,
-       width = 11, height = 7, dpi = 300)
+       width = 11, height = 7, dpi = 300, bg = "white")
 print(p_combined)

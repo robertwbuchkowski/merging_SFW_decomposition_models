@@ -86,7 +86,7 @@ limit_cycle_solve <- function(y0, parms, model_fn, J0 = NULL, tol = 1e-6,
     if (!is.null(step) && all(is.finite(step))) {
       # positivity (fraction to the boundary): shorten the WHOLE step so that
       # no pool shrinks more than shrink_max-fold. Clipping single pools at 0
-      # (absorbing: MIC = 0 stays 0) or at a floor (changes the step direction)
+      # (absorbing: B = 0 stays 0) or at a floor (changes the step direction)
       # both let Newton walk into a false, microbe-free cycle.
       dn  <- step < 0 & y > 0
       lam <- if (any(dn)) min(1, min(y[dn] * (1 - 1 / shrink_max) / -step[dn])) else 1

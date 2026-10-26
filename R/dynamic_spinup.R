@@ -51,7 +51,20 @@ save_spinup <- function(obj, state, scenario, arm,
   invisible(file)
 }
 
-load_spinup <- function(file) readRDS(file)
+# load_spinup() refuses a state saved with a different pool structure (e.g.
+# the earlier version with Organic, DOM and MIC pools): rerun Scripts/2 with
+# do_spinup <- TRUE to regenerate it.
+load_spinup <- function(file) {
+  x <- readRDS(file)
+  if (exists(".POOLS_MILLENNIAL")) {
+    stale <- setdiff(names(x$state), .POOLS_MILLENNIAL)
+    if (length(stale))
+      stop(file, " was saved with pools the model no longer has (",
+           paste(stale, collapse = ", "), "). Rerun Scripts/2_spinup_dynamic.R with ",
+           "do_spinup <- TRUE to regenerate the saved spin-ups.", call. = FALSE)
+  }
+  x
+}
 
 #------------------------------------------------------------------------#
 # run_followup() ----

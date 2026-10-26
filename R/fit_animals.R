@@ -37,8 +37,8 @@
 #   effect_param   parameter tuned to hit a target pool effect (same name in
 #                  all three models here)
 #   effect_pool    the pool whose response defines the "effect" -- specified
-#                  the DEFAULT pool (Millennial pools: Litter/CWD/Organic/
-#                  DOM/MIC/P/L/A/M/B); override it per scenario in
+#                  the DEFAULT pool (Millennial pools: Litter/CWD/
+#                  P/L/A/M/B); override it per scenario in
 #                  effect_pool_overrides below.
 #   effect_pct     default target effect SIZE (percent change vs the no-animal
 #                  baseline equilibrium) for this animal, used when you fit an
@@ -61,7 +61,7 @@ animal_fit_defaults <- list(
   RootHerb = list(
     biomass_param = "adj_rootherb",      # scales root-herbivore feeding rate
     effect_param  = "k_exudate_slope",                # acts on root exudation
-    effect_pool   = list(millennial = "DOM"),
+    effect_pool   = list(millennial = "L"),
     effect_pct    = +10)
 )
 
@@ -88,13 +88,13 @@ animal_fit_defaults <- list(
 #   Earthworms rework and stabilise organo-mineral C, so target a protected /
 #   passive soil pool (SOM_1 / PASSIVE / M) -- sign depends on whether your
 #   hypothesis is net protection (+) or accelerated turnover (-).
-#   Root herbivores raise root exudation, feeding the fast/active DOM pool
-#   (SOM_1 / ACTIVE / DOM, positive).
+#   Root herbivores raise root exudation, feeding the dissolved pool
+#   (L = low molecular weight C, positive).
 effect_pool_overrides <- list(
   millennial = list(
     Macrofauna    = list(Detritivore = list(pool = "Litter", pct = -10)),
     Mesofauna     = list(Detritivore = list(pool = "Litter", pct = -10)),
-    RootHerbivore = list(RootHerb    = list(pool = "DOM",    pct = +10)),
+    RootHerbivore = list(RootHerb    = list(pool = "L",      pct = +10)),
     Earthworm     = list(Earthworm   = list(pool = "M",      pct = +10))
   )
 )
@@ -261,7 +261,7 @@ fit_animal_params <- function(treatment, baseline,
   # SAME state: the baseline equilibrium for the shared pools plus the animal at
   # its input value -- exactly how Scripts 2 and 4 compute the treatment
   # equilibrium. Do NOT chain warm starts from the previous trial value: a high
-  # trial feeding rate can graze the organic-horizon microbes (MIC) to ~0, and
+  # trial feeding rate can graze the microbes (B) to ~0, and
   # regrowth from ~0 is so slow that the steady-state test is met in a false
   # "microbe-free" state. Chained warm starts then carry that false state into
   # the next trials and the calibration lands on the wrong feeding rate.
@@ -380,7 +380,7 @@ fit_animal_params <- function(treatment, baseline,
                     scenario, animal, B_fin, target_biomass,
                     100 * (B_fin / target_biomass - 1)))
   # microbial pools that collapsed to ~0 relative to the baseline equilibrium
-  mic_pools <- intersect(c("MIC", "B"), intersect(names(eq_fin), names(base_eq)))
+  mic_pools <- intersect("B", intersect(names(eq_fin), names(base_eq)))
   collapsed <- mic_pools[is.finite(eq_fin[mic_pools]) &
                          eq_fin[mic_pools] < 1e-6 * pmax(base_eq[mic_pools], 1e-12)]
   if (length(collapsed))

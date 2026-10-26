@@ -204,7 +204,7 @@ plot_followup_stacked <- function(model,
     summarise(change = sum(change), .groups = "drop")
 
   ggplot(stacked, aes(x = years, y = change, fill = group)) +
-    geom_area(alpha = 0.9, colour = "white", linewidth = 0.1) +
+    geom_area(stat = "identity", alpha = 0.9, colour = "white", linewidth = 0.1) +
     geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey40") +
     geom_line(data = net, aes(x = years, y = change),
               inherit.aes = FALSE, linewidth = 0.6, linetype = "dashed") +
@@ -295,7 +295,7 @@ plot_followup_with_eq <- function(model,
     summarise(net = sum(change), .groups = "drop") else NULL
 
   p <- ggplot(traj, aes(years, change, fill = group)) +
-    geom_area(alpha = 0.9, colour = "white", linewidth = 0.1) +
+    geom_area(stat = "identity", alpha = 0.9, colour = "white", linewidth = 0.1) +
     geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey40") +
     geom_line(data = net_traj, aes(years, change),
               inherit.aes = FALSE, linewidth = 0.6, linetype = "dashed", color = "white")

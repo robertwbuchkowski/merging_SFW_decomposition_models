@@ -60,23 +60,23 @@ make_model_wrapper <- function(model_fun, full_names, state_groups) {
   }
 }
 
-# resolve override names to the canonical parameter keys (case-sensitive)
-.apply_overrides <- function(parms, overrides, addkey = F) {
+# .apply_overrides(): set parameter values from the scenario workbook
+# (case-sensitive names). A name the model does not have (e.g. a parameter of
+# a removed pool still listed in scenarios.xlsx) is SKIPPED and reported once
+# per session, unless addkey = TRUE, which adds it as a new key.
+.apply_overrides <- function(parms, overrides, addkey = FALSE) {
   if (!length(overrides)) return(parms)
-  
+  unknown <- character(0)
   for (nm in names(overrides)) {
-    if (nm %in% names(parms)) {
-      key <- nm
-    } else {
-      if(addkey){
-        warning(sprintf("Parameter '%s' not found in 'parms'; adding as new key.", nm))
-        key <- nm
-      }
-    }
-    
-    parms[[key]] <- overrides[[nm]]
+    if (!(nm %in% names(parms)) && !addkey) { unknown <- c(unknown, nm); next }
+    parms[[nm]] <- overrides[[nm]]
   }
-  
+  new <- setdiff(unknown, getOption("sfw.unknown_params_reported", character(0)))
+  if (length(new)) {
+    message("Ignored parameter(s) not used by the model: ", paste(new, collapse = ", "))
+    options(sfw.unknown_params_reported =
+              c(getOption("sfw.unknown_params_reported", character(0)), new))
+  }
   parms
 }
 
@@ -348,12 +348,10 @@ setup_scenario_pair <- function(model, scenarios, scenario, source_files = TRUE,
 #   (b) INDIRECT -- animals modify RATE parameters of the soil model. These are
 #       the animal-effect slopes zeroed by zero_indirect_effects():
 #         slope_pint_det_k_frag_litter    detritivores -> litter fragmentation
-#         slope_pint_det_k_frag_organic   detritivores -> organic fragmentation
 #         k_b_slope_pint                  earthworms   -> aggregate (k_b) loss
 #         k_exudate_slope                 root herbivores -> root exudation
-#       Setting all four to 0 leaves animals acting ONLY through direct feeding.
+#       Setting all three to 0 leaves animals acting ONLY through direct feeding.
 indirect_effect_params <- c("slope_pint_det_k_frag_litter",
-                            "slope_pint_det_k_frag_organic",
                             "k_b_slope_pint",
                             "k_exudate_slope")
 

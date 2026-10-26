@@ -17,7 +17,7 @@
 # Needs (set in 6_multistability_test.R): abs_floor
 # make_starts(): a matrix of initial states (rows = pools, cols = starts).
 # Columns are: the default; an all-low and an all-high corner; a microbial-
-# collapse corner (tiny MIC/B); a microbial-bloom corner; then random draws
+# collapse corner (tiny B); a microbial-bloom corner; then random draws
 # where every pool is multiplied by an independent log-uniform factor. This
 # spreads seeds across basins, including the ones microbial models flip between.
 make_starts <- function(y0, n_random, span = 2) {
@@ -26,10 +26,10 @@ make_starts <- function(y0, n_random, span = 2) {
 
   cols$all_low  <- y0 * 10^(-span)
   cols$all_high <- y0 * 10^(+span)
-  micdead <- y0; micdead[intersect(c("MIC","B"), pools)] <- abs_floor * 10
+  micdead <- y0; micdead[intersect("B", pools)] <- abs_floor * 10
   cols$microbial_collapse <- micdead
-  micbloom <- y0; micbloom[intersect(c("MIC","B"), pools)] <-
-    y0[intersect(c("MIC","B"), pools)] * 10^span
+  micbloom <- y0; micbloom[intersect("B", pools)] <-
+    y0[intersect("B", pools)] * 10^span
   cols$microbial_bloom <- micbloom
 
   for (i in seq_len(n_random)) {

@@ -29,9 +29,8 @@ cv_default <- 0.5   # CV = 0.5: the SD is half the model value
 bound_exempt_prefix <- c("p_a", "p_b", "p_c")
 param_bound_table <- list(
   p_a = c(0, 1), p_b = c(0, 1),
-  root_to_organic = c(0, 1), a_root_herb = c(0, 1), LigFrac = c(0, 1), fCLAY = c(0, 1),
+  a_root_herb = c(0, 1),
   prop_feaces_earthworm_LMWC = c(0, 1), winter_root_act_prop = c(0, 1),
-  k_litterfall_ann = c(0, 1), k_litterfall_herb_ann = c(0, 1),
   MAtheta = c(0, 1), theta_amp_rel = c(0, 1),
   pct_claysilt = c(0, 100),
   pH = c(1, 14))
@@ -48,11 +47,9 @@ sign_free_params    <- c("MAT")
 # GENERAL model parameters (scenario-specific and animal parameters are added
 # per scenario from scenarios.xlsx). Only those present in a scenario's parms
 # are used.
-sweep_params <- c("k_frag_litter", "k_frag_organic", "k_l_o", "k_l", "k_b", "k_pa",
-                  "k_ma", "k_litterfall_ann", "k_litterfall_herb_ann", "k_MICd",
-                  "k_bd", "root_to_organic", "a_root_herb", "k_exudate_tree",
-                  "k_exudate_herb", "k_frag_CWD", "K_ol", "alpha_ol", "alpha_ob",
-                  "K_ob", "p_c", "psi_matric", "lambda_mat", "k_a_min",
+sweep_params <- c("k_frag_litter", "k_frag_CWD", "k_l", "k_b", "k_pa", "k_ma",
+                  "k_bd", "a_root_herb", "k_exudate_tree",
+                  "p_c", "psi_matric", "lambda_mat", "k_a_min",
                   "alpha_pl", "alpha_lb", "K_pl", "K_lb", "p1", "p2", "K_ld",
                   "CUE_T", "p_a", "p_b", "k_mort_root_tree", "k_mort_root_herb")
 # rho_p (particle density) is deliberately NOT varied: it is close to constant
@@ -64,39 +61,34 @@ sweep_params <- c("k_frag_litter", "k_frag_organic", "k_l_o", "k_l", "k_b", "k_p
 #------------------------------------------------------------------------#
 # Pretty display names (code -> label); pretty_param() falls back to the code.
 param_labels <- c(
-  k_frag_litter = "Litter fragmentation", k_frag_organic = "Organic fragmentation",
-  k_frag_CWD = "CWD fragmentation", k_l_o = "DOM -> POC turnover",
+  k_frag_litter = "Litter fragmentation", k_frag_CWD = "CWD fragmentation",
   k_l = "LMWC leaching", k_b = "Aggregate breakdown", k_pa = "POC -> aggregate",
-  k_ma = "MAOC -> aggregate", k_MICd = "Microbial turnover (organic)",
-  k_bd = "Microbial turnover (mineral)", k_a_min = "Min. aeration factor",
-  k_exudate_tree = "Tree root exudation", k_exudate_herb = "Herb root exudation",
-  pct_claysilt = "Clay + silt (%)", root_to_organic = "Root death -> Organic",
+  k_ma = "MAOC -> aggregate",
+  k_bd = "Microbial turnover", k_a_min = "Min. aeration factor",
+  k_exudate_tree = "Tree root exudation",
+  pct_claysilt = "Clay + silt (%)",
   a_root_herb = "Herb root allocation", MAT = "Mean annual temperature",
   MAtheta = "Mean annual soil moisture", NPP_herb = "Herbaceous NPP", NPP_tree = "Tree NPP",
   BD = "Bulk density", rho_p = "Particle density", pH = "Soil pH",
   psi_matric = "Matric potential", lambda_mat = "Matric sensitivity",
-  CUE_T = "CUE temperature slope", K_ol = "Organic->DOM half-saturation",
-  K_ob = "DOM->microbe half-saturation", K_pl = "POC->LMWC half-saturation",
+  CUE_T = "CUE temperature slope",
+  K_pl = "Depolymerization half-saturation (POC, litter, CWD)",
   K_lb = "LMWC->microbe half-saturation", K_ld = "LMWC->MAOC max sorption",
-  alpha_ol = "Organic->DOM pre-exponential", alpha_ob = "DOM->microbe pre-exponential",
-  alpha_pl = "POC->LMWC pre-exponential", alpha_lb = "LMWC->microbe pre-exponential",
+  alpha_pl = "Depolymerization pre-exponential (POC, litter, CWD)",
+  alpha_lb = "LMWC->microbe pre-exponential",
   p1 = "pH sorption coef. 1", p2 = "pH sorption coef. 2",
   p_a = "Aggregate->POC partition", p_b = "Necromass->MAOC partition",
-  p_c = "Clay+silt protection coef.", k_litterfall_ann = "Tree annual litterfall prop.",
-  k_litterfall_herb_ann = "Herb. annual litterfall prop.",
+  p_c = "Clay+silt protection coef.",
   k_mort_root_tree = "Tree root mortality", k_mort_root_herb = "Herb. root mortality",
   T_amp = "Temperature amplitude", theta_amp = "Moisture amplitude",
   theta_amp_rel = "Moisture amplitude (fraction of room)",
-  fCLAY = "Clay fraction", LigFrac = "Lignin fraction",
   # animal parameters
-  c_earthworm_om = "Earthworm organic matter consumption",
   k_b_slope_pint = "Earthworm effect on aggregate stability (proportion)",
   c_earthworm_soil = "Earthworm soil consumption", p_earthworm = "Earthworm production efficiency",
   d_earthworm = "Earthworm mortality", prop_feaces_earthworm_LMWC = "Earthworm feces to LMWC fraction",
   a_earthworm_soil = "Earthworm soil assimilation", c_earthworm_litter = "Earthworm litter consumption",
   a_earthworm = "Earthworm litter assimilation efficiency",
   d_detritivores = "Detritivore mortality",
-  slope_pint_det_k_frag_organic = "Detritivore effect of organic fragmentation (proportion)",
   c_detritivores = "Detritivore consumption", p_detritivores = "Detritivore production efficiency",
   a_detritivores = "Detritivore assimilation efficiency",
   slope_pint_det_k_frag_litter = "Detritivore litter fragmentation response",
@@ -109,7 +101,7 @@ param_labels <- c(
 # Model evaluation: pools, regime flags, solver horizon ----
 #------------------------------------------------------------------------#
 animal_pools <- c("Earthworm", "Detritivore", "RootHerb")
-#   microbe_collapse : MIC or B in the treatment below collapse_rel x baseline
+#   microbe_collapse : B in the treatment below collapse_rel x baseline
 #   kb_floor         : aggregate breakdown k_b*(1 + Earthworm*k_b_slope_pint) at
 #                      or below the model's 0.001 floor (breakdown switched off)
 collapse_rel <- 1e-6
@@ -174,10 +166,9 @@ lc_reuse_jacobian <- FALSE  # FALSE: fresh Jacobian per evaluation (Morris / LHS
 # listed here inside a target range. Defaults: each scenario's all-default
 # baseline, accepted range = reference / factor .. x factor; rows in
 # up_targets_file (columns scenario, pool, lower, upper) override them.
-up_filter_pools  <- c("TotalC", "P", "M", "MIC", "B")   # TotalC = all non-animal pools
+up_filter_pools  <- c("TotalC", "P", "M", "B")   # TotalC = all non-animal pools
 up_filter_factor <- 2                 # default accepted range: reference / 2 .. x 2
-up_filter_factor_by_pool <- c(MIC = 10) # per-pool overrides: organic-horizon microbial
-                                        # biomass is tiny and volatile, so allow / 10 .. x 10
+up_filter_factor_by_pool <- c()       # per-pool overrides, e.g. c(B = 5) for / 5 .. x 5
 up_targets_file  <- "Data/baseline_targets.csv"   # optional; overrides the defaults
 up_pool_floor    <- 1e-9  # every baseline pool must also be above this (g C m-2):
                           # positive and non-zero (1e-9 = numerically zero)

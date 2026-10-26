@@ -105,7 +105,7 @@ ident_settings <- list(
   ts_seed_mod = 0.01,        # animals introduced at 1% of their input biomass
                              # (same as followup_add_animals() in Scripts/3)
   obs_pools   = NULL,        # NULL = every pool is measured; or e.g.
-                             # c("P", "M", "MIC", "B", "Earthworm", "Detritivore", "RootHerb")
+                             # c("P", "M", "B", "Earthworm", "Detritivore", "RootHerb")
   obs_floor   = 1e-9,        # observations below this (numerically zero) are dropped
   fd_rel      = 1e-3,        # relative parameter step for the finite differences
   lc_tol      = 1e-8,        # limit-cycle tolerance: tighter than for Morris, because the

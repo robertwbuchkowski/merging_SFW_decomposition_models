@@ -27,7 +27,7 @@ pretty_param <- function(x) ifelse(x %in% names(param_labels), param_labels[x], 
 # Physical bounds for one parameter, as c(lower, upper) with attribute "why"
 # naming the reason for each side (used to label bound hits):
 #   proportion  a_* / p_* efficiencies in [0, 1], except p_a, p_b, p_c
-#   table       named entries in param_bound_table (e.g. root_to_organic,
+#   table       named entries in param_bound_table (e.g. a_root_herb,
 #               pct_claysilt in [0, 100], pH in [1, 14])
 #   positive    a positive value stays >= positive_floor_frac x value
 #   sign        a negative value stays <= 0
@@ -121,7 +121,7 @@ infeasible_soil <- function(parms, mode = if (exists("forcing_mode")) forcing_mo
 # Returns "" (normal), "microbe_collapse", "kb_floor" or both joined by "+".
 regime_flags <- function(eq_b, eq_t, parms) {
   f   <- character(0)
-  mic <- intersect(c("MIC", "B"), intersect(names(eq_b), names(eq_t)))
+  mic <- intersect("B", intersect(names(eq_b), names(eq_t)))
   if (length(mic) && any(is.finite(eq_t[mic]) &
                          eq_t[mic] < collapse_rel * pmax(eq_b[mic], 1e-12)))
     f <- c(f, "microbe_collapse")
