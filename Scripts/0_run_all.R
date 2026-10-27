@@ -12,7 +12,8 @@
 #       1 fit_all_animals        -> Results/fitted_animal_params.csv
 #                                      (feeding rates fitted at the constant-forcing
 #                                       equilibrium)
-#       2 spinup_dynamic         -> Data/spinup/*.rds, Results/animal_eq_effect.csv
+#       2 spinup_dynamic         -> Data/spinup/*.rds, Results/animal_eq_effect.csv,
+#                                      Plots/flux_network_*.png
 #                                      (equilibrium effects, then the SEASONAL
 #                                       spin-up of the no-animal soil to its
 #                                       annual limit cycle)

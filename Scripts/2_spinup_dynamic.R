@@ -11,8 +11,10 @@
 #   * Run from the project root; this is the slow step, so it is kept separate.
 #   * Outputs: Results/animal_eq_effect.csv (equilibrium effects under constant
 #     mean forcing, the same steady state the animals were fitted at),
-#     Plots/total_effect.png, and the saved seasonal limit-cycle states under
-#     Data/spinup/ (consumed by Scripts/3_followup_analysis.R).
+#     Plots/total_effect.png, Plots/flux_network_<scenario>.png (carbon
+#     fluxes with and without animals, and the change), and the saved
+#     seasonal limit-cycle states under Data/spinup/ (consumed by
+#     Scripts/3_followup_analysis.R).
 # Requires Results/fitted_animal_params.csv from Scripts/1_fit_all_animals.R when
 # use_fitted_params = TRUE.
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
@@ -20,7 +22,7 @@ source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 source("R/millennial_model.R"); source("R/derive_millennial_parms.R")
-source("R/init_millennial_state.R")
+source("R/init_millennial_state.R"); source("R/flux_network.R")
 source("R/run_utils.R")
 debugonce_functions()   # only active when options(sfw.debugonce = TRUE); see Scripts/0_run_all.R
 
@@ -77,6 +79,12 @@ for (model in models) {
       cbind(compare_vectors(eq_direct, pair$baseline$init_state_spin),
             model = model, scenario = scenario, type = "direct"))
     rm(pair2, eq_direct)
+
+    # carbon flux network at both equilibria + the change (Plots/flux_network_*.png,
+    # with the flux table alongside as .csv)
+    net <- flux_network_scenario(model, scenario, scen, pair = pair)
+    save_flux_network(net, sprintf("Plots/flux_network_%s.png", scenario))
+    rm(net)
 
     if (do_spinup) {
       # baseline: seasonal spin-up to the limit cycle, then save
