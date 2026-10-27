@@ -81,8 +81,8 @@ sobol_screen       <- TRUE   # FALSE = skip the screening and analyse ALL parame
                              # (N x (k + 2) runs with k ~ 50: ~6 CPU-hours per scenario
                              # at N = 1000 under constant forcing). Use it when the
                              # screening check fails (screening_ok = FALSE).
-screen_rel_cut     <- 0.10   # keep mu* >= 10% of the largest mu* (main or standardized)
-max_screened       <- 12     # at most this many non-animal parameters
+screen_rel_cut     <- 0.20   # keep mu* >= 20% of the largest mu* (main or standardized)
+max_screened       <- 20     # at most this many non-animal parameters
 include_all_animal <- TRUE   # always analyse every animal parameter
 # Sobol'
 sobol_N      <- 1000         # base rows; N (k + 2) model runs per scenario

@@ -108,7 +108,7 @@ derive_fn    <- match.fun(model_table[[model]]$derive)
 #------------------------------------------------------------------------#
 # Morris + range settings ----
 #------------------------------------------------------------------------#
-morris_r      <- 200     # trajectories per scenario (raise for stable mu*/sigma)
+morris_r      <- 500     # trajectories per scenario (raise for stable mu*/sigma)
 morris_levels <- 4L     # grid levels p in the Morris design
 morris_seed   <- 27082026      # base seed; each scenario uses morris_seed + its index
 
