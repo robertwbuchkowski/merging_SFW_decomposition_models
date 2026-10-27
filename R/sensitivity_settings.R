@@ -31,7 +31,7 @@ param_bound_table <- list(
   p_a = c(0, 1), p_b = c(0, 1),
   a_root_herb = c(0, 1),
   prop_feaces_earthworm_LMWC = c(0, 1), winter_root_act_prop = c(0, 1),
-  MAtheta = c(0, 1), theta_amp_rel = c(0, 1),
+  MAtheta = c(0, 1),
   pct_claysilt = c(0, 100),
   pH = c(1, 14))
 # All other parameters keep their sign: a positive value cannot go below
@@ -81,7 +81,6 @@ param_labels <- c(
   p_c = "Clay+silt protection coef.",
   k_mort_root_tree = "Tree root mortality", k_mort_root_herb = "Herb. root mortality",
   T_amp = "Temperature amplitude", theta_amp = "Moisture amplitude",
-  theta_amp_rel = "Moisture amplitude (fraction of room)",
   # animal parameters
   k_b_slope_pint = "Earthworm effect on aggregate stability (proportion)",
   c_earthworm_soil = "Earthworm soil consumption", p_earthworm = "Earthworm production efficiency",
@@ -112,57 +111,30 @@ kb_floor     <- 0.001
 eq_max_time <- 1e9
 
 #------------------------------------------------------------------------#
-# Forcing used for the steady state (Scripts/4, 5, 7) ----
+# Steady state and results folder (Scripts/1, 4, 5, 7, 8) ----
 #------------------------------------------------------------------------#
-# "seasonal": the steady state is the annual LIMIT CYCLE under the seasonal
-#             climate forcing (R/seasonal_steady_state.R); effects and the
-#             realism filter use its ANNUAL MEAN. Realistic; ~10-30x slower.
-# "constant": equilibrium under constant mean forcing (runsteady), as before.
-# Set it for a whole run from Scripts/0_run_all.R (forcing_run), or for one
-# script with options(sfw.forcing = "constant") before sourcing it.
-forcing_mode <- getOption("sfw.forcing", "seasonal")
-if (!forcing_mode %in% c("seasonal", "constant"))
-  stop("option sfw.forcing must be \"seasonal\" or \"constant\"")
+# These analyses use the EQUILIBRIUM under constant mean climate forcing
+# (rootSolve::runsteady via spinup_equilibrium()). The seasonal dynamics are
+# simulated only by Scripts/2 (seasonal spin-up) and Scripts/3 (animal
+# invasion trajectories).
+res_dir_default <- "Results"
 
-# Where Scripts/1, 4, 5 and 7 read and write their results, by forcing, so a
-# run under one forcing never overwrites the other. Seasonal results stay in
-# Results/ (as before); Scripts/8_compare_forcing.R compares the two.
-results_dir_by_forcing <- c(seasonal = "Results", constant = "Results/constant_forcing")
-res_dir_forcing <- results_dir_by_forcing[[forcing_mode]]
+# Parameters that only shape the SEASONAL forcing. Under constant mean
+# forcing they have no effect, so they are left out of every sensitivity,
+# uncertainty and identifiability analysis even when scenarios.xlsx lists them.
+seasonal_only_params <- c("T_amp", "theta_amp", "N_theta_peaks", "litter_peak_doy",
+                          "litter_width_d", "leaf_litter_summer_frac")
 
-#------------------------------------------------------------------------#
-# Seasonal soil moisture amplitude (Scripts/4 and 5) ----
-#------------------------------------------------------------------------#
-# Soil moisture swings MAtheta +/- theta_amp over the year and must stay
-# within [0, porosity]. Varying MAtheta, theta_amp and BD (porosity =
-# 1 - BD / rho_p) independently creates impossible soils. With
-# moisture_amp_relative = TRUE the Morris screening and the uncertainty
-# propagation vary the amplitude RELATIVE to the room available:
-#   theta_amp_rel = theta_amp / min(MAtheta, porosity - MAtheta),  in [0, 1]
-# so every sampled amplitude is physically possible; theta_amp is recomputed
-# from theta_amp_rel whenever MAtheta or BD change. Its SD is the SD of
-# theta_amp (reported or CV rule) divided by the default room, i.e. the same
-# CV. The remaining impossible combination (mean moisture >= porosity) is
-# removed before any simulation: Morris trajectories containing such a point
-# are redrawn (see run_morris()). The identifiability analysis (Scripts/7)
-# keeps the absolute amplitude.
-moisture_amp_relative <- TRUE
-# parameters that decide whether a soil is physically possible
-soil_feasibility_params <- c("BD", "rho_p", "MAtheta", "theta_amp", "theta_amp_rel")
-# default room per scenario, filled by make_base_pair()
-moisture_room_default <- new.env()
-lc_tol       <- 1e-6   # limit cycle: max relative |Phi(y) - y| over one year
-lc_ode_tol   <- 1e-7   # ODE rtol/atol of the one-year solves (must be < lc_tol)
-lc_reuse_jacobian <- FALSE  # FALSE: fresh Jacobian per evaluation (Morris / LHS points
-                            # are far from nominal); identifiability uses TRUE
-# (the identifiability analysis, Scripts/7, tightens both: it differentiates
-#  the solution numerically)
+# Parameters that decide whether a soil is physically possible (porosity
+# 1 - BD / rho_p must exceed the mean soil moisture MAtheta). Morris
+# trajectories and Sobol' rows with an impossible soil are redrawn before any
+# simulation; Latin-hypercube samples are skipped without solving.
+soil_feasibility_params <- c("BD", "rho_p", "MAtheta")
 
 #------------------------------------------------------------------------#
-# Baseline realism filter (Scripts/5 and 9) ----
+# Baseline realism filter (Scripts/5 and 8) ----
 #------------------------------------------------------------------------#
-# A parameter sample is "realistic" when its no-animal steady state (annual
-# mean if seasonal) keeps every pool positive (> up_pool_floor) and the pools
+# A parameter sample is "realistic" when its no-animal equilibrium keeps every pool positive (> up_pool_floor) and the pools
 # listed here inside a target range. Defaults: each scenario's all-default
 # baseline, accepted range = reference / factor .. x factor; rows in
 # up_targets_file (columns scenario, pool, lower, upper) override them.
@@ -174,7 +146,7 @@ up_pool_floor    <- 1e-9  # every baseline pool must also be above this (g C m-2
                           # positive and non-zero (1e-9 = numerically zero)
 
 #------------------------------------------------------------------------#
-# Output of the Morris screening and Sobol' analysis (Scripts/4 and 9) ----
+# Output of the Morris screening and Sobol' analysis (Scripts/4 and 8) ----
 #------------------------------------------------------------------------#
 # "pct": animal effect on total soil + root C as a PERCENTAGE of the
 #        no-animal value (default). Across the parameter distributions the
@@ -183,5 +155,5 @@ up_pool_floor    <- 1e-9  # every baseline pool must also be above this (g C m-2
 #        it, so its elementary effects and variance are dominated by a few
 #        extreme runs. The relative effect is far better behaved.
 # "abs": the effect in g C m-2 (the earlier behaviour of Scripts/4).
-# The Sobol' step (Scripts/9) should screen on the same output it analyses.
+# The Sobol' step (Scripts/8) should screen on the same output it analyses.
 effect_output <- "pct"

@@ -67,9 +67,9 @@ baseline_values <- function(eb, pools) {
 # headline_effects() ----
 #------------------------------------------------------------------------#
 # Used in: called by make_headline_fun(), run_uncertainty_propagation_fn()
-# Needs (set in R/sensitivity_settings.R): animal_pools, forcing_mode (via steady_state())
+# Needs (set in R/sensitivity_settings.R): animal_pools, eq_max_time
 # total and direct steady-state effects + baseline values for one parameter vector
-# (steady state under forcing_mode: seasonal = annual mean of the limit cycle)
+# (equilibria under constant mean forcing)
 headline_effects <- function(base_pair, pv, pools) {
   pair <- base_pair
   for (nm in names(pv)) {
@@ -81,12 +81,15 @@ headline_effects <- function(base_pair, pv, pools) {
            setNames(rep(NA_real_, length(pools)), paste0("base_", pools)))
   if (nzchar(infeasible_soil(pair$baseline$parms))) { out[["infeasible"]] <- 1; return(out) }
   tryCatch({
-    # steady states under forcing_mode (seasonal: annual means of the limit cycles)
-    b  <- steady_state(pair$baseline, ref = pair$ref_b)
-    eb <- b$ss_mean
-    tr <- steady_state(pair$treatment, ref = pair$ref_t, warm_start = b$ss_const)
-    td <- steady_state(zero_indirect_effects(pair$treatment, verbose = FALSE),
-                       ref = pair$ref_t, warm_start = b$ss_const)
+    # equilibria under constant mean forcing: baseline, treatment, and the
+    # treatment with the indirect effects switched off (direct feeding only)
+    eqm <- function(o, ws = NULL) spinup_equilibrium(o, warm_start = ws, max_time = eq_max_time,
+                                                     verbose = FALSE)
+    b  <- eqm(pair$baseline)
+    eb <- b$init_state_spin
+    tr <- eqm(pair$treatment, eb)
+    td <- eqm(zero_indirect_effects(pair$treatment, verbose = FALSE), eb)
+    tr$ss_mean <- tr$init_state_spin; td$ss_mean <- td$init_state_spin
     soil <- setdiff(intersect(names(eb), names(tr$ss_mean)), animal_pools)
     conv <- isTRUE(b$spin_info$converged) && isTRUE(tr$spin_info$converged) &&
             isTRUE(td$spin_info$converged)
@@ -134,11 +137,11 @@ read_user_targets <- function(file = up_targets_file) {
 #------------------------------------------------------------------------#
 # Used in: called by run_uncertainty_propagation_fn()
 # Needs (set in 5_uncertainty_animal_effect.R): up_filter_factor, up_filter_factor_by_pool, up_filter_pools
-# Uses base_pair$nominal_b (make_base_pair(), steady state under forcing_mode)
+# Uses base_pair$nominal_b (make_base_pair(), nominal no-animal equilibrium)
 # realism targets for one scenario: defaults from the all-default baseline,
 # overridden / extended by rows in up_targets_file
 targets_for <- function(scenario, base_pair, user_targets) {
-  eb  <- base_pair$nominal_b         # nominal steady state (make_base_pair(), forcing_mode)
+  eb  <- base_pair$nominal_b         # nominal no-animal equilibrium (make_base_pair())
   ref <- baseline_values(eb, up_filter_pools)
   fac <- ifelse(up_filter_pools %in% names(up_filter_factor_by_pool),
                 up_filter_factor_by_pool[up_filter_pools], up_filter_factor)
@@ -204,7 +207,7 @@ run_uncertainty_propagation_fn <- function() {
     pools <- tg$pool
 
     cat("Uncertainty propagation: ", scenario, " - ", k, " parameters, ",
-        up_n, " LHS samples, ", forcing_mode, " forcing\n", sep = "")
+        up_n, " LHS samples\n", sep = "")
     set.seed(up_seed + si)
     U <- lhs_unit(up_n, k)
     X <- vapply(seq_len(k), function(j) up_quantile(U[, j], dists[[pn[j]]]), numeric(up_n))

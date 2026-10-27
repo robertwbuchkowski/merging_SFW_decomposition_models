@@ -5,36 +5,25 @@
 # fitted parameters differ across models (with the baseline/default value for
 # reference). Run from project root.
 #
-# FORCING (fit_forcing below; follows forcing_mode in R/sensitivity_settings.R,
-# i.e. option sfw.forcing / forcing_run in Scripts/0_run_all.R):
-#   "seasonal" (default)  calibrate at the SEASONAL steady state (annual limit
-#       cycle under the seasonal climate): the target biomass and effect refer
-#       to ANNUAL MEANS of the cycle. Consistent with Scripts/4, 5 and 7
-#       (forcing_mode in R/sensitivity_settings.R). The fast constant-forcing
-#       fit is run first and starts the seasonal search (measured: ~1 min per
-#       animal for biomass only, ~8 min with an effect target).
-#   "constant"  calibrate at the equilibrium under constant mean forcing
-#       (fast; a few minutes in total), as before.
-# The forcing used is stored in the 'forcing' column of the output files.
-# Outputs go to the folder for that forcing: Results/ (seasonal) or
-# Results/constant_forcing/ (constant), so the two never overwrite each other.
+# Each animal's feeding rate (adj_*) is fitted so that its EQUILIBRIUM
+# biomass under constant mean climate forcing matches the target (its input
+# value); optionally an effect parameter is fitted to a target pool effect.
+# The seasonal dynamics are simulated afterwards with these values
+# (Scripts/2 seasonal spin-up, Scripts/3 animal invasion).
+# Outputs: Results/fitted_animal_params.csv (+ summary tables).
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 source("R/millennial_model.R"); source("R/derive_millennial_parms.R")
 source("R/init_millennial_state.R")
-source("R/sensitivity_settings.R")    # limit-cycle solver settings (lc_tol, ...)
-source("R/seasonal_steady_state.R")  # steady_state(): seasonal limit cycle
 source("R/run_utils.R")
 debugonce_functions()   # only active when options(sfw.debugonce = TRUE); see Scripts/0_run_all.R
 
 scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("millennial")
 do_effect_fitting = FALSE
-fit_forcing <- forcing_mode   # "seasonal" (annual limit cycle) or "constant" (mean forcing)
-res_dir     <- res_dir_forcing  # Results/ or Results/constant_forcing/
-cat("Forcing:", fit_forcing, "| results ->", res_dir, "\n")
+res_dir <- "Results"
 
 #------------------------------------------------------------------------#
 # EFFECT fitting -- OPT-IN and EXPLICIT ----
@@ -69,8 +58,7 @@ for (model in models) {
                                                     ": ", conditionMessage(e)); NULL })
     if (is.null(pair)) next
 
-    # (the baseline steady state -- the effect reference -- is computed inside
-    #  fit_animal_params() under fit_forcing)
+    pair$baseline <- spinup_equilibrium(pair$baseline, verbose = FALSE)  # effect reference
 
     animals <- animals_order[animals_order %in% pair$treatment$active]
     if (!length(animals)) next
@@ -96,7 +84,6 @@ for (model in models) {
                           effect_pool       = es$pool,
                           target_effect_pct = es$pct,
                           effect_param      = es$param,
-                          forcing           = fit_forcing,
                           verbose = FALSE),
         error = function(e) { message("fit failed ", model, "/", scenario, "/", a,
                                       ": ", conditionMessage(e)); NULL })
@@ -107,7 +94,7 @@ for (model in models) {
       # biomass (feeding-rate) parameter row
       rows[[length(rows) + 1]] <- data.frame(
         model = model, scenario = scenario, animal = a,
-        param = d$bp, role = "biomass (feeding rate)", forcing = fit_forcing,
+        param = d$bp, role = "biomass (feeding rate)",
         baseline = d$bp_default, fitted = f$fitted_biomass_param,
         ratio = f$fitted_biomass_param / d$bp_default,
         target = f$target_biomass, achieved = f$achieved_biomass,
@@ -125,7 +112,6 @@ for (model in models) {
         rows[[length(rows) + 1]] <- data.frame(
           model = model, scenario = scenario, animal = a,
           param = f$effect_param, role = paste0("effect on ", f$effect_pool),
-          forcing = fit_forcing,
           baseline = d$ep_default, fitted = f$fitted_effect_param,
           ratio = if (is.na(d$ep_default) || d$ep_default == 0) NA
                   else f$fitted_effect_param / d$ep_default,

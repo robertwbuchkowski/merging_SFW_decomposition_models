@@ -15,7 +15,6 @@
 #------------------------------------------------------------------------#
 # Used in: Scripts/4_sensitivity_animal_effects.R (section: RUN)
 # Needs (set in 4_sensitivity_animal_effects.R): boot_B, boot_top_k, cl, morris_levels, morris_r, morris_seed, scenarios
-# Needs (set in R/sensitivity_settings.R): forcing_mode
 # run_morris(): Morris screening for every scenario under one range mode.
 # Each scenario is seeded with morris_seed + its index, so the main and
 # standardized runs share the same unit-hypercube trajectories.
@@ -49,7 +48,7 @@ run_morris <- function(mode = c("main", "standardized")) {
                   paste(sprintf("%s (%s)", names(hits), hits), collapse = ", ")))
 
     cat("Morris [", mode, "]: ", scenario, " - ", length(keep), " parameters, ",
-        morris_r, " trajectories, ", forcing_mode, " forcing\n", sep = "")
+        morris_r, " trajectories\n", sep = "")
     set.seed(morris_seed + si)
     # impossible soils are caught BEFORE any simulation: trajectories with a
     # point whose mean moisture >= porosity (or other infeasible soil) are redrawn
@@ -262,7 +261,7 @@ morris_convergence <- function(tbl, top_k = 5, ci_tol = 0.2,
 # Needs (set in 4_sensitivity_animal_effects.R): boot_top_k, conv_ci_tol, fig_dir, res_dir
 write_morris_outputs <- function(tbl, tag, colours, labels) {
   csv <- file.path(res_dir, paste0("animal_effect_morris", tag, ".csv"))
-  tbl$effect_output <- effect_output          # output screened (read by Scripts/9)
+  tbl$effect_output <- effect_output          # output screened (read by Scripts/8)
   write_csv(tbl, csv)
   p_all <- plot_morris(tbl, colours, labels)
   ggsave(file.path(fig_dir, paste0("animal_effect_morris", tag, ".png")), p_all,

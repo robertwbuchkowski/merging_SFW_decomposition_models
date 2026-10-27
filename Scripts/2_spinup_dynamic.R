@@ -9,10 +9,11 @@
 # HOW TO USE
 #   * Set the toggles below (models, which arms to spin up, Newton vs forward).
 #   * Run from the project root; this is the slow step, so it is kept separate.
-#   * Outputs: Results/animal_eq_effect.csv, Plots/total_effect.png, and the
-#     saved limit-cycle states under Data/spinup/ (consumed by
-#     Scripts/followup_analysis.R).
-# Requires Results/fitted_animal_params.csv from Scripts/fit_all_animals.R when
+#   * Outputs: Results/animal_eq_effect.csv (equilibrium effects under constant
+#     mean forcing, the same steady state the animals were fitted at),
+#     Plots/total_effect.png, and the saved seasonal limit-cycle states under
+#     Data/spinup/ (consumed by Scripts/3_followup_analysis.R).
+# Requires Results/fitted_animal_params.csv from Scripts/1_fit_all_animals.R when
 # use_fitted_params = TRUE.
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
@@ -30,7 +31,7 @@ models <- c("millennial")
 # toggles ----
 #------------------------------------------------------------------------#
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)
-do_spinup         <- FALSE    # run the seasonal dynamic spin-up (the slow part)
+do_spinup         <- TRUE     # run the seasonal dynamic spin-up (needed by Scripts/3)
 do_treatment      <- FALSE   # also spin up the treatment arm now (else baseline only)
 use_newton        <- TRUE    # TRUE = Newton shooting (fast, exact limit cycle);
                              # FALSE = forward-integration spin-up

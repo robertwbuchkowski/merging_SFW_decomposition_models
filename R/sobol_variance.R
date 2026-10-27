@@ -1,7 +1,7 @@
 #------------------------------------------------------------------------#
 # Variance-based sensitivity (Sobol') after Morris screening ----
 #------------------------------------------------------------------------#
-# Helper functions for Scripts/9_sobol_variance_partition.R. Two-stage global
+# Helper functions for Scripts/8_sobol_variance_partition.R. Two-stage global
 # sensitivity analysis (Saltelli et al. 2008; Campolongo et al. 2007):
 #   1. SCREENING (Morris, Scripts/4): per scenario, keep the parameters whose
 #      mu* is at least screen_rel_cut x the largest mu* in the MAIN or the
@@ -43,8 +43,8 @@
 #------------------------------------------------------------------------#
 # morris_shortlist() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/9_sobol_variance_partition.R (section: Screening)
-# Needs (set in Scripts/9): screen_rel_cut, include_all_animal, max_screened
+# Used in: Scripts/8_sobol_variance_partition.R (section: Screening)
+# Needs (set in Scripts/8): screen_rel_cut, include_all_animal, max_screened
 # Shortlist for one scenario from the Morris tables (main and, if available,
 # standardized; NULL is allowed). A parameter is kept when, in either
 # analysis, mu* / max(mu*) >= screen_rel_cut ("main" / "standardized"), or
@@ -111,7 +111,7 @@ soil_values_feasible <- function(pv, base_parms) {
   if (!length(sp)) return(TRUE)
   p <- base_parms
   for (nm in sp) p[[nm]] <- pv[[nm]]
-  !nzchar(infeasible_soil(apply_relative_moisture(derive_fn(p))))
+  !nzchar(infeasible_soil(derive_fn(p)))
 }
 
 #------------------------------------------------------------------------#
@@ -162,7 +162,7 @@ sobol_design <- function(dists, factors, N, base_parms, seed) {
 # sobol_model_output() / make_sobol_fun() ----
 #------------------------------------------------------------------------#
 # Used in: called by run_sobol_scenario() (via make_sobol_fun on the workers)
-# Needs (set in R/sensitivity_settings.R): animal_pools, forcing_mode
+# Needs (set in R/sensitivity_settings.R): animal_pools, eq_max_time
 # One model run: the steady-state TOTAL animal effect on total soil + root C
 # (treatment - baseline, as in Scripts/4 and 5) and the baseline values the
 # realism filter needs. effect is NA when either steady state is not reached.
@@ -177,9 +177,11 @@ sobol_model_output <- function(base_pair, pv, pools) {
            setNames(rep(NA_real_, length(pools)), paste0("base_", pools)))
   if (nzchar(infeasible_soil(pair$baseline$parms))) { out[["infeasible"]] <- 1; return(out) }
   tryCatch({
-    b  <- steady_state(pair$baseline, ref = pair$ref_b)
-    tr <- steady_state(pair$treatment, ref = pair$ref_t, warm_start = b$ss_const)
-    eb <- b$ss_mean
+    b  <- spinup_equilibrium(pair$baseline, max_time = eq_max_time, verbose = FALSE)
+    eb <- b$init_state_spin
+    tr <- spinup_equilibrium(pair$treatment, warm_start = eb, max_time = eq_max_time,
+                             verbose = FALSE)
+    tr$ss_mean <- tr$init_state_spin
     soil <- setdiff(intersect(names(eb), names(tr$ss_mean)), animal_pools)
     conv <- isTRUE(b$spin_info$converged) && isTRUE(tr$spin_info$converged)
     rg   <- regime_flags(eb, tr$ss_mean, pair$treatment$parms)
@@ -259,8 +261,8 @@ pawn_indices <- function(X, y, n_cond = 10) {
 #------------------------------------------------------------------------#
 # run_sobol_scenario() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/9_sobol_variance_partition.R (section: Sobol' analysis)
-# Needs (set in Scripts/9): sobol_screen, sobol_N, sobol_seed, sobol_boot_B, rest_st_max,
+# Used in: Scripts/8_sobol_variance_partition.R (section: Sobol' analysis)
+# Needs (set in Scripts/8): sobol_screen, sobol_N, sobol_seed, sobol_boot_B, rest_st_max,
 #   pawn_n_cond, cl, morris_main, morris_std; (R/sensitivity_settings.R)
 #   up_filter_pools, up_pool_floor, ... (realism filter)
 # Screening, Sobol' design, model runs, indices, PAWN and the realism report
@@ -355,7 +357,7 @@ run_sobol_scenario <- function(scenario, si = 1) {
   sio <- si_tab[si_tab$output == o, , drop = FALSE]
   rest_row <- sio[sio$type == "group", , drop = FALSE]
   data.frame(
-    scenario = scenario, output = o, forcing = forcing_mode, N = N, n_factors = nf,
+    scenario = scenario, output = o, N = N, n_factors = nf,
     n_shortlisted = length(sel), n_animal = sum(sel %in% ps$animal), n_fixed_group = length(rest),
     n_runs = nrow(Y), n_design_redrawn = des$n_redrawn,
     n_not_converged = sum(Y[, "converged"] == 0 & Y[, "infeasible"] == 0),
@@ -388,7 +390,7 @@ run_sobol_scenario <- function(scenario, si = 1) {
 #------------------------------------------------------------------------#
 # plot_sobol_indices() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/9_sobol_variance_partition.R (section: Figures)
+# Used in: Scripts/8_sobol_variance_partition.R (section: Figures)
 # First-order (S, dark) and total-effect (ST, light) indices with 95%
 # bootstrap CIs per factor (the n_top largest ST), one panel per scenario, ordered by ST. The group
 # of parameters fixed by the screening is drawn in grey: a small ST there
@@ -445,7 +447,7 @@ plot_sobol_indices <- function(ind, summ, output_use = "pct", n_top = 20) {
 #------------------------------------------------------------------------#
 # plot_pawn() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/9_sobol_variance_partition.R (section: Figures)
+# Used in: Scripts/8_sobol_variance_partition.R (section: Figures)
 # PAWN (median KS) for every parameter, shortlisted ones highlighted; the
 # dashed line is the KS critical value (influence beyond sampling noise).
 # A non-shortlisted parameter far above the line would question the screening.
@@ -474,7 +476,7 @@ plot_pawn <- function(pw, n_top = 20, output_use = "pct") {
 #------------------------------------------------------------------------#
 # plot_sobol_realism() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/9_sobol_variance_partition.R (section: Figures)
+# Used in: Scripts/8_sobol_variance_partition.R (section: Figures)
 # The animal effect over all A and B samples vs the samples with a realistic
 # baseline (realism filter reported separately, option A).
 plot_sobol_realism <- function(samples, summ, output_use = "pct") {

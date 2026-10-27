@@ -5,22 +5,21 @@
 # Local identifiability analysis (Brun, Reichert & Kuensch 2001) with the FME
 # package (sensFun + collin), on ARTIFICIAL data produced by the model itself
 # at the current parameter values (fitted animal parameters applied).
-# RUN TIME (seasonal): ~5-10 min per scenario on one core (one nominal run plus
-# one run per parameter, each solving two limit cycles); scenarios run in parallel.
+# RUN TIME: ~0.5 min per scenario (one nominal run plus one run per
+# parameter); scenarios run in parallel.
 #
-# STEADY STATE: the SEASONAL steady state, i.e. the annual limit cycle under
-#   the seasonal climate forcing (forcing = "seasonal", R/seasonal_steady_state.R);
-#   forcing = "constant" uses the equilibrium under constant mean forcing.
+# All data are generated under constant mean climate forcing (equilibria and a
+# constant-forcing introduction run). Seasonal-forcing parameters (T_amp,
+# theta_amp, ...) have no effect and are not analysed.
 # ARTIFICIAL DATA TYPES (every model pool is "measured" unless obs_pools is set):
-#   ss_noanimal  steady-state pools without the animal, measured on day
-#                sample_doy of the cycle (ss_stat = "annual_mean": annual means)
+#   ss_noanimal  equilibrium pools without the animal
 #   ss_animal    the same with the animal, incl. animal biomass
-#   ts           animal INTRODUCTION: the animal is added to the no-animal soil
-#                on day sample_doy (at ts_seed_mod x its input biomass) and all
-#                pools incl. the animal are measured on the same calendar day
-#                once per year for ts_years (= 3) years
+#   ts           animal INTRODUCTION: the animal is added to the no-animal
+#                equilibrium soil (at ts_seed_mod x its input biomass) and all
+#                pools incl. the animal are measured once per year for
+#                ts_years (= 3) years
 # DATA DESIGNS (combinations of data types; edit `designs` below). A single
-#   steady state cannot identify animal parameters (without the animal they
+#   equilibrium cannot identify animal parameters (without the animal they
 #   have no effect; with it alone, effects of the animal and of the soil
 #   parameters cannot be separated), so every design pairs two data types:
 #   (1) both steady states, (2) no-animal steady state + introduction series,
@@ -45,8 +44,7 @@
 #   sensitivities imply equal relative measurement error for all observations.
 #
 # Run from the project root (needs Results/fitted_animal_params.csv from
-# Scripts/1, same forcing). Outputs (Results/ with seasonal forcing,
-# Results/constant_forcing/ with constant forcing):
+# Scripts/1). Outputs (Results/):
 #   identifiability_summary.csv        one row per scenario x parameter set x design
 #   identifiability_parameters.csv     status of every parameter (identifiable /
 #                                      collinear / no information), L1, L2
@@ -64,7 +62,6 @@ source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 source("R/scenario_uncertainty.R"); source("R/morris_sensitivity.R")   # morris_cluster()
 source("R/sensitivity_settings.R")    # shared: parameter list, SD rule, bounds, solver
-source("R/seasonal_steady_state.R")  # steady state under seasonal / constant forcing
 source("R/sensitivity_helpers.R")     # parameter sets, make_base_pair(), infeasible_soil()
 source("R/identifiability.R")         # artificial data, sensitivities, collinearity
 source("R/millennial_model.R"); source("R/init_millennial_state.R")
@@ -76,18 +73,15 @@ scen      <- read_scenarios("Data/scenarios.xlsx")
 scenarios <- names(scen)
 
 use_fitted_params <- TRUE
-# results go to a folder per forcing (R/sensitivity_settings.R): seasonal ->
-# Results/, constant -> Results/constant_forcing/; the fitted animal parameters
-# are read from the same folder (Scripts/1 run under the same forcing)
-res_dir <- res_dir_forcing;           dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
+# results and the fitted animal parameters (Scripts/1) are in Results/
+res_dir <- res_dir_default;           dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
 fig_dir <- file.path(res_dir, "figures"); dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 fitted_file <- file.path(res_dir, "fitted_animal_params.csv")
 fitted_params <- if (use_fitted_params && file.exists(fitted_file))
   load_fitted_params(fitted_file, fallback = file.path(res_dir, "animal_fit_summary_long.csv")) else NULL
 if (use_fitted_params && is.null(fitted_params))
-  stop("No ", fitted_file, ": run Scripts/1 with the same forcing first ",
+  stop("No ", fitted_file, ": run Scripts/1 first ",
        "(or set use_fitted_params <- FALSE to use the uncalibrated animal parameters).")
-cat("Forcing:", forcing_mode, "| results ->", res_dir, "\n")
 
 
 derive_fn <- match.fun(model_table[[model]]$derive)
@@ -96,11 +90,6 @@ derive_fn <- match.fun(model_table[[model]]$derive)
 # Artificial data and identifiability settings ----
 #------------------------------------------------------------------------#
 ident_settings <- list(
-  forcing     = forcing_mode,  # "seasonal" (limit cycle) or "constant"; default from
-                               # R/sensitivity_settings.R
-  sample_doy  = 0,           # sampling day of year (0 = 1 January ... 364); the
-                             # introduction also happens on this day
-  ss_stat     = "sampling_day", # steady-state data: "sampling_day" or "annual_mean"
   ts_years    = 3,           # introduction time series: measured once per year for 3 years
   ts_seed_mod = 0.01,        # animals introduced at 1% of their input biomass
                              # (same as followup_add_animals() in Scripts/3)
@@ -108,9 +97,9 @@ ident_settings <- list(
                              # c("P", "M", "B", "Earthworm", "Detritivore", "RootHerb")
   obs_floor   = 1e-9,        # observations below this (numerically zero) are dropped
   fd_rel      = 1e-3,        # relative parameter step for the finite differences
-  lc_tol      = 1e-8,        # limit-cycle tolerance: tighter than for Morris, because the
-  lc_ode_tol  = 1e-10        # sensitivities are finite differences of the solution
-                             # (error ~ lc_tol / (1 - cycle contraction) / fd_rel)
+  eq_max_time = eq_max_time, # equilibrium solver horizon (R/sensitivity_settings.R)
+  eq_stol     = 1e-10,       # equilibrium derivative tolerance (tight: the sensitivities
+  ode_tol     = 1e-10        # are finite differences of the solution) and ODE tolerance
 )
 
 # data designs: which data types are used together
@@ -147,9 +136,8 @@ scenspec_unc <- if (!is.null(unc_all))
 # Sensitivities of the artificial data (FME::sensFun) ----
 #------------------------------------------------------------------------#
 # One nominal run plus one run per parameter, per scenario; each run solves
-# the no-animal and with-animal limit cycles (seasonal forcing).
-cat("Sensitivities:", length(scenarios), "scenarios on", n_cores, "worker(s);",
-    ident_settings$forcing, "forcing\n")
+# the no-animal and with-animal equilibria and the introduction series.
+cat("Sensitivities:", length(scenarios), "scenarios on", n_cores, "worker(s)\n")
 one_scenario <- function(s, settings) tryCatch(ident_sensitivity(s, settings),
   error = function(e) { message("identifiability failed for ", s, ": ", conditionMessage(e)); NULL })
 cl <- morris_cluster(
@@ -157,7 +145,7 @@ cl <- morris_cluster(
   source_files = c("R/climate_forcing.R", "R/spinup.R", "R/derive_millennial_parms.R",
                    "R/millennial_model.R", "R/init_millennial_state.R",
                    "R/setup.R", "R/compare_functions.R", "R/fit_animals.R",
-                   "R/sensitivity_settings.R", "R/seasonal_steady_state.R",
+                   "R/sensitivity_settings.R",
                    "R/sensitivity_helpers.R", "R/identifiability.R"),
   packages = c("deSolve", "rootSolve", "yaml", "FME"),
   export = c("derive_fn", "model", "scen", "fitted_params", "unc_all", "animal_unc",

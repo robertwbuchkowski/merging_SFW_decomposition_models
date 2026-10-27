@@ -1,16 +1,13 @@
 #------------------------------------------------------------------------#
 # UNCERTAINTY OF THE HEADLINE ANIMAL EFFECT (Latin hypercube) ----
 #------------------------------------------------------------------------#
-# Propagates parameter uncertainty to the headline result: the steady-state
+# Propagates parameter uncertainty to the headline result: the equilibrium
 # TOTAL and DIRECT animal effect on total soil + root C, per scenario.
 # All parameters screened by the Morris analysis (Scripts/4) are sampled
-# JOINTLY by Latin hypercube; every sample is solved to its steady state
+# JOINTLY by Latin hypercube; every sample is solved to its equilibrium
 # (baseline, treatment, treatment with indirect effects off).
-# STEADY STATE: forcing_mode in R/sensitivity_settings.R. "seasonal" = the
-#   annual limit cycle under the seasonal climate forcing, summarised by its
-#   annual mean (~30-40 s per sample, measured; 2000 samples x 4 scenarios
-#   ~80 CPU-hours, divided by n_cores); "constant" = equilibrium under constant
-#   mean forcing (fast, but can differ strongly from the seasonal result).
+# EQUILIBRIUM under constant mean climate forcing (~1 s per sample: 3
+#   equilibria; 2000 samples x 4 scenarios ~2 CPU-hours, divided by n_cores).
 #
 # SAMPLING: each parameter is drawn from a normal distribution centred on its
 #   model value, with SD = the SD reported in scenarios.xlsx, else a CV of
@@ -20,18 +17,17 @@
 #   including p_a and p_b, sign kept, pH, clay+silt). Parameters reaching a bound are
 #   listed in animal_effect_uncertainty_inputs.csv (bound_hit). Same rule as
 #   the Morris main analysis; shared settings are in R/sensitivity_settings.R.
-#   The seasonal moisture amplitude is sampled RELATIVE to the room available
-#   (theta_amp_rel, moisture_amp_relative), so moisture stays in [0, porosity];
-#   samples whose mean moisture >= porosity are skipped without solving.
+#   Samples whose mean moisture >= porosity (impossible soils) are skipped
+#   without solving.
 #
 # BASELINE REALISM FILTER: a sample is ACCEPTED only if its no-animal
-#   steady state (annual mean) (a) keeps EVERY pool positive and non-zero
+#   equilibrium (a) keeps EVERY pool positive and non-zero
 #   (> up_pool_floor) and
 #   (b) stays within target ranges for the listed pools (defaults: each
 #   scenario's all-default baseline, reference / factor .. x factor; editable
 #   in Data/baseline_targets.csv).
 #
-# Run from the project root (needs fitted_animal_params.csv in the results folder of the same forcing, from
+# Run from the project root (needs Results/fitted_animal_params.csv from
 # Scripts/1). Helper functions: R/sensitivity_helpers.R, R/sensitivity_uncertainty.R.
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
@@ -40,7 +36,6 @@ source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 source("R/scenario_uncertainty.R"); source("R/morris_sensitivity.R")   # morris_cluster()
 source("R/sensitivity_settings.R")    # shared: parameter list, SD rule, bounds, solver
-source("R/seasonal_steady_state.R")  # steady state under seasonal / constant forcing
 source("R/sensitivity_helpers.R")     # parameter sets, SD rule, model evaluation
 source("R/sensitivity_uncertainty.R") # sampling, headline effects, realism filter
 source("R/millennial_model.R"); source("R/init_millennial_state.R")
@@ -52,18 +47,15 @@ scen      <- read_scenarios("Data/scenarios.xlsx")
 scenarios <- names(scen)
 
 use_fitted_params <- TRUE
-# results go to a folder per forcing (R/sensitivity_settings.R): seasonal ->
-# Results/, constant -> Results/constant_forcing/; the fitted animal parameters
-# are read from the same folder (Scripts/1 run under the same forcing)
-res_dir <- res_dir_forcing;           dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
+# results and the fitted animal parameters (Scripts/1) are in Results/
+res_dir <- res_dir_default;           dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
 fig_dir <- file.path(res_dir, "figures"); dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 fitted_file <- file.path(res_dir, "fitted_animal_params.csv")
 fitted_params <- if (use_fitted_params && file.exists(fitted_file))
   load_fitted_params(fitted_file, fallback = file.path(res_dir, "animal_fit_summary_long.csv")) else NULL
 if (use_fitted_params && is.null(fitted_params))
-  stop("No ", fitted_file, ": run Scripts/1 with the same forcing first ",
+  stop("No ", fitted_file, ": run Scripts/1 first ",
        "(or set use_fitted_params <- FALSE to use the uncalibrated animal parameters).")
-cat("Forcing:", forcing_mode, "| results ->", res_dir, "\n")
 
 
 derive_fn <- match.fun(model_table[[model]]$derive)
@@ -71,12 +63,12 @@ derive_fn <- match.fun(model_table[[model]]$derive)
 #------------------------------------------------------------------------#
 # Sampling and filter settings ----
 #------------------------------------------------------------------------#
-up_n        <- 2000       # Latin-hypercube samples per scenario (3 steady states each);
+up_n        <- 2000       # Latin-hypercube samples per scenario (3 equilibria each);
                           # ~10-30% pass the realism filter, so keep this large
 up_seed     <- 20260827
 
 # Baseline realism filter (up_filter_pools, up_filter_factor, ..., up_targets_file):
-# set in R/sensitivity_settings.R, shared with Scripts/9 (Sobol' analysis).
+# set in R/sensitivity_settings.R, shared with Scripts/8 (Sobol' analysis).
 
 #------------------------------------------------------------------------#
 # Parallel execution ----
@@ -103,7 +95,7 @@ cl <- morris_cluster(
   source_files = c("R/climate_forcing.R", "R/spinup.R", "R/derive_millennial_parms.R",
                    "R/millennial_model.R", "R/init_millennial_state.R",
                    "R/setup.R", "R/compare_functions.R", "R/fit_animals.R",
-                   "R/sensitivity_settings.R", "R/seasonal_steady_state.R",
+                   "R/sensitivity_settings.R",
                    "R/sensitivity_helpers.R",
                    "R/sensitivity_uncertainty.R"),
   export = c("derive_fn"))

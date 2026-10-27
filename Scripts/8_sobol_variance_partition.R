@@ -37,16 +37,13 @@
 # from all indices (complete cases, count reported). Impossible soils are
 # excluded BEFORE any simulation (design rows redrawn).
 #
-# FORCING: constant mean forcing (option sfw.forcing / forcing_run in
-#   Scripts/0_run_all.R; constant is the default here). The Morris screening and
-#   the fitted animal parameters are read from the same results folder, so
-#   run Scripts/1 and 4 under the same forcing first. Seasonal forcing is
-#   ~50x slower (~100 CPU-hours per scenario at N = 1000); it must be enabled
-#   explicitly with sobol_allow_seasonal <- TRUE.
-# RUN TIME (constant): N x (k + 2) runs at ~0.4 s, k ~ 10-20: N = 1000 is
+# FORCING: equilibria under constant mean climate forcing. The Morris
+#   screening (Scripts/4) and the fitted animal parameters (Scripts/1) are read
+#   from Results/, so run Scripts/1 and 4 first.
+# RUN TIME: N x (k + 2) runs at ~0.4 s, k ~ 10-20: N = 1000 is
 #   ~1.5-2.5 CPU-hours per scenario, divided by n_cores.
 #
-# Outputs (in the results folder of the forcing, e.g. Results/constant_forcing/):
+# Outputs (Results/):
 #   sobol_shortlist.csv   screening: relative mu* per parameter and the reason
 #   sobol_indices.csv     S, ST with 95% CIs per factor (incl. the fixed group),
 #                         per output (pct / abs)
@@ -59,14 +56,12 @@
 #
 # HELPER FUNCTIONS live in R/sobol_variance.R (sourced below).
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
-if (is.null(getOption("sfw.forcing"))) options(sfw.forcing = "constant")  # default for this script
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/derive_millennial_parms.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
 source("R/scenario_uncertainty.R"); source("R/morris_sensitivity.R")   # morris_cluster()
 source("R/sensitivity_settings.R")    # shared: parameter list, SD rule, bounds, realism filter
-source("R/seasonal_steady_state.R")   # steady state under seasonal / constant forcing
 source("R/sensitivity_helpers.R")     # parameter sets, ranges, model evaluation
 source("R/sensitivity_uncertainty.R") # sampling distributions, realism targets
 source("R/sobol_variance.R")          # screening, Sobol' design and indices, PAWN
@@ -98,28 +93,21 @@ pawn_n_cond  <- 10           # PAWN conditioning classes
 sobol_primary <- "pct"       # output for the console checks and main figures:
                              # "pct" (% of no-animal soil + root C), "rank" (ranks
                              # of the % effect; robust) or "abs" (g C m-2)
-sobol_allow_seasonal <- FALSE  # seasonal forcing is very expensive; set TRUE deliberately
-
-if (forcing_mode == "seasonal" && !sobol_allow_seasonal)
-  stop("Scripts/9 runs under constant forcing (forcing_run = \"constant\" in Scripts/0_run_all.R). ",
-       "Seasonal forcing costs ~100 CPU-hours per scenario: set sobol_allow_seasonal <- TRUE to run it.")
-
-res_dir <- res_dir_forcing;               dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
+res_dir <- res_dir_default;               dir.create(res_dir, showWarnings = FALSE, recursive = TRUE)
 fig_dir <- file.path(res_dir, "figures"); dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
-cat("Forcing:", forcing_mode, "| results ->", res_dir, "\n")
 
 use_fitted_params <- TRUE
 fitted_file <- file.path(res_dir, "fitted_animal_params.csv")
 fitted_params <- if (use_fitted_params && file.exists(fitted_file))
   load_fitted_params(fitted_file, fallback = file.path(res_dir, "animal_fit_summary_long.csv")) else NULL
 if (use_fitted_params && is.null(fitted_params))
-  stop("No ", fitted_file, ": run Scripts/1 with the same forcing first ",
+  stop("No ", fitted_file, ": run Scripts/1 first ",
        "(or set use_fitted_params <- FALSE to use the uncalibrated animal parameters).")
 
 derive_fn <- match.fun(model_table[[model]]$derive)
 
 #------------------------------------------------------------------------#
-# Morris screening results (Scripts/4, same forcing) ----
+# Morris screening results (Scripts/4) ----
 #------------------------------------------------------------------------#
 read_morris <- function(tag) {
   f <- file.path(res_dir, paste0("animal_effect_morris", tag, ".csv"))
@@ -128,7 +116,7 @@ read_morris <- function(tag) {
 morris_main <- read_morris("")
 morris_std  <- read_morris("_standardized")
 if (is.null(morris_main))
-  stop("No Morris results in ", res_dir, ": run Scripts/4 with the same forcing first.")
+  stop("No Morris results in ", res_dir, ": run Scripts/4 first.")
 if (is.null(morris_std))
   warning("No standardized Morris results: the screening uses the main analysis only.")
 screened_on <- if ("effect_output" %in% names(morris_main)) unique(morris_main$effect_output) else "abs"
@@ -158,7 +146,7 @@ cl <- morris_cluster(
   source_files = c("R/climate_forcing.R", "R/spinup.R", "R/derive_millennial_parms.R",
                    "R/millennial_model.R", "R/init_millennial_state.R",
                    "R/setup.R", "R/compare_functions.R", "R/fit_animals.R",
-                   "R/sensitivity_settings.R", "R/seasonal_steady_state.R",
+                   "R/sensitivity_settings.R",
                    "R/sensitivity_helpers.R", "R/sensitivity_uncertainty.R",
                    "R/sobol_variance.R"),
   export = c("derive_fn"))
@@ -191,7 +179,7 @@ saveRDS(lapply(sob, function(x) x[c("design", "samples", "targets")]),
 #------------------------------------------------------------------------#
 # Checks printed to the console ----
 #------------------------------------------------------------------------#
-cat("\nSobol' summary (", forcing_mode, " forcing; pct = % of no-animal soil C, abs = g C m-2):\n", sep = "")
+cat("\nSobol' summary (pct = % of no-animal soil C, abs = g C m-2):\n")
 print(as.data.frame(summ %>% transmute(scenario, output, n_shortlisted, n_runs, n_rows_used,
                                        kurtosis = round(output_kurtosis, 1),
                                        sum_S = round(sum_S, 2),
