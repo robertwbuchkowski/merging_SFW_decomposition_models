@@ -182,7 +182,7 @@ spinup_until_stable <- function(init_state, parms, model_fn,
                                 n_years = 100, by = 5,
                                 max_iter = 10, tol = 1e-3, abs_floor = 1e-3,
                                 verbose = TRUE, plot_spinup = TRUE,
-                                plot_dir = "Data/spinup") {
+                                plot_dir = "Results/figures") {
   if (missing(model_fn) || is.null(model_fn))
     stop("spinup_until_stable(): supply model_fn (e.g. obj$wrapped_model).")
   check_by(by)
@@ -198,7 +198,7 @@ spinup_until_stable <- function(init_state, parms, model_fn,
 
     if (plot_spinup)
       save_trajectory_png(out, file.path(plot_dir,
-        sprintf("trajectory_%dpools_iter%d_%s_%s.png", length(state), i, model, scenario)))
+        sprintf("spinup_trajectory_%dpools_iter%d_%s_%s.png", length(state), i, model, scenario)))
 
     stab      <- check_stability(out, abs_floor = abs_floor)
     use       <- stab[stab$above_floor, ]

@@ -24,6 +24,9 @@
 #                                         -> both equilibria + flux table
 #   plot_flux_network(net)                -> ggplot (one or more panels)
 #   save_flux_network(net, file)          -> PNG sized for the panels (+ .csv)
+#   plot_flux_network_deltas(nets) / save_flux_network_deltas(nets, file)
+#                                         -> change panels of several scenarios,
+#                                            one panel per scenario
 #   check_flux_layout()                   -> arrows passing under a box (should
 #                                            be empty after editing the layout)
 #
@@ -32,7 +35,7 @@
 #   scen <- read_scenarios("Data/scenarios.xlsx")
 #   fit  <- load_fitted_params("Results/fitted_animal_params.csv")
 #   net  <- flux_network_scenario("millennial", "RootHerbivore", scen, fit)
-#   save_flux_network(net, "Plots/flux_network_RootHerbivore.png")
+#   save_flux_network(net, "Results/figures/flux_network_RootHerbivore.png")
 #   plot_flux_network(net, panels = "delta")          # change only
 
 #------------------------------------------------------------------------#
@@ -351,9 +354,29 @@ plot_flux_network <- function(net, panels = c("baseline", "animal", "delta"),
                               label_size = 3.4, node_size = 3.6,
                               hw = 1.45, hh = 0.5, stub_len = 1.1,
                               title = NULL) {
-  panels <- match.arg(panels, several.ok = TRUE)
+  L <- .flux_network_layers(net, panels, width, min_width, max_width,
+                            label_size, node_size, hw, hh, stub_len)
+  if (is.null(title))
+    title <- sprintf("Carbon fluxes at equilibrium: %s",
+                     if (exists("pretty_scenario")) pretty_scenario(net$scenario) else net$scenario)
+  subtitle <- paste0("Arrows: fluxes (g C m⁻² yr⁻¹). Boxes: stocks ",
+                     "(g C m⁻²). Equilibrium under constant mean climate.",
+                     if ("delta" %in% panels)
+                       "\nChange panel: blue = larger with animals, red = smaller."
+                     else "")
+  .flux_network_ggplot(L, ncol, hw, hh, label_size, title, subtitle)
+}
+
+# .flux_network_layers(): the drawing data (arrow paths, value labels, boxes,
+# stub texts) for the requested panels of one scenario. panel_names renames
+# panels, e.g. c(delta = "Earthworm") for the multi-scenario figure.
+.flux_network_layers <- function(net, panels, width, min_width, max_width,
+                                 label_size, node_size, hw, hh, stub_len,
+                                 panel_names = NULL) {
+  panels <- intersect(c("baseline", "animal", "delta"), panels)
   panel_lab <- c(baseline = "Without animals", animal = "With animals",
                  delta = "Change (with − without animals)")
+  if (!is.null(panel_names)) panel_lab[names(panel_names)] <- panel_names
   nodes <- .flux_nodes
   lim <- .flux_limits(hw, hh, stub_len)
   units_per_mm <- diff(lim$x) / (width * 25.4 * 0.94)
@@ -455,9 +478,13 @@ plot_flux_network <- function(net, panels = c("baseline", "animal", "delta"),
   boxes$lty   <- ifelse(boxes$active, "solid", "22")
   boxes$tcol  <- ifelse(boxes$active, "black", "grey60")
 
-  if (is.null(title))
-    title <- sprintf("Carbon fluxes at equilibrium: %s",
-                     if (exists("pretty_scenario")) pretty_scenario(net$scenario) else net$scenario)
+  list(paths = paths, labs = labs, boxes = boxes, stub_txt = stub_txt, lim = lim)
+}
+
+# .flux_network_ggplot(): draw layers from .flux_network_layers() (one facet
+# per panel).
+.flux_network_ggplot <- function(L, ncol, hw, hh, label_size, title, subtitle) {
+  paths <- L$paths; labs <- L$labs; boxes <- L$boxes; stub_txt <- L$stub_txt; lim <- L$lim
 
   ggplot2::ggplot() +
     ggplot2::geom_path(data = paths,
@@ -485,12 +512,7 @@ plot_flux_network <- function(net, panels = c("baseline", "animal", "delta"),
     ggplot2::scale_linetype_identity() +
     ggplot2::facet_wrap(~ panel, ncol = ncol) +
     ggplot2::coord_fixed(xlim = lim$x, ylim = lim$y, expand = FALSE, clip = "off") +
-    ggplot2::labs(title = title,
-      subtitle = paste0("Arrows: fluxes (g C m⁻² yr⁻¹). Boxes: stocks ",
-                        "(g C m⁻²). Equilibrium under constant mean climate.",
-                        if ("delta" %in% panels)
-                          "\nChange panel: blue = larger with animals, red = smaller."
-                        else "")) +
+    ggplot2::labs(title = title, subtitle = subtitle) +
     ggplot2::theme_void(base_size = 12) +
     ggplot2::theme(plot.background = ggplot2::element_rect(fill = "white", colour = NA),
                    strip.text = ggplot2::element_text(face = "bold", size = 14,
@@ -528,5 +550,55 @@ save_flux_network <- function(net, file, panels = c("baseline", "animal", "delta
     out <- data.frame(scenario = net$scenario, net$edges)
     utils::write.csv(out, sub("\\.png$", ".csv", file), row.names = FALSE)
   }
+  invisible(p)
+}
+
+#------------------------------------------------------------------------#
+# plot_flux_network_deltas() / save_flux_network_deltas() ----
+#------------------------------------------------------------------------#
+# One figure with the CHANGE panel (with - without animals) of several
+# scenarios, one panel per scenario labelled with its name (default 2 x 2
+# for the four scenarios).
+#   nets  named or unnamed list of flux_network_scenario() outputs
+# Arrow widths are scaled within each panel (the changes differ by orders of
+# magnitude between scenarios), so compare widths within a panel and read
+# the values across panels.
+plot_flux_network_deltas <- function(nets, ncol = 2, width = 13,
+                                     min_width = 0.35, max_width = 4.5,
+                                     label_size = 3.4, node_size = 3.6,
+                                     hw = 1.45, hh = 0.5, stub_len = 1.1,
+                                     title = "Change in carbon fluxes caused by the animals, by scenario") {
+  scen_lab <- vapply(nets, function(n)
+    if (exists("pretty_scenario")) unname(pretty_scenario(n$scenario)) else n$scenario, "")
+  Ls <- lapply(seq_along(nets), function(i)
+    .flux_network_layers(nets[[i]], "delta", width, min_width, max_width,
+                         label_size, node_size, hw, hh, stub_len,
+                         panel_names = c(delta = scen_lab[i])))
+  L <- list(lim = Ls[[1]]$lim)
+  for (nm in c("paths", "labs", "boxes", "stub_txt")) {
+    d <- do.call(rbind, lapply(Ls, function(x) { v <- x[[nm]]; v$panel <- as.character(v$panel); v }))
+    d$panel <- factor(d$panel, levels = scen_lab)
+    if (nm == "paths") d$id <- paste(d$panel, d$id)   # ids unique across scenarios
+    L[[nm]] <- d
+  }
+  subtitle <- paste0("With minus without animals at equilibrium (constant mean climate). ",
+                     "Arrows: change in flux (g C m⁻² yr⁻¹); boxes: change in stock ",
+                     "(g C m⁻², % of no-animal value).\nBlue = larger with animals, red = smaller. ",
+                     "Arrow widths are scaled within each panel.")
+  .flux_network_ggplot(L, ncol, hw, hh, label_size, title, subtitle)
+}
+
+# save_flux_network_deltas(): write plot_flux_network_deltas() to a PNG;
+# `width` is the width of ONE panel in inches.
+save_flux_network_deltas <- function(nets, file, ncol = 2, width = 13, dpi = 200,
+                                     hw = 1.45, hh = 0.5, stub_len = 1.1, ...) {
+  p <- plot_flux_network_deltas(nets, ncol = ncol, width = width,
+                                hw = hw, hh = hh, stub_len = stub_len, ...)
+  lim  <- .flux_limits(hw, hh, stub_len)
+  ph   <- width * 0.94 * diff(lim$y) / diff(lim$x)
+  nrow <- ceiling(length(nets) / ncol)
+  dir.create(dirname(file), showWarnings = FALSE, recursive = TRUE)
+  ggplot2::ggsave(file, p, width = width * ncol, height = 1.3 + (ph + 0.55) * nrow,
+                  dpi = dpi, bg = "white", limitsize = FALSE)
   invisible(p)
 }

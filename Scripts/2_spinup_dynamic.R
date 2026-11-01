@@ -11,8 +11,10 @@
 #   * Run from the project root; this is the slow step, so it is kept separate.
 #   * Outputs: Results/animal_eq_effect.csv (equilibrium effects under constant
 #     mean forcing, the same steady state the animals were fitted at),
-#     Plots/total_effect.png, Plots/flux_network_<scenario>.png (carbon
-#     fluxes with and without animals, and the change), and the saved
+#     Results/figures/flux_network_<scenario>.png (carbon
+#     fluxes with and without animals, and the change),
+#     Results/figures/flux_network_change_all_scenarios.png (the change panel
+#     of every scenario in one figure), and the saved
 #     seasonal limit-cycle states under Data/spinup/ (consumed by
 #     Scripts/3_followup_analysis.R).
 # Requires Results/fitted_animal_params.csv from Scripts/1_fit_all_animals.R when
@@ -43,6 +45,7 @@ fitted_params <- if (use_fitted_params)
   load_fitted_params("Results/fitted_animal_params.csv") else NULL
 
 animal_eq_effect <- list()
+flux_nets <- list()       # flux networks of every scenario, for the combined figure
 for (model in models) {
   for (scenario in names(scen)) {
 
@@ -80,10 +83,11 @@ for (model in models) {
             model = model, scenario = scenario, type = "direct"))
     rm(pair2, eq_direct)
 
-    # carbon flux network at both equilibria + the change (Plots/flux_network_*.png,
-    # with the flux table alongside as .csv)
+    # carbon flux network at both equilibria + the change
+    # (Results/figures/flux_network_*.png, flux table alongside as .csv)
     net <- flux_network_scenario(model, scenario, scen, pair = pair)
-    save_flux_network(net, sprintf("Plots/flux_network_%s.png", scenario))
+    save_flux_network(net, sprintf("Results/figures/flux_network_%s.png", scenario))
+    flux_nets[[scenario]] <- net
     rm(net)
 
     if (do_spinup) {
@@ -113,6 +117,10 @@ for (model in models) {
 }
 
 animal_eq_effect <- do.call("rbind", animal_eq_effect)
+
+# change in carbon fluxes (with - without animals) of every scenario in one
+# figure, one panel per scenario
+save_flux_network_deltas(flux_nets, "Results/figures/flux_network_change_all_scenarios.png")
 write_csv(animal_eq_effect, "Results/animal_eq_effect.csv")
 
 #------------------------------------------------------------------------#
@@ -138,36 +146,3 @@ animal_effect_summary <- animal_eq_effect %>%
 write_csv(animal_effect_summary, "Results/animal_effect_summary.csv")
 cat("\nAnimal effect on total soil + root C (g C m-2), by scenario:\n")
 print(as.data.frame(animal_effect_summary), row.names = FALSE)
-
-#------------------------------------------------------------------------#
-# equilibrium animal-effect figure ----
-#------------------------------------------------------------------------#
-# Pools to show and their labels/order come from pool_names in
-# R/compare_functions.R (relabel_pools / pool_order / plot_pools).
-
-dir.create("Plots", showWarnings = FALSE)
-png("Plots/total_effect.png", width = 6, height = 5, units = "in", res = 600)
-animal_eq_effect %>% filter(!is.na(baseline)) %>%
-  bind_rows(
-    animal_eq_effect %>%
-      group_by(model, scenario, type) %>%
-      summarize(treatment = sum(treatment), # Includes animal C
-                baseline = sum(baseline, na.rm = T)) %>%
-      mutate(name = "TotalC",
-             difference = treatment - baseline,
-             percent_change = 100*(treatment - baseline)/baseline)
-  ) %>%
-  mutate(pretty_name = relabel_pools(name)) %>%
-  mutate(pretty_name = factor(pretty_name, levels = pool_order)) %>%
-  filter(pretty_name %in% plot_pools | pretty_name == "Total C") %>%
-  ggplot(aes(x = pretty_name, y = difference, fill = type)) +
-  geom_col(position = "dodge") +
-  facet_wrap(. ~ scenario, ncol = 2, scales = "free_y", labeller = scenario_labeller) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  ylab(expression("Animal Effect (g C m"^-2*")")) + xlab("") +
-  scale_fill_manual(name = "Type",values = c("black", "blue"))
-dev.off()
-
-
-

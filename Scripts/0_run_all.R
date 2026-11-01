@@ -14,11 +14,12 @@
 #                                      (feeding rates fitted at the constant-forcing
 #                                       equilibrium)
 #       2 spinup_dynamic         -> Data/spinup/*.rds, Results/animal_eq_effect.csv,
-#                                      Plots/flux_network_*.png
+#                                      Results/figures/flux_network_*.png
+#                                      (per scenario + all-scenario change figure)
 #                                      (equilibrium effects, then the SEASONAL
 #                                       spin-up of the no-animal soil to its
 #                                       annual limit cycle)
-#       3 followup_analysis      -> Data/followup/*.rds, Plots/*
+#       3 followup_analysis      -> Data/followup/*.rds, Results/figures/followup_*
 #                                      (animal INVASION: animals added to the
 #                                       seasonal no-animal soil, ~50-yr trajectories)
 #       4 uncertainty_animal_effect  -> Results/animal_effect_uncertainty_*.csv, figure
@@ -30,6 +31,7 @@
 #                                      (Sobol' indices of EVERY parameter, no
 #                                       screening; needs step 1 first)
 #       7 multistability_test        -> Results/multistability_*.csv, figure (diagnostic)
+#   * FIGURES: every figure goes to Results/figures/.
 #   * PARAMETER RANGES (steps 4 and 6): SD reported in scenarios.xlsx, else
 #     CV = cv_default (0.25) in R/sensitivity_settings.R.
 #   * FORCING: steps 1 and 4-7 use the EQUILIBRIUM under constant mean climate

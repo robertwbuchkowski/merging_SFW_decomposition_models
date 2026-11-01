@@ -125,7 +125,8 @@ for (model in models) {
 # Example, one model/scenario:
 plot_followup_add("millennial", "RootHerbivore", by = NULL)
 
-pdf("Plots/output.pdf", width = 8, height = 8)
+dir.create("Results/figures", showWarnings = FALSE, recursive = TRUE)
+pdf("Results/figures/followup_trajectories.pdf", width = 8, height = 8)
 # All model x scenario combos that have saved add + continue_baseline runs:
 for (scenario in names(scen)) {
   for (model in models) {
@@ -145,10 +146,9 @@ dev.off()
 # Results/animal_eq_effect.csv) as a stacked bar past a broken x-axis, with
 # matching pool colours and a dashed net-change line. One facet per scenario.
 # This single figure replaces the separate equilibrium-effect plot.
-dir.create("Plots", showWarnings = FALSE)
 p_combined <- plot_followup_with_eq("millennial", by = 365,
                                     eq_csv = "Results/animal_eq_effect.csv",
                                     eq_type = "total")
-ggsave("Plots/followup_added_with_equilibrium.png", p_combined,
+ggsave("Results/figures/followup_added_with_equilibrium.png", p_combined,
        width = 11, height = 7, dpi = 300, bg = "white")
 print(p_combined)
