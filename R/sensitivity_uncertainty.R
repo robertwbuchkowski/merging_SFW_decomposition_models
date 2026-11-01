@@ -1,7 +1,7 @@
 #------------------------------------------------------------------------#
 # Sensitivity analysis: uncertainty propagation (Latin hypercube) ----
 #------------------------------------------------------------------------#
-# Helper functions for Scripts/5_uncertainty_animal_effect.R. They were moved here from the scripts so
+# Helper functions for Scripts/4_uncertainty_animal_effect.R. They were moved here from the scripts so
 # that every custom function is defined BEFORE the script's analysis code
 # runs (sourced at the top of the script), which also lets
 # debugonce_functions() flag them all for step-through debugging.
@@ -136,7 +136,7 @@ read_user_targets <- function(file = up_targets_file) {
 # targets_for() ----
 #------------------------------------------------------------------------#
 # Used in: called by run_uncertainty_propagation_fn()
-# Needs (set in 5_uncertainty_animal_effect.R): up_filter_factor, up_filter_factor_by_pool, up_filter_pools
+# Needs (set in 4_uncertainty_animal_effect.R): up_filter_factor, up_filter_factor_by_pool, up_filter_pools
 # Uses base_pair$nominal_b (make_base_pair(), nominal no-animal equilibrium)
 # realism targets for one scenario: defaults from the all-default baseline,
 # overridden / extended by rows in up_targets_file
@@ -167,8 +167,8 @@ targets_for <- function(scenario, base_pair, user_targets) {
 #------------------------------------------------------------------------#
 # run_uncertainty_propagation_fn() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/5_uncertainty_animal_effect.R (section: UNCERTAINTY PROPAGATION TO THE HEADLINE ANIMAL EFFECT)
-# Needs (set in 5_uncertainty_animal_effect.R): cl, scenarios, up_n, up_pool_floor, up_seed,
+# Used in: Scripts/4_uncertainty_animal_effect.R (section: UNCERTAINTY PROPAGATION TO THE HEADLINE ANIMAL EFFECT)
+# Needs (set in 4_uncertainty_animal_effect.R): cl, scenarios, up_n, up_pool_floor, up_seed,
 #   up_targets_file
 run_uncertainty_propagation_fn <- function() {
   user_targets <- read_user_targets()

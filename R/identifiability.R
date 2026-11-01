@@ -1,7 +1,7 @@
 #------------------------------------------------------------------------#
 # Parameter identifiability: artificial data, sensitivities, collinearity ----
 #------------------------------------------------------------------------#
-# Helper functions for Scripts/7_parameter_identifiability.R. Local
+# Helper functions for Scripts/5_parameter_identifiability.R. Local
 # identifiability analysis after Brun, Reichert & Kuensch (2001, Water Resour.
 # Res. 37: 1015-1030) as implemented in the FME package (Soetaert & Petzoldt
 # 2010, J. Stat. Softw. 33(3)):
@@ -25,16 +25,16 @@
 #      below ident_threshold (Brun et al. 2001 use 10-15; 20 is also common)
 #      and every parameter carries information (RMS sensitivity >= min_sens).
 #
-# Settings are passed explicitly in a list (see ident_settings in Scripts/7),
+# Settings are passed explicitly in a list (see ident_settings in Scripts/5),
 # so the functions also run on parallel workers. Functions that build the
-# scenario objects read the same top-level objects as the Morris scripts
+# scenario objects read the same top-level objects as the sensitivity scripts
 # (listed per function under 'Needs').
 
 #------------------------------------------------------------------------#
 # set_params() ----
 #------------------------------------------------------------------------#
 # Used in: called by ident_observations()
-# Needs (set in Scripts/7): derive_fn
+# Needs (set in Scripts/5): derive_fn
 # Set several parameters at once, then rebuild derived parameters and the
 # forcing ONCE (set_param() does that after every single change).
 set_params <- function(obj, pv) {
@@ -140,11 +140,11 @@ make_ident_fun <- function(base_pair, settings, ref, pv0) {
 #------------------------------------------------------------------------#
 # ident_sensitivity() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/7_parameter_identifiability.R (section: Sensitivities)
-# Needs (set in Scripts/7): model, scen, fitted_params, unc_all, animal_unc,
+# Used in: Scripts/5_parameter_identifiability.R (section: Sensitivities)
+# Needs (set in Scripts/5): model, scen, fitted_params, unc_all, animal_unc,
 #   scenspec_unc, derive_fn (via make_base_pair(), param_set_for())
 # Local sensitivities of all artificial observations to all screened
-# parameters of one scenario (the same parameter set as the Morris screening;
+# parameters of one scenario (the same parameter set as the uncertainty and Sobol' analyses;
 # parameters whose model value is 0 are skipped because a relative
 # perturbation is undefined). Observations whose nominal value is below
 # settings$obs_floor (numerically zero) or not in settings$obs_pools are dropped.
@@ -285,7 +285,7 @@ ident_collinearity <- function(sens, params, types, threshold = 20, min_sens = 1
 #------------------------------------------------------------------------#
 # run_identifiability() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/7_parameter_identifiability.R (section: Collinearity)
+# Used in: Scripts/5_parameter_identifiability.R (section: Collinearity)
 # Every scenario x parameter set x data design. `sens_list` is the list of
 # ident_sensitivity() results; `designs` a named list of data-type vectors;
 # `param_sets` a subset of c("all", "animal").
@@ -318,7 +318,7 @@ run_identifiability <- function(sens_list, designs, param_sets = c("all", "anima
 #------------------------------------------------------------------------#
 # plot_ident_summary() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/7_parameter_identifiability.R (section: Figures)
+# Used in: Scripts/5_parameter_identifiability.R (section: Figures)
 # Number of parameters that carry information and that are identifiable
 # (greedy subset) out of the total, per data design; rows = parameter set,
 # columns = scenario.
@@ -347,7 +347,7 @@ plot_ident_summary <- function(summ, design_levels) {
 #------------------------------------------------------------------------#
 # plot_ident_params() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/7_parameter_identifiability.R (section: Figures)
+# Used in: Scripts/5_parameter_identifiability.R (section: Figures)
 # Status of every parameter (identifiable / collinear / no information) under
 # every data design, one panel per scenario, most sensitive parameters on top.
 # The number in an identifiable cell is the order in which the greedy search

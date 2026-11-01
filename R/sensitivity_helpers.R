@@ -14,14 +14,14 @@
 #------------------------------------------------------------------------#
 # pretty_param() ----
 #------------------------------------------------------------------------#
-# Used in: called by run_morris(), run_uncertainty_propagation_fn()
+# Used in: Scripts/4, 5 and 6 (labels in tables and figures)
 # Needs (set in R/sensitivity_settings.R): param_labels
 pretty_param <- function(x) ifelse(x %in% names(param_labels), param_labels[x], x)
 
 #------------------------------------------------------------------------#
 # param_bounds() ----
 #------------------------------------------------------------------------#
-# Used in: called by clamp_to_bounds(), param_sd_info(), range_for()
+# Used in: called by clamp_to_bounds(), param_sd_info()
 # Needs (set in R/sensitivity_settings.R): param_bound_table, bound_exempt_prefix,
 #   positive_floor_frac, sign_free_params
 # Physical bounds for one parameter, as c(lower, upper) with attribute "why"
@@ -61,8 +61,8 @@ clamp_to_bounds <- function(v, param, default = NA_real_) {
 #------------------------------------------------------------------------#
 # set_param() ----
 #------------------------------------------------------------------------#
-# Used in: called by effect_scalar(), headline_effects()
-# Needs (set in Scripts/4 and Scripts/5): derive_fn
+# Used in: called by headline_effects(), sobol_model_output()
+# Needs (set in Scripts/4, 5 and 6): derive_fn
 # set_param(): change ONE parameter and rebuild derived params + forcing.
 set_param <- function(obj, param, value) {
   obj$parms[[param]]        <- value
@@ -107,65 +107,10 @@ regime_flags <- function(eq_b, eq_t, parms) {
 }
 
 #------------------------------------------------------------------------#
-# animal_effect_totalC() ----
-#------------------------------------------------------------------------#
-# Used in: called by effect_scalar()
-# Needs (set in R/sensitivity_settings.R): animal_pools, eq_max_time, effect_output
-# Equilibrium TOTAL animal effect on total soil + root C under constant mean
-# forcing: treatment minus baseline (g C m-2, or with effect_output = "pct"
-# as % of the no-animal soil + root C). The treatment starts from the
-# baseline equilibrium with the animal at its input value.
-# Attaches `converged` (TRUE only if BOTH arms reached a stable steady state)
-# and `regime` (see regime_flags) for the Morris driver.
-animal_effect_totalC <- function(pair) {
-  b <- spinup_equilibrium(pair$baseline, max_time = eq_max_time, verbose = FALSE)
-  t <- spinup_equilibrium(pair$treatment, warm_start = b$init_state_spin,
-                          max_time = eq_max_time, verbose = FALSE)
-  eq_b <- b$init_state_spin
-  eq_t <- t$init_state_spin
-  conv <- isTRUE(b$spin_info$converged) && isTRUE(t$spin_info$converged)
-  soil <- setdiff(intersect(names(eq_b), names(eq_t)), animal_pools)
-  val  <- sum(eq_t[soil]) - sum(eq_b[soil])
-  if (identical(effect_output, "pct")) val <- 100 * val / sum(eq_b[soil])   # % of no-animal C
-  attr(val, "converged") <- conv
-  attr(val, "regime")    <- if (conv) regime_flags(eq_b, eq_t, t$parms) else ""
-  val
-}
-
-#------------------------------------------------------------------------#
-# make_effect_fun() ----
-#------------------------------------------------------------------------#
-# Used in: called by run_morris()
-# make_effect_fun(): the Morris evaluator for one scenario. Built by a
-# top-level factory so its environment carries only base_pair to the workers.
-make_effect_fun <- function(base_pair) {
-  force(base_pair)            # evaluate now so workers receive the object itself
-  function(pv) effect_scalar(base_pair, pv)
-}
-
-#------------------------------------------------------------------------#
-# effect_scalar() ----
-#------------------------------------------------------------------------#
-# Used in: called by make_effect_fun()
-# scalar output for a named parameter vector (set all, both arms, then
-# evaluate). The converged / regime attributes travel with the value;
-# morris_run() drops non-converged points and tags flagged ones.
-effect_scalar <- function(base_pair, pv) {
-  pair <- base_pair
-  for (nm in names(pv)) {
-    pair$treatment <- set_param(pair$treatment, nm, pv[[nm]])
-    pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
-  }
-  why <- infeasible_soil(pair$baseline$parms)
-  if (nzchar(why)) return(structure(NA_real_, converged = FALSE, error = why))
-  animal_effect_totalC(pair)
-}
-
-#------------------------------------------------------------------------#
 # unc_row() ----
 #------------------------------------------------------------------------#
-# Used in: called by range_for(), up_distribution()
-# Needs (set in Scripts/4 and Scripts/5): unc_all
+# Used in: called by param_sd_info()
+# Needs (set in Scripts/4, 5 and 6): unc_all
 unc_row <- function(scenario, param) {
   if (is.null(unc_all)) return(NULL)
   r <- unc_all[unc_all$scenario == scenario & unc_all$parameter == param, , drop = FALSE]
@@ -175,8 +120,8 @@ unc_row <- function(scenario, param) {
 #------------------------------------------------------------------------#
 # param_sd_info() ----
 #------------------------------------------------------------------------#
-# Used in: called by range_for() (Morris, Scripts/4) and up_distribution()
-#   (uncertainty propagation, Scripts/5)
+# Used in: called by up_distribution() (uncertainty propagation, Scripts/4,
+#   and Sobol' analysis, Scripts/6)
 # Needs (set in R/sensitivity_settings.R): cv_default
 # The standard deviation and analysed range for one scenario x parameter,
 # centred on the model value `default`:
@@ -188,8 +133,8 @@ unc_row <- function(scenario, param) {
 #          "upper:Max", "lower:proportion; upper:proportion" ("" = none)
 # use_reported_sd = FALSE ignores reported SDs and use_minmax = FALSE ignores the
 # reported Min/Max entirely (no SD reduction, no cut), so every parameter gets
-# SD = cv_default x |default| cut only at the physical bounds -- the
-# standardized Morris analysis.
+# SD = cv_default x |default| cut only at the physical bounds (a uniform-CV
+# check; the analyses use the defaults, TRUE).
 param_sd_info <- function(scenario, param, default, use_reported_sd = TRUE,
                           use_minmax = TRUE) {
   r <- unc_row(scenario, param)
@@ -217,34 +162,16 @@ param_sd_info <- function(scenario, param, default, use_reported_sd = TRUE,
 }
 
 #------------------------------------------------------------------------#
-# range_for() ----
-#------------------------------------------------------------------------#
-# Used in: called by run_morris()
-# range_for(): lo, hi, the range-source label and the bound hits for one
-# parameter, under either Morris mode (both via param_sd_info()):
-#   mode = "main"         reported SD where available, else the CV rule:
-#                         default +/- 2 SD.        labels: SD / CV-MinMax / CV-default
-#   mode = "standardized" SD = cv_default x |default| for EVERY parameter,
-#                         ignoring reported SDs and Min/Max entirely; the range
-#                         (+/- 2 SD) is cut only at the physical bounds.
-#                                                  label: CV-default
-range_for <- function(scenario, param, default, mode = c("main", "standardized")) {
-  mode <- match.arg(mode)
-  s <- param_sd_info(scenario, param, default, use_reported_sd = (mode == "main"),
-                     use_minmax = (mode == "main"))
-  list(lo = s$lo, hi = s$hi, source = s$source, sd = s$sd, cv = s$cv,
-       bound_hit = s$bound_hit)
-}
-
-#------------------------------------------------------------------------#
 # param_set_for() ----
 #------------------------------------------------------------------------#
-# Used in: called by run_morris(), run_uncertainty_propagation_fn()
-# Needs (set in Scripts/4 and Scripts/5): animal_unc, scenspec_unc
+# Used in: called by run_uncertainty_propagation_fn(), run_sobol_scenario(),
+#   ident_sensitivity()
+# Needs (set in Scripts/4, 5 and 6): animal_unc, scenspec_unc
 # Needs (set in R/sensitivity_settings.R): sweep_params, seasonal_only_params
 # param_set_for(): the parameters screened in one scenario and their class
-# (general / scenario-specific / animal). Shared by Morris and the uncertainty
-# propagation so both use exactly the same parameter set. Parameters that only
+# (general / scenario-specific / animal). Shared by the uncertainty
+# propagation, the Sobol' analysis and the identifiability analysis, so all
+# use exactly the same parameter set. Parameters that only
 # shape the seasonal forcing (seasonal_only_params) are left out: they have no
 # effect on the constant-forcing equilibrium.
 param_set_for <- function(scenario, parms_here) {
@@ -268,9 +195,9 @@ param_set_for <- function(scenario, parms_here) {
 #------------------------------------------------------------------------#
 # make_base_pair() ----
 #------------------------------------------------------------------------#
-# Used in: called by run_morris(), run_uncertainty_propagation_fn(),
+# Used in: called by run_uncertainty_propagation_fn(), run_sobol_scenario(),
 #   ident_sensitivity()
-# Needs (set in Scripts/4, 5, 7 and 8): fitted_params, model, scen
+# Needs (set in Scripts/4, 5 and 6): fitted_params, model, scen
 # Needs (set in R/sensitivity_settings.R): eq_max_time
 # Base scenario pair with the fitted animal parameters applied, plus the
 # NOMINAL equilibria (all parameters at their values; constant mean forcing):
@@ -289,28 +216,4 @@ make_base_pair <- function(scenario, with_reference = TRUE) {
     bp$nominal_b <- b$init_state_spin; bp$nominal_t <- t$init_state_spin
   }
   bp
-}
-
-#------------------------------------------------------------------------#
-# trajectory_feasible() ----
-#------------------------------------------------------------------------#
-# Used in: called by run_morris() (as the accept rule of morris_trajectories())
-# Needs (set in R/sensitivity_settings.R): soil_feasibility_params
-# TRUE when every point of a Morris trajectory X (unit scale, columns =
-# parameters in the order of lo/hi) describes a physically possible soil
-# (infeasible_soil() returns ""). Only the soil parameters (BD, rho_p,
-# MAtheta) decide this, so only those are mapped
-# to parameter values and checked, without solving the model.
-trajectory_feasible <- function(X, lo, hi, base_parms) {
-  cols <- which(names(lo) %in% soil_feasibility_params)
-  if (!length(cols)) return(TRUE)
-  U <- unique(X[, cols, drop = FALSE])
-  for (i in seq_len(nrow(U))) {
-    p <- base_parms
-    v <- lo[cols] + U[i, ] * (hi[cols] - lo[cols])
-    for (j in seq_along(cols)) p[[names(lo)[cols[j]]]] <- v[[j]]
-    p <- derive_fn(p)
-    if (nzchar(infeasible_soil(p))) return(FALSE)
-  }
-  TRUE
 }

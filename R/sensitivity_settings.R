@@ -1,10 +1,11 @@
 #------------------------------------------------------------------------#
 # Shared sensitivity / uncertainty settings ----
 #------------------------------------------------------------------------#
-# Settings shared by Scripts/4_sensitivity_animal_effects.R (Morris) and
-# Scripts/5_uncertainty_animal_effect.R (Latin hypercube), so both analyses use
-# the same parameters, the same standard-deviation rule and the same bounds.
-# Edit here; both scripts source this file.
+# Settings shared by Scripts/4_uncertainty_animal_effect.R (Latin hypercube),
+# Scripts/5_parameter_identifiability.R (FME) and
+# Scripts/6_sobol_variance_partition.R (Sobol'), so all analyses use the same
+# parameters, the same standard-deviation rule and the same bounds.
+# Edit here; the scripts source this file.
 
 #------------------------------------------------------------------------#
 # Standard-deviation rule ----
@@ -16,7 +17,8 @@
 #   ... reduced when a reported Min/Max implies less: SD = (Max-Min)/4 ("CV-MinMax")
 # The analysed range is value +/- 2 SD, cut to the reported Min/Max and to the
 # physical bounds below. Every cut is recorded (bound_hit) in the outputs.
-cv_default <- 0.5   # CV = 0.5: the SD is half the model value
+cv_default <- 0.25  # CV = 0.25: the SD is a quarter of the model value
+                    # (range = value +/- 50%, before any cut)
 
 #------------------------------------------------------------------------#
 # Physical bounds ----
@@ -111,7 +113,7 @@ kb_floor     <- 0.001
 eq_max_time <- 1e9
 
 #------------------------------------------------------------------------#
-# Steady state and results folder (Scripts/1, 4, 5, 7, 8) ----
+# Steady state and results folder (Scripts/1, 4, 5, 6, 7) ----
 #------------------------------------------------------------------------#
 # These analyses use the EQUILIBRIUM under constant mean climate forcing
 # (rootSolve::runsteady via spinup_equilibrium()). The seasonal dynamics are
@@ -126,13 +128,13 @@ seasonal_only_params <- c("T_amp", "theta_amp", "N_theta_peaks", "litter_peak_do
                           "litter_width_d", "leaf_litter_summer_frac")
 
 # Parameters that decide whether a soil is physically possible (porosity
-# 1 - BD / rho_p must exceed the mean soil moisture MAtheta). Morris
-# trajectories and Sobol' rows with an impossible soil are redrawn before any
-# simulation; Latin-hypercube samples are skipped without solving.
+# 1 - BD / rho_p must exceed the mean soil moisture MAtheta). Sobol' rows
+# with an impossible soil are redrawn before any simulation; Latin-hypercube
+# samples are skipped without solving.
 soil_feasibility_params <- c("BD", "rho_p", "MAtheta")
 
 #------------------------------------------------------------------------#
-# Baseline realism filter (Scripts/5 and 8) ----
+# Baseline realism filter (Scripts/4 and 6) ----
 #------------------------------------------------------------------------#
 # A parameter sample is "realistic" when its no-animal equilibrium keeps every pool positive (> up_pool_floor) and the pools
 # listed here inside a target range. Defaults: each scenario's all-default
@@ -144,16 +146,3 @@ up_filter_factor_by_pool <- c()       # per-pool overrides, e.g. c(B = 5) for / 
 up_targets_file  <- "Data/baseline_targets.csv"   # optional; overrides the defaults
 up_pool_floor    <- 1e-9  # every baseline pool must also be above this (g C m-2):
                           # positive and non-zero (1e-9 = numerically zero)
-
-#------------------------------------------------------------------------#
-# Output of the Morris screening and Sobol' analysis (Scripts/4 and 8) ----
-#------------------------------------------------------------------------#
-# "pct": animal effect on total soil + root C as a PERCENTAGE of the
-#        no-animal value (default). Across the parameter distributions the
-#        baseline soil C spans orders of magnitude (runaway carbon at
-#        implausible parameter combinations); the absolute effect scales with
-#        it, so its elementary effects and variance are dominated by a few
-#        extreme runs. The relative effect is far better behaved.
-# "abs": the effect in g C m-2 (the earlier behaviour of Scripts/4).
-# The Sobol' step (Scripts/8) should screen on the same output it analyses.
-effect_output <- "pct"

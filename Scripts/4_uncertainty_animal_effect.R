@@ -3,7 +3,8 @@
 #------------------------------------------------------------------------#
 # Propagates parameter uncertainty to the headline result: the equilibrium
 # TOTAL and DIRECT animal effect on total soil + root C, per scenario.
-# All parameters screened by the Morris analysis (Scripts/4) are sampled
+# All parameters of the scenario (param_set_for(): general, scenario-specific
+# and animal; the same set as the Sobol' analysis, Scripts/6) are sampled
 # JOINTLY by Latin hypercube; every sample is solved to its equilibrium
 # (baseline, treatment, treatment with indirect effects off).
 # EQUILIBRIUM under constant mean climate forcing (~1 s per sample: 3
@@ -11,12 +12,12 @@
 #
 # SAMPLING: each parameter is drawn from a normal distribution centred on its
 #   model value, with SD = the SD reported in scenarios.xlsx, else a CV of
-#   cv_default (0.5: SD = half the value), reduced when a reported Min/Max implies less spread
+#   cv_default (0.25: SD = a quarter of the value), reduced when a reported Min/Max implies less spread
 #   (labelled SD / CV-MinMax / CV-default). It is truncated at +/- 2 SD, at the
 #   reported Min/Max and at the physical bounds (proportions in [0, 1]
 #   including p_a and p_b, sign kept, pH, clay+silt). Parameters reaching a bound are
 #   listed in animal_effect_uncertainty_inputs.csv (bound_hit). Same rule as
-#   the Morris main analysis; shared settings are in R/sensitivity_settings.R.
+#   the Sobol' analysis (Scripts/6); shared settings are in R/sensitivity_settings.R.
 #   Samples whose mean moisture >= porosity (impossible soils) are skipped
 #   without solving.
 #
@@ -34,7 +35,7 @@ source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R
 source("R/derive_millennial_parms.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
-source("R/scenario_uncertainty.R"); source("R/morris_sensitivity.R")   # morris_cluster()
+source("R/scenario_uncertainty.R"); source("R/parallel_cluster.R")   # model_cluster()
 source("R/sensitivity_settings.R")    # shared: parameter list, SD rule, bounds, solver
 source("R/sensitivity_helpers.R")     # parameter sets, SD rule, model evaluation
 source("R/sensitivity_uncertainty.R") # sampling, headline effects, realism filter
@@ -68,7 +69,7 @@ up_n        <- 2000       # Latin-hypercube samples per scenario (3 equilibria e
 up_seed     <- 20260827
 
 # Baseline realism filter (up_filter_pools, up_filter_factor, ..., up_targets_file):
-# set in R/sensitivity_settings.R, shared with Scripts/8 (Sobol' analysis).
+# set in R/sensitivity_settings.R, shared with Scripts/6 (Sobol' analysis).
 
 #------------------------------------------------------------------------#
 # Parallel execution ----
@@ -90,7 +91,7 @@ scenspec_unc <- if (!is.null(unc_all))
 #------------------------------------------------------------------------#
 # Start the worker pool ----
 #------------------------------------------------------------------------#
-cl <- morris_cluster(
+cl <- model_cluster(
   n_cores,
   source_files = c("R/climate_forcing.R", "R/spinup.R", "R/derive_millennial_parms.R",
                    "R/millennial_model.R", "R/init_millennial_state.R",

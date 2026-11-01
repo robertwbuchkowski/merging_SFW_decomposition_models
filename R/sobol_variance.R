@@ -1,103 +1,39 @@
 #------------------------------------------------------------------------#
-# Variance-based sensitivity (Sobol') after Morris screening ----
+# Variance-based sensitivity (Sobol') ----
 #------------------------------------------------------------------------#
-# Helper functions for Scripts/8_sobol_variance_partition.R. Two-stage global
-# sensitivity analysis (Saltelli et al. 2008; Campolongo et al. 2007):
-#   1. SCREENING (Morris, Scripts/4): per scenario, keep the parameters whose
-#      mu* is at least screen_rel_cut x the largest mu* in the MAIN or the
-#      STANDARDIZED Morris analysis (or whose bootstrap CI reaches that cut,
-#      i.e. tied with it), plus every animal parameter (morris_shortlist()).
-#   2. VARIANCE PARTITION (Sobol'): first-order (S) and total-effect (ST)
-#      indices of the shortlisted parameters for the animal effect on total
-#      soil + root C -- as a PERCENTAGE of the no-animal soil + root C
-#      (primary, "pct") and in g C m-2 ("abs"), from the same runs. The
-#      absolute effect scales with the size of the baseline soil, which varies
-#      by orders of magnitude over the parameter distributions (runaway
-#      carbon at implausible parameter combinations), so its variance is
-#      dominated by a few extreme runs; the relative effect is far better
-#      behaved and is the primary output. A third output, "rank", is the
-#      rank-transformed % effect: indices robust to the remaining heavy tails.
-#      Parameters drawn from the MAIN (knowledge-based)
-#      distributions of the uncertainty propagation (Scripts/5). All other
-#      parameters vary TOGETHER as one group ("all other parameters"): its total
-#      index is the share of output variance that would be lost by fixing them,
-#      i.e. a direct check of the screening (screening_ok if ST_rest is below
-#      rest_st_max).
+# Helper functions for Scripts/6_sobol_variance_partition.R. Global
+# sensitivity analysis of the steady-state animal effect, with EVERY
+# parameter analysed individually (no screening step):
+#   SOBOL' INDICES: first-order (S) and total-effect (ST) indices of every
+#      parameter for the animal effect on total soil + root C -- as a
+#      PERCENTAGE of the no-animal soil + root C (primary, "pct"), as the
+#      ranks of that % effect ("rank", robust to heavy tails) and in g C m-2
+#      ("abs"), all from the same runs. The absolute effect scales with the
+#      size of the baseline soil, which can vary by orders of magnitude over
+#      the parameter distributions (runaway carbon at implausible parameter
+#      combinations), so its variance can be dominated by a few extreme runs;
+#      the relative effect is far better behaved and is the primary output.
+#      Parameters are drawn from the same distributions as the uncertainty
+#      propagation (Scripts/4; SD rule with cv_default in
+#      R/sensitivity_settings.R).
 # Estimators (Saltelli et al. 2010, Comput. Phys. Commun. 181: 259-270):
-#   two independent sample matrices A and B (N x k) and, for every factor j, A
-#   with the columns of factor j taken from B (A_B^j); N (k + 2) model runs.
+#   two independent sample matrices A and B (N x k) and, for every parameter
+#   j, A with column j taken from B (A_B^j); N (k + 2) model runs.
 #     S_j  = mean(f(B) (f(A_B^j) - f(A))) / V                (Saltelli 2010)
 #     ST_j = mean((f(A) - f(A_B^j))^2) / (2 V)                 (Jansen 1999)
 #   with V the variance of f over A and B; 95% CIs by bootstrapping the N rows.
-# The REALISM FILTER (Scripts/5) is NOT applied to the Sobol' design (Sobol'
+#   These are Monte Carlo ESTIMATES: with heavy-tailed output they (and
+#   their CIs) can fall outside [0, 1]; see output_kurtosis in the summary.
+# The REALISM FILTER (Scripts/4) is NOT applied to the Sobol' design (Sobol'
 # indices assume independent inputs; conditioning on a realistic baseline
 # would make them dependent). It is reported separately: which samples have
 # a realistic baseline and how the effect differs among them (option A).
 # PAWN (Pianosi & Wagener 2015, Environ. Model. Softw. 67: 1-11), a
 # distribution-based index that does not rely on the variance (robust to the
 # heavy tails caused by regime shifts), is computed from the same A and B
-# runs for EVERY parameter, as a cross-check of both stages.
+# runs for every parameter, as a cross-check.
 #
 # Settings are read from the script (listed per function under 'Needs').
-
-#------------------------------------------------------------------------#
-# morris_shortlist() ----
-#------------------------------------------------------------------------#
-# Used in: Scripts/8_sobol_variance_partition.R (section: Screening)
-# Needs (set in Scripts/8): screen_rel_cut, include_all_animal, max_screened
-# Shortlist for one scenario from the Morris tables (main and, if available,
-# standardized; NULL is allowed). A parameter is kept when, in either
-# analysis, mu* / max(mu*) >= screen_rel_cut ("main" / "standardized"), or
-# its upper 95% bootstrap bound reaches the cut ("tie"), or it is an animal
-# parameter (include_all_animal). At most max_screened NON-animal parameters
-# are kept (largest relative mu* first); the rest join the group of fixed
-# parameters, whose influence the Sobol' group index then measures.
-# Returns one row per parameter with the relative mu* and the reason.
-morris_shortlist <- function(main_tbl, std_tbl, scenario) {
-  rel_of <- function(d, tag) {
-    if (is.null(d)) return(NULL)
-    d <- d[d$scenario == scenario & is.finite(d$mu_star), , drop = FALSE]
-    if (!nrow(d)) return(NULL)
-    m <- max(d$mu_star)
-    data.frame(parameter = d$parameter, is_animal = d$is_animal,
-               rel = d$mu_star / m, rel_hi = d$mu_star_hi / m, analysis = tag,
-               stringsAsFactors = FALSE)
-  }
-  r <- rbind(rel_of(main_tbl, "main"), rel_of(std_tbl, "standardized"))
-  if (is.null(r)) stop("No Morris results for ", scenario)
-  pars <- unique(r$parameter)
-  get <- function(p, tag, col) { v <- r[[col]][r$parameter == p & r$analysis == tag]
-                                 if (length(v)) v[1] else NA_real_ }
-  out <- data.frame(
-    parameter = pars,
-    is_animal = vapply(pars, function(p) any(r$is_animal[r$parameter == p]), logical(1)),
-    rel_main  = vapply(pars, get, numeric(1), tag = "main", col = "rel"),
-    rel_std   = vapply(pars, get, numeric(1), tag = "standardized", col = "rel"),
-    relhi_main = vapply(pars, get, numeric(1), tag = "main", col = "rel_hi"),
-    relhi_std  = vapply(pars, get, numeric(1), tag = "standardized", col = "rel_hi"),
-    stringsAsFactors = FALSE, row.names = NULL)
-  ge <- function(x) !is.na(x) & x >= screen_rel_cut
-  out$reason <- ifelse(ge(out$rel_main) & ge(out$rel_std), "main + standardized",
-                ifelse(ge(out$rel_main), "main",
-                ifelse(ge(out$rel_std), "standardized",
-                ifelse(ge(out$relhi_main) | ge(out$relhi_std), "tie (CI reaches cut)", ""))))
-  out$rel_max  <- pmax(out$rel_main, out$rel_std, na.rm = TRUE)
-  out$selected <- nzchar(out$reason)
-  # cap the number of non-animal parameters
-  na_sel <- which(out$selected & !out$is_animal)
-  if (length(na_sel) > max_screened) {
-    drop <- na_sel[order(-out$rel_max[na_sel])][-seq_len(max_screened)]
-    out$selected[drop] <- FALSE
-    out$reason[drop]   <- paste0(out$reason[drop], " (over max_screened: in fixed group)")
-  }
-  if (include_all_animal) {
-    a <- out$is_animal & !out$selected
-    out$selected[a] <- TRUE
-    out$reason[a]   <- "animal parameter"
-  }
-  out$scenario <- scenario
-  out[order(!out$selected, -out$rel_max), c("scenario", setdiff(names(out), "scenario"))]
-}
 
 #------------------------------------------------------------------------#
 # soil_values_feasible() ----
@@ -120,8 +56,7 @@ soil_values_feasible <- function(pv, base_parms) {
 # Used in: called by run_sobol_scenario()
 # The Saltelli design in PARAMETER units.
 #   dists    named list of sampling distributions (up_distribution())
-#   factors  named list: factor -> parameter names (single parameters, plus
-#            the group of all other parameters)
+#   factors  named list: factor -> parameter name(s) (one per parameter)
 #   N        number of base rows
 # A and B are Latin-hypercube samples of the unit cube (independent), mapped
 # through the inverse CDFs of the distributions. Rows for which ANY of A, B or
@@ -164,7 +99,7 @@ sobol_design <- function(dists, factors, N, base_parms, seed) {
 # Used in: called by run_sobol_scenario() (via make_sobol_fun on the workers)
 # Needs (set in R/sensitivity_settings.R): animal_pools, eq_max_time
 # One model run: the steady-state TOTAL animal effect on total soil + root C
-# (treatment - baseline, as in Scripts/4 and 5) and the baseline values the
+# (treatment - baseline, as in Scripts/4) and the baseline values the
 # realism filter needs. effect is NA when either steady state is not reached.
 sobol_model_output <- function(base_pair, pv, pools) {
   pair <- base_pair
@@ -261,18 +196,18 @@ pawn_indices <- function(X, y, n_cond = 10) {
 #------------------------------------------------------------------------#
 # run_sobol_scenario() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/8_sobol_variance_partition.R (section: Sobol' analysis)
-# Needs (set in Scripts/8): sobol_screen, sobol_N, sobol_seed, sobol_boot_B, rest_st_max,
-#   pawn_n_cond, cl, morris_main, morris_std; (R/sensitivity_settings.R)
+# Used in: Scripts/6_sobol_variance_partition.R (section: Sobol' analysis)
+# Needs (set in Scripts/6): sobol_N, sobol_seed, sobol_boot_B, pawn_n_cond, cl;
+#   (R/sensitivity_settings.R)
 #   up_filter_pools, up_pool_floor, ... (realism filter)
-# Screening, Sobol' design, model runs, indices, PAWN and the realism report
+# Sobol' design, model runs, indices, PAWN and the realism report
 # for one scenario. Returns a list of tables.
 run_sobol_scenario <- function(scenario, si = 1) {
   base_pair  <- make_base_pair(scenario)
   parms_here <- base_pair$treatment$parms
   ps         <- param_set_for(scenario, parms_here)
 
-  # sampling distributions (main analysis, same as Scripts/5)
+  # sampling distributions (main analysis, same as Scripts/4)
   dists <- list()
   for (p in ps$pnames) {
     d0 <- parms_here[[p]]
@@ -282,15 +217,10 @@ run_sobol_scenario <- function(scenario, si = 1) {
   }
   pn <- names(dists)
 
-  # screening
-  sl <- morris_shortlist(morris_main, morris_std, scenario)
-  sel  <- if (sobol_screen) intersect(sl$parameter[sl$selected], pn) else pn   # FALSE: all
-  if (!sobol_screen) sl$selected <- sl$parameter %in% pn
-  rest <- setdiff(pn, sel)
-  factors <- c(setNames(as.list(sel), sel),
-               if (length(rest)) list(all_other_parameters = rest))
-  cat(sprintf("Sobol' [%s]: %d shortlisted (%d animal) + group of %d other parameters; N = %d -> %d runs\n",
-              scenario, length(sel), sum(sel %in% ps$animal), length(rest), sobol_N,
+  # every parameter is its own factor (no screening)
+  factors <- setNames(as.list(pn), pn)
+  cat(sprintf("Sobol' [%s]: %d parameters (%d animal); N = %d -> %d runs\n",
+              scenario, length(pn), sum(pn %in% ps$animal), sobol_N,
               sobol_N * (length(factors) + 2)))
 
   # design and runs
@@ -330,14 +260,10 @@ run_sobol_scenario <- function(scenario, si = 1) {
     pawn <- rbind(pawn, pw)
   }
   si_tab$scenario  <- scenario
-  si_tab$type      <- ifelse(si_tab$factor == "all_other_parameters", "group", "parameter")
   si_tab$is_animal <- si_tab$factor %in% ps$animal
-  si_tab$label     <- ifelse(si_tab$type == "group",
-                             sprintf("All other parameters (%d, fixed by screening)", length(rest)),
-                             pretty_param(si_tab$factor))
-  si_tab$n_params  <- vapply(factors[si_tab$factor], length, integer(1))
+  si_tab$label     <- pretty_param(si_tab$factor)
   pawn$scenario    <- scenario
-  pawn$shortlisted <- pawn$parameter %in% sel
+  pawn$is_animal   <- pawn$parameter %in% ps$animal
   pawn$label       <- pretty_param(pawn$parameter)
 
   # realism filter, reported separately (option A): A and B rows
@@ -355,10 +281,9 @@ run_sobol_scenario <- function(scenario, si = 1) {
   summ <- do.call(rbind, lapply(names(out_col), function(o) {
   eff <- YAB[, out_col[[o]]]
   sio <- si_tab[si_tab$output == o, , drop = FALSE]
-  rest_row <- sio[sio$type == "group", , drop = FALSE]
   data.frame(
-    scenario = scenario, output = o, N = N, n_factors = nf,
-    n_shortlisted = length(sel), n_animal = sum(sel %in% ps$animal), n_fixed_group = length(rest),
+    scenario = scenario, output = o, N = N, n_params = nf,
+    n_animal = sum(pn %in% ps$animal),
     n_runs = nrow(Y), n_design_redrawn = des$n_redrawn,
     n_not_converged = sum(Y[, "converged"] == 0 & Y[, "infeasible"] == 0),
     n_microbe_collapse = sum(Y[, "microbe_collapse"] == 1),
@@ -366,9 +291,7 @@ run_sobol_scenario <- function(scenario, si = 1) {
     n_rows_used = sio$n_used[1], output_variance = sio$variance[1],
     output_kurtosis = kurt(eff),
     sum_S = sum(sio$S), interaction_share = 1 - sum(sio$S),
-    ST_rest = if (nrow(rest_row)) rest_row$ST else NA_real_,
-    ST_rest_hi = if (nrow(rest_row)) rest_row$ST_hi else NA_real_,
-    screening_ok = if (nrow(rest_row)) rest_row$ST_hi <= rest_st_max else NA,   # NA: no screening
+    n_index_outside_01 = sum(sio$S < -0.05 | sio$S > 1.05 | sio$ST > 1.05),
     effect_median_all = q(eff, 0.5), effect_q025_all = q(eff, 0.025), effect_q975_all = q(eff, 0.975),
     n_realistic = sum(realistic), realistic_rate = mean(realistic),
     effect_median_realistic = q(eff[realistic], 0.5),
@@ -383,37 +306,33 @@ run_sobol_scenario <- function(scenario, si = 1) {
   samples$realistic <- NA
   samples$realistic[seq_len(2 * N)] <- realistic
 
-  list(shortlist = sl, indices = si_tab, pawn = pawn, summary = summ,
+  list(indices = si_tab, pawn = pawn, summary = summ,
        samples = samples, design = des, targets = tg)
 }
 
 #------------------------------------------------------------------------#
 # plot_sobol_indices() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/8_sobol_variance_partition.R (section: Figures)
+# Used in: Scripts/6_sobol_variance_partition.R (section: Figures)
 # First-order (S, dark) and total-effect (ST, light) indices with 95%
-# bootstrap CIs per factor (the n_top largest ST), one panel per scenario, ordered by ST. The group
-# of parameters fixed by the screening is drawn in grey: a small ST there
-# means the screening lost little.
+# bootstrap CIs per parameter (the n_top largest ST), one panel per scenario,
+# ordered by ST; animal parameters in orange.
 plot_sobol_indices <- function(ind, summ, output_use = "pct", n_top = 20) {
   ind  <- ind[ind$output == output_use, , drop = FALSE]
   summ <- summ[summ$output == output_use, , drop = FALSE]
-  # the n_top factors with the largest ST per scenario (the fixed group always shown)
+  # the n_top parameters with the largest ST per scenario
   ind <- ind %>% group_by(scenario) %>%
-    filter(type == "group" | rank(-ST, ties.method = "first") <= n_top) %>% ungroup()
+    filter(rank(-ST, ties.method = "first") <= n_top) %>% ungroup()
   d <- ind %>%
     mutate(key = paste(label, scenario, sep = "___")) %>%
     group_by(scenario) %>% arrange(ST, .by_group = TRUE) %>% ungroup()
   d$key <- factor(d$key, levels = unique(d$key))
   long <- bind_rows(
-    d %>% transmute(scenario, key, type, is_animal, index = "Total effect (ST)", value = ST, lo = ST_lo, hi = ST_hi),
-    d %>% transmute(scenario, key, type, is_animal, index = "First order (S)", value = S, lo = S_lo, hi = S_hi)) %>%
+    d %>% transmute(scenario, key, is_animal, index = "Total effect (ST)", value = ST, lo = ST_lo, hi = ST_hi),
+    d %>% transmute(scenario, key, is_animal, index = "First order (S)", value = S, lo = S_lo, hi = S_hi)) %>%
     mutate(index = factor(index, levels = c("Total effect (ST)", "First order (S)")),
-           what = ifelse(type == "group", "group", ifelse(is_animal, "animal", "other")))
-  lab <- summ %>% transmute(scenario, txt = if_else(is.na(ST_rest_hi),
-    sprintf("sum S = %.2f; all parameters analysed (no screening)", sum_S),
-    sprintf("sum S = %.2f; screening %s (ST rest <= %.2f)", sum_S,
-            ifelse(screening_ok, "OK", "NOT OK"), ST_rest_hi)))
+           what = ifelse(is_animal, "animal", "other"))
+  lab <- summ %>% transmute(scenario, txt = sprintf("sum S = %.2f; %d parameters", sum_S, n_params))
   dodge <- position_dodge(width = 0.7)
   ggplot(long, aes(value, key, fill = interaction(what, index), group = index)) +
     geom_col(position = dodge, width = 0.65) +
@@ -424,14 +343,11 @@ plot_sobol_indices <- function(ind, summ, output_use = "pct", n_top = 20) {
     facet_wrap(~scenario, scales = "free_y", labeller = scenario_labeller) +
     scale_y_discrete(labels = function(x) sub("___.*$", "", x)) +
     scale_fill_manual(values = c(`other.Total effect (ST)` = "#9ecae1", `other.First order (S)` = "#2171b5",
-                                 `animal.Total effect (ST)` = "#fdae6b", `animal.First order (S)` = "#d94801",
-                                 `group.Total effect (ST)` = "grey80", `group.First order (S)` = "grey45"),
+                                 `animal.Total effect (ST)` = "#fdae6b", `animal.First order (S)` = "#d94801"),
                       breaks = c("other.First order (S)", "other.Total effect (ST)",
-                                 "animal.First order (S)", "animal.Total effect (ST)",
-                                 "group.First order (S)", "group.Total effect (ST)"),
+                                 "animal.First order (S)", "animal.Total effect (ST)"),
                       labels = c("Soil/plant parameter: S", "Soil/plant parameter: ST",
-                                 "Animal parameter: S", "Animal parameter: ST",
-                                 "Fixed group: S", "Fixed group: ST"), name = NULL) +
+                                 "Animal parameter: S", "Animal parameter: ST"), name = NULL) +
     coord_cartesian(xlim = c(min(0, min(long$lo, na.rm = TRUE)), NA)) +
     labs(x = "Share of output variance (Sobol' index, 95% bootstrap CI)", y = NULL,
          title = paste0("Variance of the animal effect on total soil + root C",
@@ -447,23 +363,22 @@ plot_sobol_indices <- function(ind, summ, output_use = "pct", n_top = 20) {
 #------------------------------------------------------------------------#
 # plot_pawn() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/8_sobol_variance_partition.R (section: Figures)
-# PAWN (median KS) for every parameter, shortlisted ones highlighted; the
+# Used in: Scripts/6_sobol_variance_partition.R (section: Figures)
+# PAWN (median KS) for every parameter, animal parameters highlighted; the
 # dashed line is the KS critical value (influence beyond sampling noise).
-# A non-shortlisted parameter far above the line would question the screening.
 plot_pawn <- function(pw, n_top = 20, output_use = "pct") {
   d <- pw %>% filter(output == output_use) %>% group_by(scenario) %>% slice_max(pawn_median, n = n_top, with_ties = FALSE) %>%
     ungroup() %>% mutate(key = paste(label, scenario, sep = "___"))
   d$key <- factor(d$key, levels = unique(d$key[order(d$scenario, d$pawn_median)]))
   crit <- d %>% distinct(scenario, ks_crit)
-  ggplot(d, aes(pawn_median, key, colour = shortlisted)) +
+  ggplot(d, aes(pawn_median, key, colour = is_animal)) +
     geom_vline(data = crit, aes(xintercept = ks_crit), linetype = "dashed", colour = "grey50") +
     geom_segment(aes(x = 0, xend = pawn_median, yend = key), linewidth = 0.6) +
     geom_point(size = 2) +
     facet_wrap(~scenario, scales = "free_y", labeller = scenario_labeller) +
     scale_y_discrete(labels = function(x) sub("___.*$", "", x)) +
-    scale_colour_manual(values = c(`TRUE` = "#2171b5", `FALSE` = "grey55"),
-                        labels = c(`TRUE` = "Shortlisted (Sobol')", `FALSE` = "Fixed by screening"),
+    scale_colour_manual(values = c(`TRUE` = "#d94801", `FALSE` = "#2171b5"),
+                        labels = c(`TRUE` = "Animal parameter", `FALSE` = "Soil/plant parameter"),
                         name = NULL) +
     labs(x = "PAWN index (median KS distance)", y = NULL,
          title = "Distribution-based sensitivity (PAWN), all parameters",
@@ -476,7 +391,7 @@ plot_pawn <- function(pw, n_top = 20, output_use = "pct") {
 #------------------------------------------------------------------------#
 # plot_sobol_realism() ----
 #------------------------------------------------------------------------#
-# Used in: Scripts/8_sobol_variance_partition.R (section: Figures)
+# Used in: Scripts/6_sobol_variance_partition.R (section: Figures)
 # The animal effect over all A and B samples vs the samples with a realistic
 # baseline (realism filter reported separately, option A).
 plot_sobol_realism <- function(samples, summ, output_use = "pct") {

@@ -3,8 +3,9 @@
 #------------------------------------------------------------------------#
 # RUN ALL  -  regenerate the whole project end to end.
 #
-# Sources Scripts/1..8 in order, so a single call reproduces every saved
-# output (fitted params -> spin-up states -> invasion runs -> sensitivity).
+# Sources Scripts/1..7 in order, so a single call reproduces every saved
+# output (fitted params -> spin-up states -> invasion runs -> uncertainty ->
+# identifiability -> Sobol' -> multistability).
 # Run from the project root:  source("Scripts/0_run_all.R")
 #
 # HOW TO USE
@@ -20,19 +21,18 @@
 #       3 followup_analysis      -> Data/followup/*.rds, Plots/*
 #                                      (animal INVASION: animals added to the
 #                                       seasonal no-animal soil, ~50-yr trajectories)
-#       4 sensitivity_animal_effects -> Results/animal_effect_morris*.csv, figures
-#                                      (Morris: main = SD rule; supplemental =
-#                                       standardized: CV = cv_default for all)
-#       5 uncertainty_animal_effect  -> Results/animal_effect_uncertainty_*.csv, figure
+#       4 uncertainty_animal_effect  -> Results/animal_effect_uncertainty_*.csv, figure
 #                                      (Latin hypercube on the headline effect)
-#       6 multistability_test        -> Results/multistability_*.csv, figure (diagnostic)
-#       7 parameter_identifiability  -> Results/identifiability_*.csv, figures
+#       5 parameter_identifiability  -> Results/identifiability_*.csv, figures
 #                                      (FME: which parameters artificial steady-state
 #                                       and animal-introduction data can identify)
-#       8 sobol_variance_partition   -> Results/sobol_*.csv, figures/sobol_*.png
-#                                      (Morris screening of step 4 -> Sobol' indices;
-#                                       needs steps 1 and 4 first)
-#   * FORCING: steps 1 and 4-8 use the EQUILIBRIUM under constant mean climate
+#       6 sobol_variance_partition   -> Results/sobol_*.csv, figures/sobol_*.png
+#                                      (Sobol' indices of EVERY parameter, no
+#                                       screening; needs step 1 first)
+#       7 multistability_test        -> Results/multistability_*.csv, figure (diagnostic)
+#   * PARAMETER RANGES (steps 4 and 6): SD reported in scenarios.xlsx, else
+#     CV = cv_default (0.25) in R/sensitivity_settings.R.
+#   * FORCING: steps 1 and 4-7 use the EQUILIBRIUM under constant mean climate
 #     forcing. Only steps 2 and 3 simulate the seasonal dynamics (the seasonal
 #     spin-up and the animal-invasion trajectories), with the feeding rates
 #     fitted in step 1.
@@ -46,8 +46,9 @@
 #     top to bottom opens the browser the first time each function is called.
 #     Model evaluations then run serially (no parallel workers), so the
 #     debugger can reach them. Set back to FALSE for normal runs.
-#   * Run time: steps 1-3 take ~10 min in total; the sensitivity steps 4, 5
-#     and 8 are the long ones (see their headers).
+#   * Run time: steps 1-3 take ~10 min in total; steps 4 and 6 are the long
+#     ones (step 6, Sobol' on every parameter, ~5-6 CPU-hours per scenario
+#     at N = 1000; see its header).
 
 stopifnot(file.exists("R/setup.R"))        # guard: must be run from project root
 source("R/run_utils.R")                     # run_one(), debugonce_functions()
@@ -58,28 +59,25 @@ clean_env_between_steps <- TRUE   # TRUE = clear the global environment before e
 run_step1 <- TRUE    # fit animal parameters (constant-forcing equilibrium)
 run_step2 <- TRUE    # equilibrium effects + seasonal spin-up of the no-animal soil
 run_step3 <- TRUE    # animal invasion trajectories (seasonal)
-run_step4 <- TRUE    # Morris sensitivity of the animal effect
-run_step5 <- TRUE    # uncertainty of the headline animal effect (Latin hypercube)
-run_step6 <- FALSE   # multiple-stable-states test (diagnostic; off by default)
-run_step7 <- TRUE    # parameter identifiability with artificial data (FME)
-run_step8 <- TRUE    # Sobol' variance partition after Morris screening
+run_step4 <- TRUE    # uncertainty of the headline animal effect (Latin hypercube)
+run_step5 <- TRUE    # parameter identifiability with artificial data (FME)
+run_step6 <- TRUE    # Sobol' variance partition (all parameters)
+run_step7 <- FALSE   # multiple-stable-states test (diagnostic; off by default)
 
 steps <- c(
   "1" = "Scripts/1_fit_all_animals.R",
   "2" = "Scripts/2_spinup_dynamic.R",
   "3" = "Scripts/3_followup_analysis.R",
-  "4" = "Scripts/4_sensitivity_animal_effects.R",
-  "5" = "Scripts/5_uncertainty_animal_effect.R",
-  "6" = "Scripts/6_multistability_test.R",
-  "7" = "Scripts/7_parameter_identifiability.R",
-  "8" = "Scripts/8_sobol_variance_partition.R")
-run <- c(run_step1, run_step2, run_step3, run_step4, run_step5, run_step6, run_step7,
-         run_step8)
+  "4" = "Scripts/4_uncertainty_animal_effect.R",
+  "5" = "Scripts/5_parameter_identifiability.R",
+  "6" = "Scripts/6_sobol_variance_partition.R",
+  "7" = "Scripts/7_multistability_test.R")
+run <- c(run_step1, run_step2, run_step3, run_step4, run_step5, run_step6, run_step7)
 
 options(sfw.debugonce = debug_functions)   # read by debugonce_functions() in each script
 keep_objs <- c("run_one", "debugonce_functions", "steps", "run", "i", "t_all",
                "debug_functions", "clean_env_between_steps", "keep_objs",
-               paste0("run_step", 1:8))
+               paste0("run_step", 1:7))
 
 t_all <- Sys.time()
 for (i in seq_along(steps)) if (run[i]) run_one(steps[[i]], clean = clean_env_between_steps,

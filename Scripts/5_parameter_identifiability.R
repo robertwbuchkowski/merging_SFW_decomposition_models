@@ -25,7 +25,7 @@
 #   (1) both steady states, (2) no-animal steady state + introduction series,
 #   (3) all three.
 # PARAMETER SETS:
-#   all     every parameter of the Morris screening (general, scenario-
+#   all     every parameter of the sensitivity analyses (general, scenario-
 #           specific and animal) is to be estimated from the data
 #   animal  only the animal parameters are estimated; all other parameters
 #           are assumed known (fixed at their values)
@@ -60,7 +60,7 @@ source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R
 source("R/derive_millennial_parms.R")
 source("R/setup.R");           source("R/compare_functions.R")
 source("R/fit_animals.R");     source("R/dynamic_spinup.R")
-source("R/scenario_uncertainty.R"); source("R/morris_sensitivity.R")   # morris_cluster()
+source("R/scenario_uncertainty.R"); source("R/parallel_cluster.R")   # model_cluster()
 source("R/sensitivity_settings.R")    # shared: parameter list, SD rule, bounds, solver
 source("R/sensitivity_helpers.R")     # parameter sets, make_base_pair(), infeasible_soil()
 source("R/identifiability.R")         # artificial data, sensitivities, collinearity
@@ -122,7 +122,7 @@ n_cores <- min(length(scenarios), max(1, parallel::detectCores(logical = FALSE) 
 if (isTRUE(getOption("sfw.debugonce", FALSE))) n_cores <- 1   # debugger cannot reach workers
 
 #------------------------------------------------------------------------#
-# Parameter sets (same as the Morris screening) ----
+# Parameter sets (same as the uncertainty and Sobol' analyses) ----
 #------------------------------------------------------------------------#
 unc_all <- tryCatch(read_param_uncertainty("Data/scenarios.xlsx", warn_cv = FALSE),
                     error = function(e) { message("uncertainty read failed: ",
@@ -140,7 +140,7 @@ scenspec_unc <- if (!is.null(unc_all))
 cat("Sensitivities:", length(scenarios), "scenarios on", n_cores, "worker(s)\n")
 one_scenario <- function(s, settings) tryCatch(ident_sensitivity(s, settings),
   error = function(e) { message("identifiability failed for ", s, ": ", conditionMessage(e)); NULL })
-cl <- morris_cluster(
+cl <- model_cluster(
   n_cores,
   source_files = c("R/climate_forcing.R", "R/spinup.R", "R/derive_millennial_parms.R",
                    "R/millennial_model.R", "R/init_millennial_state.R",
