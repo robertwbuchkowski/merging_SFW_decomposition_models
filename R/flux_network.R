@@ -568,12 +568,15 @@ plot_flux_network_deltas <- function(nets, ncol = 2, width = 13,
                                      label_size = 3.4, node_size = 3.6,
                                      hw = 1.45, hh = 0.5, stub_len = 1.1,
                                      title = "Change in carbon fluxes caused by the animals, by scenario") {
-  scen_lab <- vapply(nets, function(n)
-    if (exists("pretty_scenario")) unname(pretty_scenario(n$scenario)) else n$scenario, "")
+  # unname(): script 2 passes a NAMED list; named labels would turn
+  # c(delta = scen_lab[i]) into "delta.<scenario>" and every panel would
+  # fall into one unlabelled facet
+  scen_lab <- unname(vapply(nets, function(n)
+    if (exists("pretty_scenario")) unname(pretty_scenario(n$scenario)) else n$scenario, ""))
   Ls <- lapply(seq_along(nets), function(i)
     .flux_network_layers(nets[[i]], "delta", width, min_width, max_width,
                          label_size, node_size, hw, hh, stub_len,
-                         panel_names = c(delta = scen_lab[i])))
+                         panel_names = setNames(scen_lab[i], "delta")))
   L <- list(lim = Ls[[1]]$lim)
   for (nm in c("paths", "labs", "boxes", "stub_txt")) {
     d <- do.call(rbind, lapply(Ls, function(x) { v <- x[[nm]]; v$panel <- as.character(v$panel); v }))
