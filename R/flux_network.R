@@ -127,6 +127,16 @@
   dy   = c(1, 1, 1, 1,  0, -1, -1,  0,  0),
   stringsAsFactors = FALSE)
 
+# the node table with its vertical positions multiplied by y_scale (< 1
+# packs the rows closer, e.g. for the page-width multi-scenario figure). In
+# a packed layout the earthworm box moves down a little more, to keep the
+# microbe -> detritivore arrow clear of both it and POM.
+.nodes_at <- function(y_scale = 1) {
+  n <- .flux_nodes; n$y <- n$y * y_scale
+  if (y_scale < 1) n$y[n$pool == "Earthworm"] <- n$y[n$pool == "Earthworm"] - 0.3
+  n
+}
+
 .flux_node_fill <- c(plant = "#d9ead3", detritus = "#f4e3c1", animal = "#fbd5b5",
                      soil = "#e6dccf", microbe = "#d6e4f0")
 
@@ -247,22 +257,23 @@ flux_network_scenario <- function(model, scenario, scen, fitted = NULL,
 # Curvature of every pool-to-pool arrow. Two-way pairs bow apart so both
 # arrows and both labels are visible; a few single arrows are bent to keep
 # them clear of boxes they would otherwise run under.
-.edge_curvature <- function(from, to) {
+.edge_curvature <- function(from, to, y_scale = 1) {
   key  <- paste(from, to)
   curv <- ifelse(paste(to, from) %in% key, 0.20, 0)
   bend <- c("B Detritivore" = -0.07, "C_root_herb L" = -0.06,
             "Litter Earthworm" = 0, "RootHerb P" = 0.05, "B M" = -0.12)
   hit <- key %in% names(bend)
   curv[hit] <- bend[key[hit]]
+  if (y_scale < 1) curv[key == "B Detritivore"] <- -0.03   # packed layout
   curv
 }
 
 # all pool-to-pool arrows of the model with their drawn paths
-.network_paths <- function(hw, hh) {
-  nodes <- .flux_nodes
+.network_paths <- function(hw, hh, y_scale = 1) {
+  nodes <- .nodes_at(y_scale)
   e <- unique(.flux_defs[.flux_defs$from %in% nodes$pool &
                          .flux_defs$to %in% nodes$pool, c("from", "to")])
-  e$curv <- .edge_curvature(e$from, e$to)
+  e$curv <- .edge_curvature(e$from, e$to, y_scale)
   a <- match(e$from, nodes$pool); b <- match(e$to, nodes$pool)
   e$path <- lapply(seq_len(nrow(e)), function(i)
     .edge_path(nodes$x[a[i]], nodes$y[a[i]], nodes$x[b[i]], nodes$y[b[i]],
@@ -276,9 +287,9 @@ flux_network_scenario <- function(model, scenario, scen, fitted = NULL,
 # Checks the fixed layout: lists every arrow that passes under a box other
 # than its own two ends (with `margin` of clearance). An empty result means
 # the layout is clean. Run after editing .flux_nodes or .edge_curvature().
-check_flux_layout <- function(hw = 1.45, hh = 0.5, margin = 0.1) {
-  nodes <- .flux_nodes
-  e <- .network_paths(hw, hh)
+check_flux_layout <- function(hw = 1.45, hh = 0.5, margin = 0.1, y_scale = 1) {
+  nodes <- .nodes_at(y_scale)
+  e <- .network_paths(hw, hh, y_scale)
   out <- list()
   for (i in seq_len(nrow(e))) {
     p <- e$path[[i]]
@@ -300,7 +311,7 @@ check_flux_layout <- function(hw = 1.45, hh = 0.5, margin = 0.1) {
   sum(r[1] < R[, 2] & r[2] > R[, 1] & r[3] < R[, 4] & r[4] > R[, 3])
 }
 
-# Greedy label placement: each label slides along its own arrow (20-80% of
+# Greedy label placement: each label slides along its own arrow (12-88% of
 # its length) to the spot with the fewest clashes with boxes, other labels
 # and other arrows. Arrows with the least room are placed first.
 .place_labels <- function(lab, paths, box_rects, fixed_rects, char_w, line_h) {
@@ -318,7 +329,7 @@ check_flux_layout <- function(hw = 1.45, hh = 0.5, margin = 0.1) {
     h  <- line_h
     op <- other_pts(i)
     best <- Inf
-    for (f in seq(0.2, 0.8, by = 0.025)) {
+    for (f in seq(0.12, 0.88, by = 0.02)) {
       j <- max(1, min(n, round(f * n)))
       r <- c(p$x[j] - w / 2, p$x[j] + w / 2, p$y[j] - h / 2, p$y[j] + h / 2)
       hits_box <- .rect_overlap(r, box_rects)
@@ -372,18 +383,20 @@ plot_flux_network <- function(net, panels = c("baseline", "animal", "delta"),
 # panels, e.g. c(delta = "Earthworm") for the multi-scenario figure.
 .flux_network_layers <- function(net, panels, width, min_width, max_width,
                                  label_size, node_size, hw, hh, stub_len,
-                                 panel_names = NULL) {
+                                 panel_names = NULL, drop_zero = FALSE,
+                                 drop_inputs = FALSE, y_scale = 1,
+                                 uniform_text = FALSE) {
   panels <- intersect(c("baseline", "animal", "delta"), panels)
   panel_lab <- c(baseline = "Without animals", animal = "With animals",
                  delta = "Change (with − without animals)")
   if (!is.null(panel_names)) panel_lab[names(panel_names)] <- panel_names
-  nodes <- .flux_nodes
-  lim <- .flux_limits(hw, hh, stub_len)
+  nodes <- .nodes_at(y_scale)
+  lim <- .flux_limits(hw, hh, stub_len, drop_inputs, y_scale)
   units_per_mm <- diff(lim$x) / (width * 25.4 * 0.94)
-  char_w <- 0.60 * label_size * units_per_mm      # bold digits ~0.6 em
-  line_h <- 1.45 * label_size * units_per_mm
+  char_w <- 0.66 * label_size * units_per_mm      # bold digits ~0.6 em + margin
+  line_h <- 1.55 * label_size * units_per_mm
 
-  geo <- .network_paths(hw, hh)
+  geo <- .network_paths(hw, hh, y_scale)
   key_geo <- paste(geo$from, geo$to)
   is_pool <- net$edges$from %in% nodes$pool & net$edges$to %in% nodes$pool
   pool_edges <- net$edges[is_pool, ]
@@ -414,6 +427,8 @@ plot_flux_network <- function(net, panels = c("baseline", "animal", "delta"),
       v   <- sum(stub_edges[[pn]][rows])
       ref <- sum(pmax(abs(stub_edges$baseline[rows]), abs(stub_edges$animal[rows])))
       if (ref == 0 || (pn != "delta" && v == 0)) next
+      if (drop_inputs && s$kind == "IN") next                   # NPP stubs left out
+      if (drop_zero && abs(v) < 5e-4) next                      # no change: not drawn
       k  <- match(s$pool, nodes$pool)
       ex <- nodes$x[k] + s$dx * (hw + 0.12); ey <- nodes$y[k] + s$dy * (hh + 0.12)
       fx <- ex + s$dx * stub_len;            fy <- ey + s$dy * stub_len
@@ -437,7 +452,8 @@ plot_flux_network <- function(net, panels = c("baseline", "animal", "delta"),
     # arrows between pools
     v_all <- pool_edges[[pn]]
     ref   <- pmax(abs(pool_edges$baseline), abs(pool_edges$animal))
-    draw  <- which(if (pn == "delta") ref > 0 else abs(v_all) > 0)
+    draw  <- which(if (pn == "delta") ref > 0 & (!drop_zero | abs(v_all) >= 5e-4)
+                   else abs(v_all) > 0)
     plist <- lapply(draw, function(i) geo$path[[pool_edges$g[i]]])
     lab <- data.frame(label = .fmt_flux(v_all[draw], signed), col = col_of(v_all[draw], pn))
     lab <- .place_labels(lab, plist, box_rects, fixed, char_w, line_h)
@@ -463,9 +479,10 @@ plot_flux_network <- function(net, panels = c("baseline", "animal", "delta"),
                    paste0(nodes$label, "\n(absent)"))
     # shrink the text of any box whose longest line would not fit
     longest <- vapply(strsplit(text, "\n"), function(z) max(nchar(z)), 1)
-    fits    <- (2 * hw - 0.2) / (0.56 * node_size * units_per_mm)
+    fits    <- (2 * hw - 0.2) / (0.62 * node_size * units_per_mm)
     boxes[[pn]] <- data.frame(panel = plab, nodes, active = active, text = text,
-                              tsize = node_size * pmin(1, fits / longest))
+                              tsize = if (uniform_text) node_size * min(1, fits / longest)
+                                      else node_size * pmin(1, fits / longest))
   }
   paths    <- do.call(rbind, paths)
   labs     <- do.call(rbind, labs)
@@ -483,18 +500,19 @@ plot_flux_network <- function(net, panels = c("baseline", "animal", "delta"),
 
 # .flux_network_ggplot(): draw layers from .flux_network_layers() (one facet
 # per panel).
-.flux_network_ggplot <- function(L, ncol, hw, hh, label_size, title, subtitle) {
+.flux_network_ggplot <- function(L, ncol, hw, hh, label_size, title, subtitle, scale = 1,
+                                 panel_tag = FALSE) {
   paths <- L$paths; labs <- L$labs; boxes <- L$boxes; stub_txt <- L$stub_txt; lim <- L$lim
 
   ggplot2::ggplot() +
     ggplot2::geom_path(data = paths,
       ggplot2::aes(x, y, group = id, linewidth = lw, colour = col),
       lineend = "butt", linejoin = "mitre",
-      arrow = grid::arrow(length = grid::unit(0.22, "cm"), type = "closed")) +
+      arrow = grid::arrow(length = grid::unit(0.22 * max(scale, 0.6), "cm"), type = "closed")) +
     ggplot2::geom_rect(data = boxes,
       ggplot2::aes(xmin = x - hw, xmax = x + hw, ymin = y - hh, ymax = y + hh,
                    fill = fill, linetype = lty),
-      colour = "grey35", linewidth = 0.35) +
+      colour = "grey35", linewidth = 0.35 * max(scale, 0.6)) +
     ggplot2::geom_text(data = boxes,
       ggplot2::aes(x, y, label = text, colour = tcol, size = tsize),
       lineheight = 0.9) +
@@ -503,30 +521,43 @@ plot_flux_network <- function(net, panels = c("baseline", "animal", "delta"),
       ggplot2::aes(x, y, label = label, colour = col),
       size = label_size, fill = "white", label.size = 0,
       label.padding = grid::unit(0.06, "lines"), fontface = "bold") +
-    ggplot2::geom_text(data = stub_txt,
+    ggplot2::geom_label(data = stub_txt,
       ggplot2::aes(x, y, label = label, hjust = hjust, vjust = vjust, colour = col),
-      size = label_size, fontface = "bold") +
+      size = label_size, fontface = "bold", fill = "white", label.size = 0,
+      label.padding = grid::unit(0.04, "lines")) +
     ggplot2::scale_linewidth_identity() +
     ggplot2::scale_colour_identity() +
     ggplot2::scale_fill_identity() +
     ggplot2::scale_linetype_identity() +
+    (if (panel_tag)       # scenario name inside the panel, top left (no strip)
+      ggplot2::geom_text(data = data.frame(panel = factor(levels(boxes$panel), levels(boxes$panel))),
+        ggplot2::aes(x = lim$x[1], y = lim$y[2], label = panel), hjust = 0, vjust = 1,
+        fontface = "bold", size = 4.2 * scale / 1.35 * 1.6, colour = "black")) +
     ggplot2::facet_wrap(~ panel, ncol = ncol) +
     ggplot2::coord_fixed(xlim = lim$x, ylim = lim$y, expand = FALSE, clip = "off") +
     ggplot2::labs(title = title, subtitle = subtitle) +
-    ggplot2::theme_void(base_size = 12) +
+    ggplot2::theme_void(base_size = 12 * scale) +
     ggplot2::theme(plot.background = ggplot2::element_rect(fill = "white", colour = NA),
-                   strip.text = ggplot2::element_text(face = "bold", size = 14,
-                                                      margin = ggplot2::margin(8, 0, 8, 0)),
-                   plot.title = ggplot2::element_text(face = "bold", size = 15),
-                   plot.margin = ggplot2::margin(12, 12, 12, 12),
-                   panel.spacing = grid::unit(1.5, "lines"))
+                   strip.text = ggplot2::element_text(face = "bold", size = 14 * scale,
+                                                      hjust = if (scale < 1) 0 else 0.5,
+                                                      margin = ggplot2::margin(8 * scale, 0, 4 * scale, 0)),
+                   plot.title = ggplot2::element_text(face = "bold", size = 15 * scale),
+                   plot.subtitle = ggplot2::element_text(size = 11 * scale,
+                                                         margin = ggplot2::margin(0, 0, 6 * scale, 0)),
+                   plot.margin = ggplot2::margin(12 * scale, 12 * scale, 12 * scale, 12 * scale),
+                   panel.spacing = grid::unit(if (panel_tag) 0.6 else 1.5 * scale, "lines"),
+                   strip.text.x = if (panel_tag) ggplot2::element_blank()
+                                  else ggplot2::element_text(face = "bold", size = 14 * scale,
+                                         margin = ggplot2::margin(8 * scale, 0, 4 * scale, 0)))
 }
 
 # plotting window that holds every box, stub and stub label
-.flux_limits <- function(hw = 1.45, hh = 0.5, stub_len = 1.1) {
-  n <- .flux_nodes
+.flux_limits <- function(hw = 1.45, hh = 0.5, stub_len = 1.1, drop_inputs = FALSE,
+                         y_scale = 1) {
+  n <- .nodes_at(y_scale)
+  top <- if (drop_inputs) max(n$y) + hh + 0.35 else max(n$y) + hh + stub_len + 0.8
   list(x = c(min(n$x) - hw - stub_len - 2.6, max(n$x) + hw + stub_len + 3.0),
-       y = c(min(n$y) - hh - 0.5, max(n$y) + hh + stub_len + 0.8))
+       y = c(min(n$y) - hh - 0.5, top))
 }
 #------------------------------------------------------------------------#
 # save_flux_network() ----
@@ -557,26 +588,39 @@ save_flux_network <- function(net, file, panels = c("baseline", "animal", "delta
 # plot_flux_network_deltas() / save_flux_network_deltas() ----
 #------------------------------------------------------------------------#
 # One figure with the CHANGE panel (with - without animals) of several
-# scenarios, one panel per scenario labelled with its name (default 2 x 2
-# for the four scenarios).
+# scenarios, one panel per scenario labelled with its name, STACKED
+# VERTICALLY and sized for a portrait page (default 6.5 in wide, i.e. a
+# Letter/A4 page with 1-in margins), with text of ~6 pt at that size.
 #   nets  named or unnamed list of flux_network_scenario() outputs
-# Arrow widths are scaled within each panel (the changes differ by orders of
-# magnitude between scenarios), so compare widths within a panel and read
-# the values across panels.
-plot_flux_network_deltas <- function(nets, ncol = 2, width = 13,
-                                     min_width = 0.35, max_width = 4.5,
-                                     label_size = 3.4, node_size = 3.6,
-                                     hw = 1.45, hh = 0.5, stub_len = 1.1,
-                                     title = "Change in carbon fluxes caused by the animals, by scenario") {
+# To keep four panels legible at page width the figure leaves out what does
+# not change: arrows and stubs whose change rounds to 0, and the NPP input
+# stubs (NPP is a fixed input, identical with and without animals). All pools
+# are still drawn. Arrow widths are scaled within each panel (the changes
+# differ by orders of magnitude between scenarios), so compare widths within
+# a panel and read the values across panels.
+#   width       figure width in inches (as placed in the document)
+#   label_size, node_size  text sizes in mm (2.1 mm ~ 6 pt)
+#   ncol        panels per row (1 = vertical stack)
+plot_flux_network_deltas <- function(nets, ncol = 1, width = 6.5,
+                                     min_width = 0.25, max_width = 2.6,
+                                     label_size = 2.1, node_size = 2.2,
+                                     hw = 1.45, hh = 0.5, stub_len = 1.1, y_scale = 0.8,
+                                     title = NULL,
+                                     subtitle = paste0("Change with minus without animals. Arrows: g C m\u207b\u00b2 yr\u207b\u00b9; ",
+                                                       "boxes: g C m\u207b\u00b2 (% of no-animal stock).\n",
+                                                       "Blue = larger with animals, red = smaller; ",
+                                                       "arrow widths scaled within each panel.")) {
   # unname(): script 2 passes a NAMED list; named labels would turn
   # c(delta = scen_lab[i]) into "delta.<scenario>" and every panel would
   # fall into one unlabelled facet
   scen_lab <- unname(vapply(nets, function(n)
     if (exists("pretty_scenario")) unname(pretty_scenario(n$scenario)) else n$scenario, ""))
+  panel_w <- width / ncol
   Ls <- lapply(seq_along(nets), function(i)
-    .flux_network_layers(nets[[i]], "delta", width, min_width, max_width,
+    .flux_network_layers(nets[[i]], "delta", panel_w, min_width, max_width,
                          label_size, node_size, hw, hh, stub_len,
-                         panel_names = setNames(scen_lab[i], "delta")))
+                         panel_names = setNames(scen_lab[i], "delta"),
+                         drop_zero = TRUE, drop_inputs = TRUE, y_scale = y_scale))
   L <- list(lim = Ls[[1]]$lim)
   for (nm in c("paths", "labs", "boxes", "stub_txt")) {
     d <- do.call(rbind, lapply(Ls, function(x) { v <- x[[nm]]; v$panel <- as.character(v$panel); v }))
@@ -584,24 +628,24 @@ plot_flux_network_deltas <- function(nets, ncol = 2, width = 13,
     if (nm == "paths") d$id <- paste(d$panel, d$id)   # ids unique across scenarios
     L[[nm]] <- d
   }
-  subtitle <- paste0("With minus without animals at equilibrium (constant mean climate). ",
-                     "Arrows: change in flux (g C m⁻² yr⁻¹); boxes: change in stock ",
-                     "(g C m⁻², % of no-animal value).\nBlue = larger with animals, red = smaller. ",
-                     "Arrow widths are scaled within each panel.")
-  .flux_network_ggplot(L, ncol, hw, hh, label_size, title, subtitle)
+  .flux_network_ggplot(L, ncol, hw, hh, label_size, title, subtitle,
+                       scale = min(1, panel_w / 13) * 1.35, panel_tag = TRUE)
 }
 
-# save_flux_network_deltas(): write plot_flux_network_deltas() to a PNG;
-# `width` is the width of ONE panel in inches.
-save_flux_network_deltas <- function(nets, file, ncol = 2, width = 13, dpi = 200,
-                                     hw = 1.45, hh = 0.5, stub_len = 1.1, ...) {
+# save_flux_network_deltas(): write plot_flux_network_deltas() to a PNG.
+# `width` is the WHOLE figure width in inches (default 6.5 = page width); the
+# height follows from the layout (about 2 in per panel when stacked, so four
+# panels fit a portrait page).
+save_flux_network_deltas <- function(nets, file, ncol = 1, width = 6.5, dpi = 300,
+                                     hw = 1.45, hh = 0.5, stub_len = 1.1, y_scale = 0.8, ...) {
   p <- plot_flux_network_deltas(nets, ncol = ncol, width = width,
-                                hw = hw, hh = hh, stub_len = stub_len, ...)
-  lim  <- .flux_limits(hw, hh, stub_len)
-  ph   <- width * 0.94 * diff(lim$y) / diff(lim$x)
+                                hw = hw, hh = hh, stub_len = stub_len, y_scale = y_scale, ...)
+  lim  <- .flux_limits(hw, hh, stub_len, drop_inputs = TRUE, y_scale = y_scale)
+  pw   <- width / ncol
+  ph   <- pw * 0.94 * diff(lim$y) / diff(lim$x)
   nrow <- ceiling(length(nets) / ncol)
   dir.create(dirname(file), showWarnings = FALSE, recursive = TRUE)
-  ggplot2::ggsave(file, p, width = width * ncol, height = 1.3 + (ph + 0.55) * nrow,
+  ggplot2::ggsave(file, p, width = width, height = 0.45 + (ph + 0.1) * nrow,
                   dpi = dpi, bg = "white", limitsize = FALSE)
   invisible(p)
 }
