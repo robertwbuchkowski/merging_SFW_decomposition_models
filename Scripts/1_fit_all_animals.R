@@ -22,7 +22,7 @@ debugonce_functions()   # only active when options(sfw.debugonce = TRUE); see Sc
 
 scen   <- read_scenarios("Data/scenarios.xlsx")
 models <- c("millennial")
-do_effect_fitting = FALSE
+do_effect_fitting = TRUE
 res_dir <- "Results"
 
 #------------------------------------------------------------------------#

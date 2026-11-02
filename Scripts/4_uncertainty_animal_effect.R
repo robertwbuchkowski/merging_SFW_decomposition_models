@@ -21,12 +21,24 @@
 #   Samples whose mean moisture >= porosity (impossible soils) are skipped
 #   without solving.
 #
+# RAREFACTION: all scenarios are then summarised over the same number of
+#   accepted samples (up_rarefy_n / up_rarefy_step below), drawn at random.
+#
 # BASELINE REALISM FILTER: a sample is ACCEPTED only if its no-animal
 #   equilibrium (a) keeps EVERY pool positive and non-zero
 #   (> up_pool_floor) and
 #   (b) stays within target ranges for the listed pools (defaults: each
 #   scenario's all-default baseline, reference / factor .. x factor; editable
 #   in Data/baseline_targets.csv).
+#
+# Outputs (Results/):
+#   animal_effect_table.csv                   paper table (Table 1): default and
+#        rarefied quantiles of the total and direct effects, N and % accepted,
+#        two significant figures
+#   animal_effect_uncertainty_summary.csv     all subsets (all converged,
+#        unflagged, accepted, accepted rarefied), with n and % accepted
+#   animal_effect_uncertainty_diagnostics.csv / _samples.csv / _inputs.csv,
+#   baseline_targets_used.csv, figures/animal_effect_uncertainty.png
 #
 # Run from the project root (needs Results/fitted_animal_params.csv from
 # Scripts/1). Helper functions: R/sensitivity_helpers.R, R/sensitivity_uncertainty.R.
@@ -67,6 +79,13 @@ derive_fn <- match.fun(model_table[[model]]$derive)
 up_n        <- 2000       # Latin-hypercube samples per scenario (3 equilibria each);
                           # ~10-30% pass the realism filter, so keep this large
 up_seed     <- 20260827
+# RAREFACTION: the quantiles of every scenario are computed from the SAME
+# number of accepted samples, drawn at random from each scenario's accepted
+# samples (subset "accepted (rarefied)" in the summary). NULL = automatic: the
+# largest multiple of up_rarefy_step (1000, 1500, 2000, ...) not exceeding the
+# smallest number of accepted samples of any scenario. Or set a number.
+up_rarefy_n    <- NULL
+up_rarefy_step <- 500
 
 # Baseline realism filter (up_filter_pools, up_filter_factor, ..., up_targets_file):
 # set in R/sensitivity_settings.R, shared with Scripts/6 (Sobol' analysis).
@@ -112,6 +131,12 @@ write_csv(up$diagnostics, file.path(res_dir, "animal_effect_uncertainty_diagnost
 write_csv(up$inputs,      file.path(res_dir, "animal_effect_uncertainty_inputs.csv"))
 write_csv(up$targets,     file.path(res_dir, "baseline_targets_used.csv"))
 
+# paper table (Table 1): default + rarefied quantiles, two significant figures
+paper_tab <- animal_effect_paper_table(up$summary)
+write_csv(paper_tab, file.path(res_dir, "animal_effect_table.csv"))
+cat("\nPaper table (Results/animal_effect_table.csv):\n")
+print(paper_tab, row.names = FALSE)
+
 # parameters whose sampling range is cut by a bound (proportions, sign, Min/Max)
 hits <- up$inputs %>% filter(nzchar(bound_hit))
 if (nrow(hits)) {
@@ -122,27 +147,29 @@ if (nrow(hits)) {
 }
 
 cat("\nHeadline animal effect with propagated parameter uncertainty (g C m-2),",
-    "accepted samples:\n")
-print(up$summary %>% filter(subset == "accepted") %>%
-        transmute(scenario, n,
+    "accepted samples rarefied to", up$n_rarefied, "per scenario:\n")
+print(up$summary %>% filter(subset == "accepted (rarefied)") %>%
+        transmute(scenario, n, pct_accepted = round(pct_accepted_of_draws),
                   total  = sprintf("%.1f (%.1f to %.1f)", total_median, total_q025, total_q975),
                   direct = sprintf("%.1f (%.1f to %.1f)", direct_median, direct_q025, direct_q975),
                   p_sign_as_default = round(p_sign_as_default, 3)),
       row.names = FALSE)
 
-# FIGURE: accepted samples (filled) vs all converged samples (dashed outline);
-# solid line = all-default effect; shaded band = central 95% of accepted.
+# FIGURE: rarefied accepted samples (filled) vs all converged samples (dashed
+# outline); solid line = all-default effect; shaded band = central 95% of the
+# rarefied accepted samples (the same numbers as the paper table).
 long <- up$samples %>% filter(converged == 1) %>%
-  select(scenario, accepted, total, direct) %>%
+  select(scenario, accepted, rarefied, total, direct) %>%
   pivot_longer(c(total, direct), names_to = "effect", values_to = "value")
-long_acc <- long %>% filter(accepted)
-bands <- up$summary %>% filter(subset == "accepted") %>%
+long_acc <- long %>% filter(rarefied)
+bands <- up$summary %>% filter(subset == "accepted (rarefied)") %>%
   transmute(scenario,
             total_lo = total_q025, total_hi = total_q975, total_def = total_default,
             direct_lo = direct_q025, direct_hi = direct_q975, direct_def = direct_default) %>%
   pivot_longer(-scenario, names_to = c("effect", ".value"), names_sep = "_")
 acc_txt <- up$diagnostics %>%
-  transmute(scenario, lab = sprintf("accepted %d of %d", n_accepted, n_converged)) %>%
+  transmute(scenario, lab = sprintf("accepted %d of %d draws (%.0f%%); %d used",
+                                    n_accepted, n_samples, pct_accepted_of_draws, n_rarefied)) %>%
   tidyr::crossing(effect = c("total", "direct"))
 # total effect first, direct effect second
 eff_lv   <- c("total", "direct")
@@ -164,8 +191,9 @@ p_up <- ggplot(long_acc, aes(value, fill = effect, colour = effect)) +
   scale_colour_manual(values = c(total = "#1b7837", direct = "#762a83"), name = "Effect") +
   labs(x = expression("Animal effect on total soil + root C (g C m"^-2*")"),
        y = "Density",
-       caption = paste("Filled = samples passing the baseline realism filter; dashed = all converged samples.",
-                       "Solid line = all-default effect; shaded band = central 95% of accepted; dotted = no effect.")) +
+       caption = paste("Filled = samples passing the baseline realism filter, rarefied to the same number per scenario;",
+                       "dashed = all converged samples.\nSolid line = all-default effect;",
+                       "shaded band = central 95% of the rarefied accepted samples; dotted = no effect.")) +
   theme_minimal(base_size = 11) + theme(legend.position = "bottom")
 ggsave(file.path(fig_dir, "animal_effect_uncertainty.png"), p_up,
        width = 10, height = 2.6 * length(unique(long$scenario)) + 1.2, dpi = 150)

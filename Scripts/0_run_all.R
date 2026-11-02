@@ -22,7 +22,8 @@
 #       3 followup_analysis      -> Data/followup/*.rds, Results/figures/followup_*
 #                                      (animal INVASION: animals added to the
 #                                       seasonal no-animal soil, ~50-yr trajectories)
-#       4 uncertainty_animal_effect  -> Results/animal_effect_uncertainty_*.csv, figure
+#       4 uncertainty_animal_effect  -> Results/animal_effect_uncertainty_*.csv,
+#                                      Results/animal_effect_table.csv (paper table), figure
 #                                      (Latin hypercube on the headline effect)
 #       5 parameter_identifiability  -> Results/identifiability_*.csv, figures
 #                                      (FME: which parameters artificial steady-state

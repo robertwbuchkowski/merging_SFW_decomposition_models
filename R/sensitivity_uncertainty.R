@@ -169,12 +169,31 @@ targets_for <- function(scenario, base_pair, user_targets) {
 #------------------------------------------------------------------------#
 # Used in: Scripts/4_uncertainty_animal_effect.R (section: UNCERTAINTY PROPAGATION TO THE HEADLINE ANIMAL EFFECT)
 # Needs (set in 4_uncertainty_animal_effect.R): cl, scenarios, up_n, up_pool_floor, up_seed,
+#   up_rarefy_n, up_rarefy_step,
 #   up_targets_file
 run_uncertainty_propagation_fn <- function() {
   user_targets <- read_user_targets()
 
   samp_rows <- summ_rows <- diag_rows <- input_rows <- target_rows <- list()
+  keep <- list()            # per scenario: outputs needed for the rarefied summary
   q <- function(v, p) if (length(v)) unname(stats::quantile(v, p, na.rm = TRUE)) else NA_real_
+  # summary of the total / direct effect over the samples in idx
+  summ <- function(Y, default, scenario, idx, label) {
+    tot <- Y[idx, "total"]; dir <- Y[idx, "direct"]
+    pct <- 100 * dir / tot; pct <- pct[is.finite(pct)]
+    data.frame(
+      scenario = scenario, subset = label, n = sum(idx),
+      total_default = default[["total"]],
+      total_median = q(tot, 0.5), total_mean = if (length(tot)) mean(tot) else NA_real_,
+      total_q025 = q(tot, 0.025), total_q975 = q(tot, 0.975),
+      p_total_positive = if (length(tot)) mean(tot > 0) else NA_real_,
+      p_sign_as_default = if (length(tot)) mean(sign(tot) == sign(default[["total"]])) else NA_real_,
+      direct_default = default[["direct"]],
+      direct_median = q(dir, 0.5), direct_q025 = q(dir, 0.025), direct_q975 = q(dir, 0.975),
+      pct_direct_default = 100 * default[["direct"]] / default[["total"]],
+      pct_direct_median = q(pct, 0.5), pct_direct_q025 = q(pct, 0.025),
+      pct_direct_q975 = q(pct, 0.975))
+  }
 
   for (si in seq_along(scenarios)) {
     scenario   <- scenarios[si]
@@ -259,27 +278,103 @@ run_uncertainty_propagation_fn <- function() {
       n_accepted = sum(accepted), acceptance_rate = sum(accepted) / max(sum(ok), 1),
       t(rej), check.names = FALSE)
 
-    summ <- function(idx, label) {
-      tot <- Y[idx, "total"]; dir <- Y[idx, "direct"]
-      pct <- 100 * dir / tot; pct <- pct[is.finite(pct)]
-      data.frame(
-        scenario = scenario, subset = label, n = sum(idx),
-        total_default = default[["total"]],
-        total_median = q(tot, 0.5), total_mean = if (length(tot)) mean(tot) else NA_real_,
-        total_q025 = q(tot, 0.025), total_q975 = q(tot, 0.975),
-        p_total_positive = if (length(tot)) mean(tot > 0) else NA_real_,
-        p_sign_as_default = if (length(tot)) mean(sign(tot) == sign(default[["total"]])) else NA_real_,
-        direct_default = default[["direct"]],
-        direct_median = q(dir, 0.5), direct_q025 = q(dir, 0.025), direct_q975 = q(dir, 0.975),
-        pct_direct_default = 100 * default[["direct"]] / default[["total"]],
-        pct_direct_median = q(pct, 0.5), pct_direct_q025 = q(pct, 0.025),
-        pct_direct_q975 = q(pct, 0.975))
-    }
-    summ_rows[[scenario]] <- rbind(summ(ok, "all converged"),
-                                   summ(ok & !flag, "unflagged"),
-                                   summ(accepted, "accepted"))
+    summ_rows[[scenario]] <- rbind(summ(Y, default, scenario, ok, "all converged"),
+                                   summ(Y, default, scenario, ok & !flag, "unflagged"),
+                                   summ(Y, default, scenario, accepted, "accepted"))
+    keep[[scenario]] <- list(Y = Y, default = default, accepted = accepted)
   }
-  list(samples = bind_rows(samp_rows), summary = bind_rows(summ_rows),
-       diagnostics = bind_rows(diag_rows), inputs = bind_rows(input_rows),
-       targets = bind_rows(target_rows))
+
+  # RAREFACTION: every scenario is summarised over the SAME number of
+  # accepted samples, drawn at random (without replacement) from its accepted
+  # samples, so the quantiles of the scenarios rest on equal sample sizes.
+  n_acc  <- vapply(keep, function(k) sum(k$accepted), 0)
+  n_rare <- rarefy_size(n_acc, up_rarefy_n, up_rarefy_step)
+  cat(sprintf("\nRarefaction: every scenario summarised over %d accepted samples (accepted: %s)\n",
+              n_rare, paste(names(n_acc), n_acc, sep = " = ", collapse = ", ")))
+  for (si in seq_along(scenarios)) {
+    scenario <- scenarios[si]; k <- keep[[scenario]]
+    set.seed(up_seed + 1000 + si)
+    acc_idx <- which(k$accepted)
+    pick <- if (n_rare > 0) acc_idx[sort(sample.int(length(acc_idx), n_rare))] else integer(0)
+    rarefied <- seq_len(nrow(k$Y)) %in% pick
+    samp_rows[[scenario]]$rarefied <- rarefied
+    summ_rows[[scenario]] <- rbind(summ_rows[[scenario]],
+                                   summ(k$Y, k$default, scenario, rarefied, "accepted (rarefied)"))
+    diag_rows[[scenario]]$n_rarefied <- n_rare
+  }
+
+  diagnostics <- bind_rows(diag_rows)
+  # % of ALL draws accepted (the acceptance_rate column is of converged draws)
+  diagnostics$pct_accepted_of_draws <- 100 * diagnostics$n_accepted / diagnostics$n_samples
+  summary <- bind_rows(summ_rows)
+  idx <- match(summary$scenario, diagnostics$scenario)
+  summary <- cbind(summary, diagnostics[idx, c("n_samples", "n_accepted",
+                                               "pct_accepted_of_draws", "n_rarefied")],
+                   row.names = NULL)
+  list(samples = bind_rows(samp_rows), summary = summary,
+       diagnostics = diagnostics, inputs = bind_rows(input_rows),
+       targets = bind_rows(target_rows), n_rarefied = n_rare)
+}
+
+#------------------------------------------------------------------------#
+# rarefy_size() ----
+#------------------------------------------------------------------------#
+# Used in: called by run_uncertainty_propagation_fn()
+# The common number of accepted samples every scenario is rarefied to:
+#   fixed  a number (up_rarefy_n): used as is (must not exceed the smallest
+#          accepted count)
+#   NULL   the largest multiple of `step` (e.g. 500 -> 1000, 1500, 2000)
+#          not exceeding the smallest accepted count; if fewer than `step`
+#          samples were accepted, the largest multiple of 100, else all of them.
+rarefy_size <- function(n_accepted, fixed = NULL, step = 500) {
+  n_min <- min(n_accepted)
+  if (!is.null(fixed)) {
+    if (fixed > n_min)
+      stop("up_rarefy_n = ", fixed, " but the smallest number of accepted samples is ",
+           n_min, ": lower up_rarefy_n or raise up_n.")
+    return(as.integer(fixed))
+  }
+  n <- floor(n_min / step) * step
+  if (n == 0) n <- floor(n_min / 100) * 100
+  if (n == 0) {
+    warning("Fewer than 100 accepted samples in some scenario: rarefied to ", n_min, ".")
+    n <- n_min
+  }
+  as.integer(n)
+}
+
+#------------------------------------------------------------------------#
+# animal_effect_paper_table() ----
+#------------------------------------------------------------------------#
+# Used in: Scripts/4_uncertainty_animal_effect.R
+# The paper table (Table 1): per scenario, the default and the rarefied
+# quantiles (50%, 2.5%, 97.5%) of the total and direct effects (g C m-2), the
+# direct effect as % of the total (default parameters), and the numbers of
+# accepted and used draws. Values rounded to two significant figures, with a
+# thousands separator (as text, ready to paste). Returns a data frame.
+animal_effect_paper_table <- function(summary, subset = "accepted (rarefied)") {
+  f2 <- function(x) {
+    s <- formatC(signif(x, 2), format = "fg", digits = 2, flag = "#", big.mark = ",")
+    s <- sub("\\.$", "", trimws(s))
+    s[!is.finite(x)] <- "NA"
+    s
+  }
+  d <- summary[summary$subset == subset, , drop = FALSE]
+  lab <- if (exists("pretty_scenario")) unname(pretty_scenario(d$scenario)) else d$scenario
+  out <- data.frame(
+    Scenario                = lab,
+    `N accepted`            = d$n_accepted,
+    `% accepted`            = sprintf("%.0f", d$pct_accepted_of_draws),
+    `N used`                = d$n,
+    `Total default`         = f2(d$total_default),
+    `Total 50%`             = f2(d$total_median),
+    `Total 2.5%`            = f2(d$total_q025),
+    `Total 97.5%`           = f2(d$total_q975),
+    `Direct default`        = f2(d$direct_default),
+    `Direct 50%`            = f2(d$direct_median),
+    `Direct 2.5%`           = f2(d$direct_q025),
+    `Direct 97.5%`          = f2(d$direct_q975),
+    `Direct (% of Total)`   = f2(d$pct_direct_default),
+    check.names = FALSE, stringsAsFactors = FALSE)
+  out
 }
