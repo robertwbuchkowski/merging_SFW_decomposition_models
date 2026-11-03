@@ -68,21 +68,26 @@ baseline_values <- function(eb, pools) {
 #------------------------------------------------------------------------#
 # Used in: called by make_headline_fun(), run_uncertainty_propagation_fn()
 # Needs (set in R/sensitivity_settings.R): animal_pools, eq_max_time
-# total and direct steady-state effects + baseline values for one parameter vector
-# (equilibria under constant mean forcing)
+# Steady-state animal effects on total soil + root C for one parameter vector
+# (equilibria under constant mean forcing), plus the baseline values:
+#   total        treatment - baseline, all pathways on
+#   direct_dmii  treatment with the trait-mediated indirect effects switched
+#                off (zero_indirect_effects()) - baseline: the DIRECT effect
+#                PLUS the density-mediated indirect effects
+#   tmii         TRAIT-MEDIATED INDIRECT effect = total - direct_dmii
 headline_effects <- function(base_pair, pv, pools) {
   pair <- base_pair
   for (nm in names(pv)) {
     pair$treatment <- set_param(pair$treatment, nm, pv[[nm]])
     pair$baseline  <- set_param(pair$baseline,  nm, pv[[nm]])
   }
-  out <- c(total = NA_real_, direct = NA_real_, converged = 0,
+  out <- c(total = NA_real_, tmii = NA_real_, direct_dmii = NA_real_, converged = 0,
            microbe_collapse = 0, kb_floor = 0, infeasible = 0, base_min_pool = NA_real_,
            setNames(rep(NA_real_, length(pools)), paste0("base_", pools)))
   if (nzchar(infeasible_soil(pair$baseline$parms))) { out[["infeasible"]] <- 1; return(out) }
   tryCatch({
     # equilibria under constant mean forcing: baseline, treatment, and the
-    # treatment with the indirect effects switched off (direct feeding only)
+    # treatment with the trait-mediated indirect effects switched off
     eqm <- function(o, ws = NULL) spinup_equilibrium(o, warm_start = ws, max_time = eq_max_time,
                                                      verbose = FALSE)
     b  <- eqm(pair$baseline)
@@ -95,8 +100,9 @@ headline_effects <- function(base_pair, pv, pools) {
             isTRUE(td$spin_info$converged)
     rg_t <- regime_flags(eb, tr$ss_mean, pair$treatment$parms)
     rg_d <- regime_flags(eb, td$ss_mean, pair$treatment$parms)
-    c(total  = sum(tr$ss_mean[soil]) - sum(eb[soil]),
-      direct = sum(td$ss_mean[soil]) - sum(eb[soil]),
+    tot <- sum(tr$ss_mean[soil]) - sum(eb[soil])
+    dd  <- sum(td$ss_mean[soil]) - sum(eb[soil])
+    c(total = tot, tmii = tot - dd, direct_dmii = dd,
       converged = as.numeric(conv),
       microbe_collapse = as.numeric(grepl("microbe_collapse", paste(rg_t, rg_d))),
       kb_floor         = as.numeric(grepl("kb_floor", rg_t)),
@@ -177,10 +183,11 @@ run_uncertainty_propagation_fn <- function() {
   samp_rows <- summ_rows <- diag_rows <- input_rows <- target_rows <- list()
   keep <- list()            # per scenario: outputs needed for the rarefied summary
   q <- function(v, p) if (length(v)) unname(stats::quantile(v, p, na.rm = TRUE)) else NA_real_
-  # summary of the total / direct effect over the samples in idx
+  # summary of the total and trait-mediated indirect (tmii) effects (and of
+  # direct_dmii = direct + density-mediated indirect) over the samples in idx
   summ <- function(Y, default, scenario, idx, label) {
-    tot <- Y[idx, "total"]; dir <- Y[idx, "direct"]
-    pct <- 100 * dir / tot; pct <- pct[is.finite(pct)]
+    tot <- Y[idx, "total"]; tm <- Y[idx, "tmii"]; dd <- Y[idx, "direct_dmii"]
+    pct <- 100 * tm / tot; pct <- pct[is.finite(pct)]
     data.frame(
       scenario = scenario, subset = label, n = sum(idx),
       total_default = default[["total"]],
@@ -188,11 +195,14 @@ run_uncertainty_propagation_fn <- function() {
       total_q025 = q(tot, 0.025), total_q975 = q(tot, 0.975),
       p_total_positive = if (length(tot)) mean(tot > 0) else NA_real_,
       p_sign_as_default = if (length(tot)) mean(sign(tot) == sign(default[["total"]])) else NA_real_,
-      direct_default = default[["direct"]],
-      direct_median = q(dir, 0.5), direct_q025 = q(dir, 0.025), direct_q975 = q(dir, 0.975),
-      pct_direct_default = 100 * default[["direct"]] / default[["total"]],
-      pct_direct_median = q(pct, 0.5), pct_direct_q025 = q(pct, 0.025),
-      pct_direct_q975 = q(pct, 0.975))
+      tmii_default = default[["tmii"]],
+      tmii_median = q(tm, 0.5), tmii_q025 = q(tm, 0.025), tmii_q975 = q(tm, 0.975),
+      pct_tmii_default = 100 * default[["tmii"]] / default[["total"]],
+      pct_tmii_median = q(pct, 0.5), pct_tmii_q025 = q(pct, 0.025),
+      pct_tmii_q975 = q(pct, 0.975),
+      direct_dmii_default = default[["direct_dmii"]],
+      direct_dmii_median = q(dd, 0.5), direct_dmii_q025 = q(dd, 0.025),
+      direct_dmii_q975 = q(dd, 0.975))
   }
 
   for (si in seq_along(scenarios)) {
@@ -241,7 +251,7 @@ run_uncertainty_propagation_fn <- function() {
 
     # classification
     inf  <- Y[, "infeasible"] == 1
-    ok   <- Y[, "converged"] == 1 & is.finite(Y[, "total"]) & is.finite(Y[, "direct"])
+    ok   <- Y[, "converged"] == 1 & is.finite(Y[, "total"]) & is.finite(Y[, "direct_dmii"])
     flag <- Y[, "microbe_collapse"] == 1 | Y[, "kb_floor"] == 1
     pass_pool <- vapply(seq_len(nrow(tg)), function(j) {
       v <- Y[, paste0("base_", tg$pool[j])]
@@ -281,46 +291,60 @@ run_uncertainty_propagation_fn <- function() {
     summ_rows[[scenario]] <- rbind(summ(Y, default, scenario, ok, "all converged"),
                                    summ(Y, default, scenario, ok & !flag, "unflagged"),
                                    summ(Y, default, scenario, accepted, "accepted"))
-    keep[[scenario]] <- list(Y = Y, default = default, accepted = accepted)
+    keep[[scenario]] <- list(Y = Y, default = default, accepted = accepted, converged = ok)
   }
 
   # RAREFACTION: every scenario is summarised over the SAME number of
-  # accepted samples, drawn at random (without replacement) from its accepted
-  # samples, so the quantiles of the scenarios rest on equal sample sizes.
-  n_acc  <- vapply(keep, function(k) sum(k$accepted), 0)
-  n_rare <- rarefy_size(n_acc, up_rarefy_n, up_rarefy_step)
-  cat(sprintf("\nRarefaction: every scenario summarised over %d accepted samples (accepted: %s)\n",
-              n_rare, paste(names(n_acc), n_acc, sep = " = ", collapse = ", ")))
-  for (si in seq_along(scenarios)) {
-    scenario <- scenarios[si]; k <- keep[[scenario]]
-    set.seed(up_seed + 1000 + si)
-    acc_idx <- which(k$accepted)
-    pick <- if (n_rare > 0) acc_idx[sort(sample.int(length(acc_idx), n_rare))] else integer(0)
-    rarefied <- seq_len(nrow(k$Y)) %in% pick
-    samp_rows[[scenario]]$rarefied <- rarefied
-    summ_rows[[scenario]] <- rbind(summ_rows[[scenario]],
-                                   summ(k$Y, k$default, scenario, rarefied, "accepted (rarefied)"))
-    diag_rows[[scenario]]$n_rarefied <- n_rare
+  # samples, drawn at random (without replacement), so the quantiles of the
+  # scenarios rest on equal sample sizes. Done for two subsets:
+  #   accepted       converged + baseline realism filter (main table)
+  #   all converged  converged only: the same subsetting as the Sobol'
+  #                  analysis (impossible soils and unconverged runs removed,
+  #                  no realism filter) -- the supplementary table
+  rarefy_subset <- function(set, label, col, seed_off) {
+    n_set  <- vapply(keep, function(k) sum(k[[set]]), 0)
+    n_rare <- rarefy_size(n_set, up_rarefy_n, up_rarefy_step)
+    cat(sprintf("Rarefaction (%s): every scenario summarised over %d samples (%s)\n",
+                label, n_rare, paste(names(n_set), n_set, sep = " = ", collapse = ", ")))
+    for (si in seq_along(scenarios)) {
+      scenario <- scenarios[si]; k <- keep[[scenario]]
+      set.seed(up_seed + seed_off + si)
+      idx  <- which(k[[set]])
+      pick <- if (n_rare > 0) idx[sort(sample.int(length(idx), n_rare))] else integer(0)
+      r <- seq_len(nrow(k$Y)) %in% pick
+      samp_rows[[scenario]][[col]] <<- r
+      summ_rows[[scenario]] <<- rbind(summ_rows[[scenario]],
+                                      summ(k$Y, k$default, scenario, r, paste0(label, " (rarefied)")))
+      diag_rows[[scenario]][[paste0("n_", col)]] <<- n_rare
+    }
+    n_rare
   }
+  cat("\n")
+  n_rare   <- rarefy_subset("accepted",  "accepted",      "rarefied",           1000)
+  n_rare_c <- rarefy_subset("converged", "all converged", "rarefied_converged", 2000)
 
   diagnostics <- bind_rows(diag_rows)
   # % of ALL draws accepted (the acceptance_rate column is of converged draws)
-  diagnostics$pct_accepted_of_draws <- 100 * diagnostics$n_accepted / diagnostics$n_samples
+  diagnostics$pct_accepted_of_draws  <- 100 * diagnostics$n_accepted / diagnostics$n_samples
+  diagnostics$pct_converged_of_draws <- 100 * diagnostics$n_converged / diagnostics$n_samples
   summary <- bind_rows(summ_rows)
   idx <- match(summary$scenario, diagnostics$scenario)
-  summary <- cbind(summary, diagnostics[idx, c("n_samples", "n_accepted",
-                                               "pct_accepted_of_draws", "n_rarefied")],
+  summary <- cbind(summary, diagnostics[idx, c("n_samples", "n_accepted", "pct_accepted_of_draws",
+                                               "n_converged", "pct_converged_of_draws",
+                                               "n_rarefied", "n_rarefied_converged")],
                    row.names = NULL)
   list(samples = bind_rows(samp_rows), summary = summary,
        diagnostics = diagnostics, inputs = bind_rows(input_rows),
-       targets = bind_rows(target_rows), n_rarefied = n_rare)
+       targets = bind_rows(target_rows), n_rarefied = n_rare,
+       n_rarefied_converged = n_rare_c)
 }
 
 #------------------------------------------------------------------------#
 # rarefy_size() ----
 #------------------------------------------------------------------------#
 # Used in: called by run_uncertainty_propagation_fn()
-# The common number of accepted samples every scenario is rarefied to:
+# The common number of samples every scenario is rarefied to (n_accepted =
+# the number in the subset per scenario):
 #   fixed  a number (up_rarefy_n): used as is (must not exceed the smallest
 #          accepted count)
 #   NULL   the largest multiple of `step` (e.g. 500 -> 1000, 1500, 2000)
@@ -347,34 +371,41 @@ rarefy_size <- function(n_accepted, fixed = NULL, step = 500) {
 # animal_effect_paper_table() ----
 #------------------------------------------------------------------------#
 # Used in: Scripts/4_uncertainty_animal_effect.R
-# The paper table (Table 1): per scenario, the default and the rarefied
-# quantiles (50%, 2.5%, 97.5%) of the total and direct effects (g C m-2), the
-# direct effect as % of the total (default parameters), and the numbers of
-# accepted and used draws. Values rounded to two significant figures, with a
-# thousands separator (as text, ready to paste). Returns a data frame.
-animal_effect_paper_table <- function(summary, subset = "accepted (rarefied)") {
+# The manuscript tables: per scenario, the total effect and the
+# trait-mediated indirect effect (g C m-2) at the default parameter values
+# and as "median (2.5% to 97.5% quantile)" over the rarefied draws of a
+# subset, the trait-mediated indirect effect as % of the total (default
+# parameters), and the numbers of draws kept and used. Values rounded to two
+# significant figures, with a thousands separator (text, ready to paste).
+#   subset  "accepted"      main table (converged + baseline realism filter)
+#           "all converged" supplementary table (same subsetting as Sobol')
+animal_effect_paper_table <- function(summary, subset = c("accepted", "all converged")) {
+  subset <- match.arg(subset)
   f2 <- function(x) {
     s <- formatC(signif(x, 2), format = "fg", digits = 2, flag = "#", big.mark = ",")
     s <- sub("\\.$", "", trimws(s))
     s[!is.finite(x)] <- "NA"
     s
   }
-  d <- summary[summary$subset == subset, , drop = FALSE]
+  ci <- function(m, lo, hi) sprintf("%s (%s to %s)", f2(m), f2(lo), f2(hi))
+  d <- summary[summary$subset == paste0(subset, " (rarefied)"), , drop = FALSE]
   lab <- if (exists("pretty_scenario")) unname(pretty_scenario(d$scenario)) else d$scenario
+  if (subset == "accepted") {
+    n_kept <- d$n_accepted;  pct_kept <- d$pct_accepted_of_draws;  kept <- "accepted"
+  } else {
+    n_kept <- d$n_converged; pct_kept <- d$pct_converged_of_draws; kept <- "converged"
+  }
   out <- data.frame(
-    Scenario                = lab,
-    `N accepted`            = d$n_accepted,
-    `% accepted`            = sprintf("%.0f", d$pct_accepted_of_draws),
-    `N used`                = d$n,
-    `Total default`         = f2(d$total_default),
-    `Total 50%`             = f2(d$total_median),
-    `Total 2.5%`            = f2(d$total_q025),
-    `Total 97.5%`           = f2(d$total_q975),
-    `Direct default`        = f2(d$direct_default),
-    `Direct 50%`            = f2(d$direct_median),
-    `Direct 2.5%`           = f2(d$direct_q025),
-    `Direct 97.5%`          = f2(d$direct_q975),
-    `Direct (% of Total)`   = f2(d$pct_direct_default),
+    Scenario = lab,
+    n_kept   = n_kept,
+    pct_kept = sprintf("%.0f", pct_kept),
+    `N used` = d$n,
+    `Total default` = f2(d$total_default),
+    `Total median (95% interval)` = ci(d$total_median, d$total_q025, d$total_q975),
+    `Trait-mediated indirect default` = f2(d$tmii_default),
+    `Trait-mediated indirect median (95% interval)` = ci(d$tmii_median, d$tmii_q025, d$tmii_q975),
+    `Trait-mediated indirect (% of Total)` = f2(d$pct_tmii_default),
     check.names = FALSE, stringsAsFactors = FALSE)
+  names(out)[2:3] <- c(paste("N", kept), paste("%", kept))
   out
 }

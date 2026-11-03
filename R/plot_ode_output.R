@@ -228,7 +228,8 @@ plot_followup_stacked <- function(model,
 #
 #   eq_csv   the equilibrium effect table written by script 2. Columns used:
 #            name, difference (absolute change, g C m-2), scenario, type.
-#   eq_type  which effect to show at equilibrium ("total" or "direct").
+#   eq_type  which effect to show at equilibrium: "total", "tmii" (trait-
+#            mediated indirect) or "direct_dmii" (direct + density-mediated).
 read_eq_change <- function(eq_csv = "Results/animal_eq_effect.csv",
                            eq_type = "total") {
   if (!file.exists(eq_csv)) {

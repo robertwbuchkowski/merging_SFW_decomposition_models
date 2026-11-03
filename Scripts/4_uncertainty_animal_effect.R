@@ -2,11 +2,16 @@
 # UNCERTAINTY OF THE HEADLINE ANIMAL EFFECT (Latin hypercube) ----
 #------------------------------------------------------------------------#
 # Propagates parameter uncertainty to the headline result: the equilibrium
-# TOTAL and DIRECT animal effect on total soil + root C, per scenario.
+# animal effect on total soil + root C, per scenario:
+#   total   all pathways on (treatment - baseline)
+#   tmii    TRAIT-MEDIATED INDIRECT effect = total minus the effect with the
+#           trait-mediated indirect effects switched off. The latter
+#           (direct_dmii in the outputs) is the direct effect PLUS the
+#           density-mediated indirect effects.
 # All parameters of the scenario (param_set_for(): general, scenario-specific
 # and animal; the same set as the Sobol' analysis, Scripts/6) are sampled
 # JOINTLY by Latin hypercube; every sample is solved to its equilibrium
-# (baseline, treatment, treatment with indirect effects off).
+# (baseline, treatment, treatment with trait-mediated indirect effects off).
 # EQUILIBRIUM under constant mean climate forcing (~1 s per sample: 3
 #   equilibria; 2000 samples x 4 scenarios ~2 CPU-hours, divided by n_cores).
 #
@@ -22,7 +27,10 @@
 #   without solving.
 #
 # RAREFACTION: all scenarios are then summarised over the same number of
-#   accepted samples (up_rarefy_n / up_rarefy_step below), drawn at random.
+#   samples (up_rarefy_n / up_rarefy_step below), drawn at random. Done twice:
+#   for the ACCEPTED samples (main table) and for ALL CONVERGED samples, i.e.
+#   the same subsetting as the Sobol' analysis (impossible soils and
+#   unconverged runs removed, no realism filter; supplementary table).
 #
 # BASELINE REALISM FILTER: a sample is ACCEPTED only if its no-animal
 #   equilibrium (a) keeps EVERY pool positive and non-zero
@@ -32,11 +40,14 @@
 #   in Data/baseline_targets.csv).
 #
 # Outputs (Results/):
-#   animal_effect_table.csv                   paper table (Table 1): default and
-#        rarefied quantiles of the total and direct effects, N and % accepted,
+#   animal_effect_table.csv                   manuscript table: total and
+#        trait-mediated indirect effects at default values and as median
+#        (95% interval) over the rarefied ACCEPTED samples, N and % accepted,
 #        two significant figures
+#   animal_effect_table_supplement.csv        the same over the rarefied ALL
+#        CONVERGED samples (Sobol' subsetting), N and % converged
 #   animal_effect_uncertainty_summary.csv     all subsets (all converged,
-#        unflagged, accepted, accepted rarefied), with n and % accepted
+#        unflagged, accepted, and both rarefied subsets), with n and % kept
 #   animal_effect_uncertainty_diagnostics.csv / _samples.csv / _inputs.csv,
 #   baseline_targets_used.csv, figures/animal_effect_uncertainty.png
 #
@@ -131,11 +142,17 @@ write_csv(up$diagnostics, file.path(res_dir, "animal_effect_uncertainty_diagnost
 write_csv(up$inputs,      file.path(res_dir, "animal_effect_uncertainty_inputs.csv"))
 write_csv(up$targets,     file.path(res_dir, "baseline_targets_used.csv"))
 
-# paper table (Table 1): default + rarefied quantiles, two significant figures
-paper_tab <- animal_effect_paper_table(up$summary)
+# manuscript tables: default + median (95% interval), two significant figures
+#   main:          accepted samples (converged + baseline realism filter)
+#   supplementary: all converged samples (the subsetting of the Sobol' analysis)
+paper_tab <- animal_effect_paper_table(up$summary, "accepted")
+supp_tab  <- animal_effect_paper_table(up$summary, "all converged")
 write_csv(paper_tab, file.path(res_dir, "animal_effect_table.csv"))
-cat("\nPaper table (Results/animal_effect_table.csv):\n")
+write_csv(supp_tab,  file.path(res_dir, "animal_effect_table_supplement.csv"))
+cat("\nManuscript table (Results/animal_effect_table.csv):\n")
 print(paper_tab, row.names = FALSE)
+cat("\nSupplementary table, Sobol' subsetting (Results/animal_effect_table_supplement.csv):\n")
+print(supp_tab, row.names = FALSE)
 
 # parameters whose sampling range is cut by a bound (proportions, sign, Min/Max)
 hits <- up$inputs %>% filter(nzchar(bound_hit))
@@ -151,52 +168,54 @@ cat("\nHeadline animal effect with propagated parameter uncertainty (g C m-2),",
 print(up$summary %>% filter(subset == "accepted (rarefied)") %>%
         transmute(scenario, n, pct_accepted = round(pct_accepted_of_draws),
                   total  = sprintf("%.1f (%.1f to %.1f)", total_median, total_q025, total_q975),
-                  direct = sprintf("%.1f (%.1f to %.1f)", direct_median, direct_q025, direct_q975),
+                  tmii   = sprintf("%.1f (%.1f to %.1f)", tmii_median, tmii_q025, tmii_q975),
                   p_sign_as_default = round(p_sign_as_default, 3)),
       row.names = FALSE)
 
-# FIGURE: rarefied accepted samples (filled) vs all converged samples (dashed
-# outline); solid line = all-default effect; shaded band = central 95% of the
-# rarefied accepted samples (the same numbers as the paper table).
+# FIGURE: rarefied accepted samples (filled) vs rarefied all-converged
+# samples (dashed outline, the Sobol' subsetting); solid line = all-default
+# effect; shaded band = central 95% of the rarefied accepted samples (the same
+# numbers as the manuscript table).
+eff_lab <- c(total = "Total", tmii = "Trait-mediated indirect")
 long <- up$samples %>% filter(converged == 1) %>%
-  select(scenario, accepted, rarefied, total, direct) %>%
-  pivot_longer(c(total, direct), names_to = "effect", values_to = "value")
+  select(scenario, rarefied, rarefied_converged, total, tmii) %>%
+  pivot_longer(c(total, tmii), names_to = "effect", values_to = "value")
 long_acc <- long %>% filter(rarefied)
+long_all <- long %>% filter(rarefied_converged)
 bands <- up$summary %>% filter(subset == "accepted (rarefied)") %>%
   transmute(scenario,
             total_lo = total_q025, total_hi = total_q975, total_def = total_default,
-            direct_lo = direct_q025, direct_hi = direct_q975, direct_def = direct_default) %>%
+            tmii_lo = tmii_q025, tmii_hi = tmii_q975, tmii_def = tmii_default) %>%
   pivot_longer(-scenario, names_to = c("effect", ".value"), names_sep = "_")
 acc_txt <- up$diagnostics %>%
   transmute(scenario, lab = sprintf("accepted %d of %d draws (%.0f%%); %d used",
                                     n_accepted, n_samples, pct_accepted_of_draws, n_rarefied)) %>%
-  tidyr::crossing(effect = c("total", "direct"))
-# total effect first, direct effect second
-eff_lv   <- c("total", "direct")
-long     <- mutate(long,     effect = factor(effect, levels = eff_lv))
-long_acc <- mutate(long_acc, effect = factor(effect, levels = eff_lv))
-bands    <- mutate(bands,    effect = factor(effect, levels = eff_lv))
-acc_txt  <- mutate(acc_txt,  effect = factor(effect, levels = eff_lv))
+  tidyr::crossing(effect = c("total", "tmii"))
+# total effect first, trait-mediated indirect effect second
+fix_eff  <- function(d) mutate(d, effect = factor(unname(eff_lab[effect]), levels = unname(eff_lab)))
+long_acc <- fix_eff(long_acc); long_all <- fix_eff(long_all)
+bands    <- fix_eff(bands);    acc_txt  <- fix_eff(acc_txt)
+eff_col  <- setNames(c("#1b7837", "#762a83"), unname(eff_lab))
 p_up <- ggplot(long_acc, aes(value, fill = effect, colour = effect)) +
   geom_rect(data = bands, aes(xmin = lo, xmax = hi, ymin = -Inf, ymax = Inf, fill = effect),
             inherit.aes = FALSE, alpha = 0.12) +
   geom_density(alpha = 0.35) +
-  geom_density(data = long, fill = NA, linetype = "dashed", linewidth = 0.4) +
+  geom_density(data = long_all, fill = NA, linetype = "dashed", linewidth = 0.4) +
   geom_vline(data = bands, aes(xintercept = def, colour = effect), linewidth = 0.7) +
   geom_vline(xintercept = 0, linetype = "dotted", colour = "grey40") +
   geom_text(data = acc_txt, aes(x = Inf, y = Inf, label = lab), inherit.aes = FALSE,
             hjust = 1.05, vjust = 1.5, size = 2.8, colour = "grey30") +
   facet_wrap(~ scenario + effect, scales = "free", ncol = 2, labeller = scenario_labeller) +
-  scale_fill_manual(values = c(total = "#1b7837", direct = "#762a83"), name = "Effect") +
-  scale_colour_manual(values = c(total = "#1b7837", direct = "#762a83"), name = "Effect") +
+  scale_fill_manual(values = eff_col, name = "Effect") +
+  scale_colour_manual(values = eff_col, name = "Effect") +
   labs(x = expression("Animal effect on total soil + root C (g C m"^-2*")"),
        y = "Density",
-       caption = paste("Filled = samples passing the baseline realism filter, rarefied to the same number per scenario;",
-                       "dashed = all converged samples.\nSolid line = all-default effect;",
+       caption = paste("Filled = samples passing the baseline realism filter; dashed = all converged samples",
+                       "(Sobol' subsetting); both rarefied to the same number per scenario.\nSolid line = all-default effect;",
                        "shaded band = central 95% of the rarefied accepted samples; dotted = no effect.")) +
   theme_minimal(base_size = 11) + theme(legend.position = "bottom")
 ggsave(file.path(fig_dir, "animal_effect_uncertainty.png"), p_up,
-       width = 10, height = 2.6 * length(unique(long$scenario)) + 1.2, dpi = 150)
+       width = 10, height = 2.6 * length(unique(long_acc$scenario)) + 1.2, dpi = 150)
 cat("Wrote uncertainty outputs to", res_dir, "and", file.path(fig_dir, "animal_effect_uncertainty.png"), "\n")
 
 # shut down the worker pool

@@ -3,7 +3,7 @@
 #------------------------------------------------------------------------#
 # SPIN-UP  -  run once per scenario, then reuse the saved states.
 # Pipeline: equilibrium spin-up -> apply saved fitted animal params ->
-# record the equilibrium animal effect (total + direct) -> seasonal spin-up to
+# record the equilibrium animal effect (total, trait-mediated indirect) -> seasonal spin-up to
 # the limit cycle -> save the stable state to Data/spinup/.
 #
 # HOW TO USE
@@ -69,19 +69,29 @@ for (model in models) {
     cat("\nEquilibrium animal biomass (", model, "/", scenario, "):\n", sep = "")
     print(round(eq_t[animals], 4))
 
-    # DIRECT effect: re-equilibrate with the indirect (_pint / exudate) slopes
-    # zeroed, so the animal acts through direct feeding only
+    # re-equilibrate with the trait-mediated indirect effects switched off
+    # (_pint / exudate slopes zeroed): the animal then acts through direct
+    # feeding AND density-mediated indirect effects only ("direct_dmii")
     pair2     <- zero_indirect_effects(pair)
     eq_direct <- spinup_equilibrium(pair2$treatment,
                                     warm_start = pair2$baseline$init_state_spin)$init_state_spin
 
-    # store total (all pathways) and direct effect vs the baseline equilibrium
+    # effects vs the baseline equilibrium, per pool:
+    #   total        all pathways on
+    #   direct_dmii  trait-mediated indirect effects off (direct + density-mediated)
+    #   tmii         TRAIT-MEDIATED INDIRECT effect = total - direct_dmii
+    eff_total  <- compare_vectors(eq_t,      pair$baseline$init_state_spin)
+    eff_dd     <- compare_vectors(eq_direct, pair$baseline$init_state_spin)
+    eff_tmii   <- eff_total
+    stopifnot(identical(eff_total$name, eff_dd$name))
+    eff_tmii$treatment  <- NA_real_          # a difference of effects, not a state
+    eff_tmii$difference <- eff_total$difference - eff_dd$difference
+    eff_tmii$percent_change <- 100 * eff_tmii$difference / eff_total$baseline
     animal_eq_effect[[length(animal_eq_effect) + 1]] <- rbind(
-      cbind(compare_vectors(eq_t,      pair$baseline$init_state_spin),
-            model = model, scenario = scenario, type = "total"),
-      cbind(compare_vectors(eq_direct, pair$baseline$init_state_spin),
-            model = model, scenario = scenario, type = "direct"))
-    rm(pair2, eq_direct)
+      cbind(eff_total, model = model, scenario = scenario, type = "total"),
+      cbind(eff_tmii,  model = model, scenario = scenario, type = "tmii"),
+      cbind(eff_dd,    model = model, scenario = scenario, type = "direct_dmii"))
+    rm(pair2, eq_direct, eff_total, eff_dd, eff_tmii)
 
     # carbon flux network at both equilibria + the change
     # (Results/figures/flux_network_*.png, flux table alongside as .csv)
@@ -124,13 +134,15 @@ save_flux_network_deltas(flux_nets, "Results/figures/flux_network_change_all_sce
 write_csv(animal_eq_effect, "Results/animal_eq_effect.csv")
 
 #------------------------------------------------------------------------#
-# summary table: total vs direct animal effect, one row per scenario ----
+# summary table: total and trait-mediated indirect effect, one row per scenario ----
 #------------------------------------------------------------------------#
 # For each scenario the animal effect on TOTAL soil + root C is the net change
 # summed over the shared pools (difference = treatment - baseline; animal
-# biomass pools have no baseline so are NA and excluded). "direct" repeats this
-# with the indirect (_pint / exudate) slopes zeroed. pct_direct is the share of
-# the total effect delivered through direct feeding alone.
+# biomass pools have no baseline so are NA and excluded). "direct_dmii" repeats
+# this with the trait-mediated indirect effects (_pint / exudate slopes)
+# switched off: the direct plus density-mediated indirect effects. The
+# trait-mediated indirect effect (tmii) is total - direct_dmii; pct_tmii is its
+# share of the total effect.
 animal_effect_summary <- animal_eq_effect %>%
   filter(!is.na(difference)) %>%                       # shared soil/root pools only
   group_by(model, scenario, type) %>%
@@ -138,9 +150,10 @@ animal_effect_summary <- animal_eq_effect %>%
             baseline = sum(baseline), .groups = "drop") %>%
   pivot_wider(names_from = type, values_from = effect) %>%
   transmute(model, scenario,
-            total_effect_gCm2  = signif(total, 2),
-            direct_effect_gCm2 = signif(direct, 2),
-            pct_direct_of_total = signif(100 * direct / total, 2),
+            total_effect_gCm2       = signif(total, 2),
+            tmii_effect_gCm2        = signif(tmii, 2),
+            pct_tmii_of_total       = signif(100 * tmii / total, 2),
+            direct_dmii_effect_gCm2 = signif(direct_dmii, 2),
             pct_total_of_baseline = signif(100 * total / baseline, 2))
 
 write_csv(animal_effect_summary, "Results/animal_effect_summary.csv")
