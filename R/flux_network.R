@@ -188,7 +188,7 @@ millennial_fluxes <- function(state, parms, time = 0,
 # flux_network_scenario() ----
 #------------------------------------------------------------------------#
 # Equilibria with and without the scenario's animals (same steps as
-# Scripts/2_spinup_dynamic.R: baseline equilibrium, apply fitted feeding
+# Scripts/2_animal_equilibrium_effect.R: baseline equilibrium, apply fitted feeding
 # rates, treatment equilibrium warm-started from the baseline), then the flux
 # table for both and their difference.
 # Returns list(edges, stocks, model, scenario) where

@@ -14,7 +14,7 @@
 #
 # Equilibria are computed under constant mean climate forcing (runsteady,
 # spinup_equilibrium), < 1 s per evaluation. The seasonal dynamics are
-# simulated afterwards with the fitted values (Scripts/2 and 3).
+# simulated afterwards with the fitted values (Scripts/3).
 #
 # Returns the calibrated treatment object plus a full iteration $history so
 # you can see exactly what happened. Requires setup.R, spinup.R sourced.
@@ -459,7 +459,7 @@ plot_animal_scan <- function(scan, target_biomass = NULL, fitted_value = NULL,
 # SAVE / LOAD / APPLY fitted animal parameters ----
 #------------------------------------------------------------------------#
 # Fit once (Scripts/fit_all_animals.R), save to a tidy file keyed by MODEL, and
-# reuse elsewhere (e.g. Scripts/spinup_dynamic.R) without re-fitting.
+# reuse elsewhere (e.g. Scripts/2 and 3) without re-fitting.
 
 # save_fitted_params(): write one row per model x scenario x fitted parameter.
 # `summary_long` is the data frame built by fit_all_animals.R (needs columns

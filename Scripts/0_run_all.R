@@ -13,15 +13,17 @@
 #       1 fit_all_animals        -> Results/fitted_animal_params.csv
 #                                      (feeding rates fitted at the constant-forcing
 #                                       equilibrium)
-#       2 spinup_dynamic         -> Data/spinup/*.rds, Results/animal_eq_effect.csv,
+#       2 animal_equilibrium_effect -> Results/animal_eq_effect.csv,
+#                                      Results/animal_effect_summary.csv,
 #                                      Results/figures/flux_network_*.png
-#                                      (per scenario + all-scenario change figure)
-#                                      (equilibrium effects, then the SEASONAL
-#                                       spin-up of the no-animal soil to its
-#                                       annual limit cycle)
-#       3 followup_analysis      -> Data/followup/*.rds, Results/figures/followup_*
-#                                      (animal INVASION: animals added to the
-#                                       seasonal no-animal soil, ~50-yr trajectories)
+#                                      (equilibrium animal effects at default
+#                                       parameters; flux networks per scenario +
+#                                       all-scenario change figure)
+#       3 followup_analysis      -> Data/spinup/*.rds, Data/followup/*.rds,
+#                                      Results/figures/followup_*
+#                                      (SEASONAL spin-up of the no-animal soil to
+#                                       its annual limit cycle, then animal
+#                                       INVASION, ~50-yr trajectories)
 #       4 uncertainty_animal_effect  -> Results/animal_effect_uncertainty_*.csv,
 #                                      Results/animal_effect_table.csv (paper table), figure
 #                                      (Latin hypercube on the headline effect)
@@ -35,10 +37,10 @@
 #   * FIGURES: every figure goes to Results/figures/.
 #   * PARAMETER RANGES (steps 4 and 6): SD reported in scenarios.xlsx, else
 #     CV = cv_default (0.25) in R/sensitivity_settings.R.
-#   * FORCING: steps 1 and 4-7 use the EQUILIBRIUM under constant mean climate
-#     forcing. Only steps 2 and 3 simulate the seasonal dynamics (the seasonal
-#     spin-up and the animal-invasion trajectories), with the feeding rates
-#     fitted in step 1.
+#   * FORCING: steps 1, 2 and 4-7 use the EQUILIBRIUM under constant mean
+#     climate forcing. Only step 3 simulates the seasonal dynamics (the
+#     seasonal spin-up and the animal-invasion trajectories), with the feeding
+#     rates fitted in step 1.
 #   * Each script sources the R/ helpers it needs and is self-contained. This
 #     wrapper runs each one in the GLOBAL environment (as if you ran it by
 #     hand), optionally clearing it first so every step starts fresh, and
@@ -60,8 +62,8 @@ debug_functions         <- FALSE  # TRUE = debugonce() on every function loaded 
 clean_env_between_steps <- TRUE   # TRUE = clear the global environment before each step
 
 run_step1 <- TRUE    # fit animal parameters (constant-forcing equilibrium)
-run_step2 <- TRUE    # equilibrium effects + seasonal spin-up of the no-animal soil
-run_step3 <- TRUE    # animal invasion trajectories (seasonal)
+run_step2 <- TRUE    # equilibrium animal effects + flux networks (constant forcing)
+run_step3 <- TRUE    # seasonal spin-up + animal invasion trajectories
 run_step4 <- TRUE    # uncertainty of the headline animal effect (Latin hypercube)
 run_step5 <- TRUE    # parameter identifiability with artificial data (FME)
 run_step6 <- TRUE    # Sobol' variance partition (all parameters)
@@ -69,7 +71,7 @@ run_step7 <- FALSE   # multiple-stable-states test (diagnostic; off by default)
 
 steps <- c(
   "1" = "Scripts/1_fit_all_animals.R",
-  "2" = "Scripts/2_spinup_dynamic.R",
+  "2" = "Scripts/2_animal_equilibrium_effect.R",
   "3" = "Scripts/3_followup_analysis.R",
   "4" = "Scripts/4_uncertainty_animal_effect.R",
   "5" = "Scripts/5_parameter_identifiability.R",

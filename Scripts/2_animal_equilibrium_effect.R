@@ -1,24 +1,27 @@
 #------------------------------------------------------------------------#
-# Spin-up (run once per scenario, reuse saved states) ----
+# Animal effects at equilibrium ----
 #------------------------------------------------------------------------#
-# SPIN-UP  -  run once per scenario, then reuse the saved states.
-# Pipeline: equilibrium spin-up -> apply saved fitted animal params ->
-# record the equilibrium animal effect (total, trait-mediated indirect) -> seasonal spin-up to
-# the limit cycle -> save the stable state to Data/spinup/.
+# EQUILIBRIUM ANIMAL EFFECTS at the default parameter values, per scenario,
+# under constant mean climate forcing (the same steady state the animals are
+# fitted at in Scripts/1):
+#   baseline equilibrium (no animals) -> apply the fitted animal parameters ->
+#   treatment equilibrium (with animals) -> treatment equilibrium with the
+#   trait-mediated indirect effects switched off -> effects per pool:
+#     total        all pathways on
+#     tmii         TRAIT-MEDIATED INDIRECT effect = total - direct_dmii
+#     direct_dmii  trait-mediated indirect effects off (direct + density-mediated)
+#   -> carbon flux networks with and without animals.
+# The seasonal spin-up used by the invasion runs is in Scripts/3.
 #
-# HOW TO USE
-#   * Set the toggles below (models, which arms to spin up, Newton vs forward).
-#   * Run from the project root; this is the slow step, so it is kept separate.
-#   * Outputs: Results/animal_eq_effect.csv (equilibrium effects under constant
-#     mean forcing, the same steady state the animals were fitted at),
-#     Results/figures/flux_network_<scenario>.png (carbon
-#     fluxes with and without animals, and the change),
-#     Results/figures/flux_network_change_all_scenarios.png (the change panel
-#     of every scenario in one figure), and the saved
-#     seasonal limit-cycle states under Data/spinup/ (consumed by
-#     Scripts/3_followup_analysis.R).
-# Requires Results/fitted_animal_params.csv from Scripts/1_fit_all_animals.R when
-# use_fitted_params = TRUE.
+# Outputs:
+#   Results/animal_eq_effect.csv       effects per pool and scenario
+#   Results/animal_effect_summary.csv  effects on total soil + root C, per scenario
+#   Results/figures/flux_network_<scenario>.png (+ .csv)  carbon fluxes with and
+#     without animals, and the change
+#   Results/figures/flux_network_change_all_scenarios.png  the change panel of
+#     every scenario in one figure
+# Run from the project root. Requires Results/fitted_animal_params.csv from
+# Scripts/1_fit_all_animals.R when use_fitted_params = TRUE.
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
@@ -35,10 +38,6 @@ models <- c("millennial")
 # toggles ----
 #------------------------------------------------------------------------#
 use_fitted_params <- TRUE    # apply saved fitted params (from fit_all_animals.R)
-do_spinup         <- TRUE     # run the seasonal dynamic spin-up (needed by Scripts/3)
-do_treatment      <- FALSE   # also spin up the treatment arm now (else baseline only)
-use_newton        <- TRUE    # TRUE = Newton shooting (fast, exact limit cycle);
-                             # FALSE = forward-integration spin-up
 
 # fitted animal parameters, keyed by model x scenario x param
 fitted_params <- if (use_fitted_params)
@@ -99,30 +98,6 @@ for (model in models) {
     save_flux_network(net, sprintf("Results/figures/flux_network_%s.png", scenario))
     flux_nets[[scenario]] <- net
     rm(net)
-
-    if (do_spinup) {
-      # baseline: seasonal spin-up to the limit cycle, then save
-      cat("\n--- Baseline dynamic spin-up ---\n")
-      dyn_b <- if (use_newton) dynamic_spinup_newton(pair$baseline)
-               else dynamic_spinup(pair$baseline, n_years = 600, by = 1, tol = 1e-4)
-      cat("baseline converged:", dyn_b$converged, "\n")
-      save_spinup(pair$baseline, dyn_b$final_state, scenario, "baseline")
-
-      # treatment: optional here (can be run later in its own session)
-      if (do_treatment) {
-        cat("\n--- Treatment dynamic spin-up ---\n")
-        if (is.null(pair$treatment$init_state_spin))
-          pair$treatment <- spinup_equilibrium(pair$treatment,
-                                               warm_start = pair$baseline$init_state_spin)
-        dyn_t <- if (use_newton) dynamic_spinup_newton(pair$treatment)
-                 else dynamic_spinup(pair$treatment, n_years = 600, by = 1, tol = 1e-4)
-        cat("treatment converged:", dyn_t$converged, "\n")
-        save_spinup(pair$treatment, dyn_t$final_state, scenario, "treatment")
-      }
-
-      cat("\nStable states saved under Data/spinup/. Use Scripts/followup_analysis.R next.\n")
-    }
-
   }
 }
 

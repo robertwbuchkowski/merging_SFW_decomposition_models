@@ -1,8 +1,13 @@
 #------------------------------------------------------------------------#
-# Fast follow-up from saved stable states ----
+# Seasonal spin-up and animal follow-up (invasion) simulations ----
 #------------------------------------------------------------------------#
-# FAST FOLLOW-UP - reuse saved stable states (from spinup_dynamic.R) for
-# short (~100 yr) perturbation experiments, looped over ALL models x scenarios:
+# The only part of the project that simulates the SEASONAL dynamics.
+#   SPIN-UP  each scenario's no-animal soil is brought to its seasonal limit
+#           cycle (Newton shooting, warm-started from the constant-forcing
+#           equilibrium) and saved to Data/spinup/. Optional: the treatment
+#           arm too (do_treatment). Set do_spinup <- FALSE to reuse saved states.
+# Then FOLLOW-UP experiments from the saved stable states (~50 yr), looped
+# over ALL models x scenarios:
 #   LOOP 1  ADD animals to the spun-up BASELINE (colonization), plus a
 #           time-matched CONTINUED-BASELINE control (same setup, no animals
 #           added) so the two can be plotted against each other.
@@ -11,7 +16,8 @@
 # Each run is saved to Data/followup/ keyed by model_scenario_kind.rds, so
 # either loop can be (re)run independently and plotting can happen later,
 # in a fresh session, without re-running any simulation.
-# Run from project root; requires Data/spinup/*.rds from spinup_dynamic.R.
+# Run from project root. Requires Results/fitted_animal_params.csv from
+# Scripts/1_fit_all_animals.R when use_fitted_params = TRUE.
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
 source("R/setup.R");           source("R/compare_functions.R")
@@ -35,10 +41,52 @@ fitted_params <- if (use_fitted_params)
   load_fitted_params("Results/fitted_animal_params.csv") else NULL
 
 #------------------------------------------------------------------------#
+# SPIN-UP: seasonal limit cycle, saved to Data/spinup/ ----
+#------------------------------------------------------------------------#
+do_spinup    <- TRUE    # run the seasonal spin-up (FALSE = reuse saved Data/spinup/ states)
+do_treatment <- FALSE   # also spin up the treatment arm (needed only by LOOP 2)
+use_newton   <- TRUE    # TRUE = Newton shooting (fast, exact limit cycle);
+                        # FALSE = forward-integration spin-up
+
+if (do_spinup) {
+  for (model in models) {
+    for (scenario in names(scen)) {
+      cat("\n==== SPIN-UP:", model, "/", scenario, "====\n")
+      pair <- setup_scenario_pair(model, scen, scenario)
+
+      # constant-forcing baseline equilibrium: warm start for the seasonal spin-up
+      pair$baseline <- spinup_equilibrium(pair$baseline)
+
+      # baseline: seasonal spin-up to the limit cycle, then save
+      cat("\n--- Baseline dynamic spin-up ---\n")
+      dyn_b <- if (use_newton) dynamic_spinup_newton(pair$baseline)
+               else dynamic_spinup(pair$baseline, n_years = 600, by = 1, tol = 1e-4)
+      cat("baseline converged:", dyn_b$converged, "\n")
+      save_spinup(pair$baseline, dyn_b$final_state, scenario, "baseline")
+
+      # treatment: optional (fitted animal parameters applied first)
+      if (do_treatment) {
+        cat("\n--- Treatment dynamic spin-up ---\n")
+        if (use_fitted_params)
+          pair$treatment <- apply_fitted_params(pair$treatment, fitted_params, model, scenario)
+        pair$treatment <- spinup_equilibrium(pair$treatment,
+                                             warm_start = pair$baseline$init_state_spin)
+        dyn_t <- if (use_newton) dynamic_spinup_newton(pair$treatment)
+                 else dynamic_spinup(pair$treatment, n_years = 600, by = 1, tol = 1e-4)
+        cat("treatment converged:", dyn_t$converged, "\n")
+        save_spinup(pair$treatment, dyn_t$final_state, scenario, "treatment")
+      }
+      rm(pair, dyn_b)
+    }
+  }
+  cat("\nStable states saved under Data/spinup/.\n")
+}
+
+#------------------------------------------------------------------------#
 # LOOP 1: ADD animals + CONTINUED-BASELINE control ----
 #------------------------------------------------------------------------#
 # For each model x scenario with saved spin-ups, reuses the SAVED parameter
-# lists (so any calibration from fit_all_animals.R / spinup_dynamic.R is
+# lists (so any calibration from fit_all_animals.R / the spin-up above is
 # preserved), then runs:
 #   add               animals introduced into the baseline limit cycle
 #   continue_baseline the same baseline limit cycle continued with no animals
@@ -142,7 +190,7 @@ dev.off()
 # COMBINED animal-effect graphic ----
 #------------------------------------------------------------------------#
 # COMBINED animal-effect graphic: the stacked C-change trajectory over the
-# follow-up PLUS the equilibrium effect (from Scripts/2_spinup_dynamic.R ->
+# follow-up PLUS the equilibrium effect (from Scripts/2_animal_equilibrium_effect.R ->
 # Results/animal_eq_effect.csv) as a stacked bar past a broken x-axis, with
 # matching pool colours and a dashed net-change line. One facet per scenario.
 # This single figure replaces the separate equilibrium-effect plot.

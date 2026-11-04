@@ -9,7 +9,7 @@
 # biomass under constant mean climate forcing matches the target (its input
 # value); optionally an effect parameter is fitted to a target pool effect.
 # The seasonal dynamics are simulated afterwards with these values
-# (Scripts/2 seasonal spin-up, Scripts/3 animal invasion).
+# (Scripts/3: seasonal spin-up and animal invasion).
 # Outputs: Results/fitted_animal_params.csv (+ summary tables).
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
 source("R/climate_forcing.R"); source("R/spinup.R"); source("R/plot_ode_output.R")
@@ -146,7 +146,7 @@ if (nrow(bad_fit)) {
 } else cat("\nCalibration check: every fit hit its target with healthy microbial pools.\n")
 
 # Save the fitted parameters (keyed by MODEL x scenario x param) for reuse in
-# Scripts/spinup_dynamic.R -- so the spin-up reads them instead of re-fitting.
+# Scripts/2 and 3 -- so they read them instead of re-fitting.
 save_fitted_params(summary_long, file.path(res_dir, "fitted_animal_params.csv"))
 
 cat("\n================= FITTED ANIMAL PARAMETERS (long) =================\n")

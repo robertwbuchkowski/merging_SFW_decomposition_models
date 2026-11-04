@@ -220,7 +220,7 @@ plot_followup_stacked <- function(model,
 # FOLLOW-UP TRAJECTORY + EQUILIBRIUM END-STATE (single combined figure) ----
 #------------------------------------------------------------------------#
 # Shows the stacked animal-effect trajectory over the follow-up AND the
-# equilibrium animal effect (from Scripts/2_spinup_dynamic.R ->
+# equilibrium animal effect (from Scripts/2_animal_equilibrium_effect.R ->
 # Results/animal_eq_effect.csv) as a stacked bar at the right, past a broken
 # x-axis. Pool fills match between the trajectory and the equilibrium bar; a
 # dashed horizontal line marks the NET equilibrium change per scenario. This
@@ -234,7 +234,7 @@ read_eq_change <- function(eq_csv = "Results/animal_eq_effect.csv",
                            eq_type = "total") {
   if (!file.exists(eq_csv)) {
     warning("equilibrium effect file not found: ", eq_csv,
-            " -- run Scripts/2_spinup_dynamic.R. Equilibrium bar omitted.")
+            " -- run Scripts/2_animal_equilibrium_effect.R. Equilibrium bar omitted.")
     return(NULL)
   }
   e <- utils::read.csv(eq_csv, stringsAsFactors = FALSE)

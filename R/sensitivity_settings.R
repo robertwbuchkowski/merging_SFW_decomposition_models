@@ -117,8 +117,8 @@ eq_max_time <- 1e9
 #------------------------------------------------------------------------#
 # These analyses use the EQUILIBRIUM under constant mean climate forcing
 # (rootSolve::runsteady via spinup_equilibrium()). The seasonal dynamics are
-# simulated only by Scripts/2 (seasonal spin-up) and Scripts/3 (animal
-# invasion trajectories).
+# simulated only by Scripts/3 (seasonal spin-up and animal invasion
+# trajectories).
 res_dir_default <- "Results"
 
 # Parameters that only shape the SEASONAL forcing. Under constant mean
