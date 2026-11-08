@@ -17,8 +17,9 @@
 #      parameter (equivalent to assuming the same relative measurement error
 #      for every observation).
 #   3. For each data design (a combination of data types) and parameter set
-#      (all parameters, or the animal parameters only with the rest assumed
-#      known), FME::collin() gives the collinearity index
+#      (general + animal parameters, or the animal parameters only with the
+#      rest assumed known; the site-specific parameters are always known),
+#      FME::collin() gives the collinearity index
 #      gamma = 1 / sqrt(min eigenvalue of S_n' S_n), S_n = S with unit-length
 #      columns. gamma ~ how much a change in one parameter can be compensated
 #      by the others; a parameter set is called identifiable when gamma is
@@ -143,18 +144,25 @@ make_ident_fun <- function(base_pair, settings, ref, pv0) {
 # Used in: Scripts/5_parameter_identifiability.R (section: Sensitivities)
 # Needs (set in Scripts/5): model, scen, fitted_params, unc_all, animal_unc,
 #   scenspec_unc, derive_fn (via make_base_pair(), param_set_for())
-# Local sensitivities of all artificial observations to all screened
-# parameters of one scenario (the same parameter set as the uncertainty and Sobol' analyses;
-# parameters whose model value is 0 are skipped because a relative
-# perturbation is undefined). Observations whose nominal value is below
+# Local sensitivities of all artificial observations to the parameters to be
+# estimated in one scenario: the parameter set of the uncertainty and Sobol'
+# analyses WITHOUT the site-specific parameters when settings$site_known is
+# TRUE (they are measured at every site, so they are known, not estimated).
+# Parameters whose model value is 0 are skipped because a relative
+# perturbation is undefined. Observations whose nominal value is below
 # settings$obs_floor (numerically zero) or not in settings$obs_pools are dropped.
-# Returns list(scenario, sens = sensFun object, ptype, animal, obs, time_s).
+# Returns list(scenario, sens = sensFun object, ptype, animal, known_site,
+#   skipped_zero, obs, time_s).
 ident_sensitivity <- function(scenario, settings) {
   t0 <- Sys.time()
   bp    <- make_base_pair(scenario, with_reference = FALSE)
   parms <- bp$treatment$parms
   ps    <- param_set_for(scenario, parms)
-  val   <- vapply(ps$pnames, function(p) as.numeric(parms[[p]]), numeric(1))
+  # site-specific parameters are measured, so known: not estimated
+  known_site <- if (isTRUE(settings$site_known))
+    ps$pnames[ps$ptype == "scenario-specific"] else character(0)
+  est   <- setdiff(ps$pnames, known_site)
+  val   <- vapply(est, function(p) as.numeric(parms[[p]]), numeric(1))
   pv    <- val[is.finite(val) & val != 0]
   ref   <- ident_reference(pv, bp, settings)
   y     <- ref$y
@@ -168,7 +176,8 @@ ident_sensitivity <- function(scenario, settings) {
   attr(sF, "pars") <- pv                                  # report the actual values
   list(scenario = scenario, sens = sF, ptype = ps$ptype[names(pv)],
        animal = intersect(ps$animal, names(pv)),
-       skipped_zero = setdiff(ps$pnames, names(pv)),
+       known_site = known_site,
+       skipped_zero = setdiff(est, names(pv)),
        obs = data.frame(observation = obs, value = as.numeric(y[obs]),
                         stringsAsFactors = FALSE),
        time_s = as.numeric(difftime(Sys.time(), t0, units = "secs")))
@@ -330,9 +339,9 @@ plot_ident_summary <- function(summ, design_levels) {
     pivot_longer(c(Total, `Carry information`, Identifiable), names_to = "what",
                  values_to = "n") %>%
     mutate(what = factor(what, levels = c("Total", "Carry information", "Identifiable")),
-           param_set = factor(ifelse(param_set == "all", "All parameters",
+           param_set = factor(ifelse(param_set == "all", "General + animal parameters",
                                      "Animal parameters only"),
-                              levels = c("All parameters", "Animal parameters only")))
+                              levels = c("General + animal parameters", "Animal parameters only")))
   ggplot(d, aes(n, design, fill = what)) +
     geom_col(position = position_dodge(width = 0.8), width = 0.75) +
     facet_grid(param_set ~ scenario, scales = "free_x",

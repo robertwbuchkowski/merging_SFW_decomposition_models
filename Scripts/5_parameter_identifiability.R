@@ -25,10 +25,13 @@
 #   (1) both steady states, (2) no-animal steady state + introduction series,
 #   (3) all three.
 # PARAMETER SETS:
-#   all     every parameter of the sensitivity analyses (general, scenario-
-#           specific and animal) is to be estimated from the data
-#   animal  only the animal parameters are estimated; all other parameters
-#           are assumed known (fixed at their values)
+#   all     the general soil parameters and the animal parameters are to be
+#           estimated from the data
+#   animal  only the animal parameters are estimated; the general soil
+#           parameters are assumed known (fixed at their values)
+#   In BOTH sets the site-specific parameters (bulk density, MAT, soil
+#   moisture, NPP, clay + silt, pH) are known: they are measured at every
+#   site (site_known = TRUE below; FALSE estimates them in "all" too).
 #
 # METHOD: FME::sensFun gives the normalized sensitivities
 #   S_ij = (dy_i/dp_j) (p_j / y_i) of every observation to every parameter (forward
@@ -99,7 +102,9 @@ ident_settings <- list(
   fd_rel      = 1e-3,        # relative parameter step for the finite differences
   eq_max_time = eq_max_time, # equilibrium solver horizon (R/sensitivity_settings.R)
   eq_stol     = 1e-10,       # equilibrium derivative tolerance (tight: the sensitivities
-  ode_tol     = 1e-10        # are finite differences of the solution) and ODE tolerance
+  ode_tol     = 1e-10,       # are finite differences of the solution) and ODE tolerance
+  site_known  = TRUE         # site-specific parameters are measured, hence known:
+                             # left out of both parameter sets
 )
 
 # data designs: which data types are used together
@@ -108,7 +113,7 @@ designs <- list(
   "Steady state, no animal + introduction"  = c("ss_noanimal", "ts"),
   "All data"                                = c("ss_noanimal", "ss_animal", "ts"))
 
-param_sets      <- c("all", "animal")  # (1) all parameters, (2) animal parameters only
+param_sets      <- c("all", "animal")  # (1) general + animal parameters, (2) animal parameters only
 ident_threshold <- 20      # collinearity index above which a set is not identifiable
                            # (Brun et al. 2001: 10-15 critical; 20 common)
 min_sens        <- 1e-3    # minimum RMS normalized sensitivity to carry information
@@ -157,8 +162,10 @@ names(sens_list) <- scenarios
 sens_list <- Filter(Negate(is.null), sens_list)
 if (!length(sens_list)) stop("Sensitivities failed for every scenario (see messages above).")
 for (sr in sens_list)
-  cat(sprintf("  %-14s %d parameters (%d animal), %d observations, %.1f min%s\n",
+  cat(sprintf("  %-14s %d parameters estimated (%d animal), %d observations, %.1f min%s%s\n",
               sr$scenario, length(sr$ptype), length(sr$animal), nrow(sr$obs), sr$time_s / 60,
+              if (length(sr$known_site)) paste0("; known (site): ",
+                                                paste(sr$known_site, collapse = ", ")) else "",
               if (length(sr$skipped_zero)) paste0("; skipped (value 0): ",
                                                   paste(sr$skipped_zero, collapse = ", ")) else ""))
 saveRDS(list(sens = sens_list, settings = ident_settings),
