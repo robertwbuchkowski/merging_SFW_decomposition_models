@@ -317,7 +317,7 @@ run_sobol_scenario <- function(scenario, si = 1) {
 # First-order (S, dark) and total-effect (ST, light) indices with 95%
 # bootstrap CIs per parameter (the n_top largest ST), one panel per scenario,
 # ordered by ST; animal parameters in orange.
-plot_sobol_indices <- function(ind, summ, output_use = "pct", n_top = 20) {
+plot_sobol_indices <- function(ind, summ, output_use = "pct", n_top = 10) {
   ind  <- ind[ind$output == output_use, , drop = FALSE]
   summ <- summ[summ$output == output_use, , drop = FALSE]
   # the n_top parameters with the largest ST per scenario
