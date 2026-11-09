@@ -24,6 +24,9 @@
 #                                         -> both equilibria + flux table
 #   plot_flux_network(net)                -> ggplot (one or more panels)
 #   save_flux_network(net, file)          -> PNG sized for the panels (+ .csv)
+#   plot_flux_network_wiring() / save_flux_network_wiring(file)
+#                                         -> how the model is wired: every flux,
+#                                            no values, trait-mediated links dashed
 #   plot_flux_network_deltas(nets) / save_flux_network_deltas(nets, file)
 #                                         -> change panels of several scenarios,
 #                                            one panel per scenario
@@ -95,26 +98,26 @@
 # Node layout and labels ----
 #------------------------------------------------------------------------#
 # Fixed positions chosen so that no arrow passes under a box it does not
-# start or end at (check_flux_layout() tests this). POM sits in the middle
+# start or end at (check_flux_layout() tests this). POC sits in the middle
 # because almost every pool exchanges C with it. Rows from top to bottom:
-# plant inputs (roots, litter, CWD); fauna, POM and LMWC; earthworms and
-# microbes; aggregates and MAOM.
+# plant inputs (roots, litter, CWD); fauna, POC and LMWC; earthworms and
+# microbes; aggregates and MAOC.
 .flux_nodes <- data.frame(
   pool  = c("C_root_herb", "C_root_tree", "Litter", "CWD",
             "RootHerb", "Detritivore", "P", "L",
             "Earthworm", "B", "A", "M"),
   label = c("Herb roots", "Tree roots", "Litter", "CWD",
-            "Root herbivores", "Detritivores", "POM", "LMWC",
-            "Earthworms", "Microbes", "Aggregates", "MAOM"),
+            "Root herbivores", "Detritivores", "POC", "LMWC",
+            "Earthworms", "Microbes", "Aggregates", "MAOC"),
   group = c("plant", "plant", "detritus", "detritus",
             "animal", "animal", "soil", "soil",
             "animal", "microbe", "soil", "soil"),
   x     = c(-1.0,  3.5,  8.0, 12.5,
-            -4.2,  0.0,  5.5, 12.0,
-             7.7, 15.5,  1.5,  9.8),
+            -4.2, -1.6,  4.2, 13.2,
+             7.7, 15.5,  0.0,  9.8),
   y     = c(10.0, 10.0, 10.0, 10.0,
              7.8,  6.1,  6.5,  6.5,
-             4.0,  3.0,  1.0,  0.0),
+             4.0,  3.0,  0.4, -0.8),
   stringsAsFactors = FALSE)
 
 # stub direction for inputs (pointing into the box) and losses (out of it)
@@ -130,10 +133,10 @@
 # the node table with its vertical positions multiplied by y_scale (< 1
 # packs the rows closer, e.g. for the page-width multi-scenario figure). In
 # a packed layout the earthworm box moves down a little more, to keep the
-# microbe -> detritivore arrow clear of both it and POM.
+# microbe -> detritivore arrow clear of both it and POC.
 .nodes_at <- function(y_scale = 1) {
   n <- .flux_nodes; n$y <- n$y * y_scale
-  if (y_scale < 1) n$y[n$pool == "Earthworm"] <- n$y[n$pool == "Earthworm"] - 0.3
+  if (y_scale < 1) n$y[n$pool == "Earthworm"] <- n$y[n$pool == "Earthworm"] - 0.35
   n
 }
 
@@ -261,10 +264,13 @@ flux_network_scenario <- function(model, scenario, scen, fitted = NULL,
   key  <- paste(from, to)
   curv <- ifelse(paste(to, from) %in% key, 0.20, 0)
   bend <- c("B Detritivore" = -0.07, "C_root_herb L" = -0.06,
-            "Litter Earthworm" = 0, "RootHerb P" = 0.05, "B M" = -0.12)
+            "Litter Earthworm" = 0, "RootHerb P" = 0.05, "B M" = -0.12,
+            # aggregate <-> MAOC: long two-way pair, flatter so it passes
+            # under the earthworm box and its CO2 label
+            "A M" = 0.09, "M A" = 0.09)
   hit <- key %in% names(bend)
   curv[hit] <- bend[key[hit]]
-  if (y_scale < 1) curv[key == "B Detritivore"] <- -0.03   # packed layout
+  if (y_scale < 1) curv[key == "B Detritivore"] <- -0.035  # packed layout
   curv
 }
 
@@ -557,7 +563,7 @@ plot_flux_network <- function(net, panels = c("baseline", "animal", "delta"),
   n <- .nodes_at(y_scale)
   top <- if (drop_inputs) max(n$y) + hh + 0.35 else max(n$y) + hh + stub_len + 0.8
   list(x = c(min(n$x) - hw - stub_len - 2.6, max(n$x) + hw + stub_len + 3.0),
-       y = c(min(n$y) - hh - 0.5, top))
+       y = c(min(n$y) - hh - if (drop_inputs) 0.25 else 0.5, top))
 }
 #------------------------------------------------------------------------#
 # save_flux_network() ----
@@ -647,5 +653,136 @@ save_flux_network_deltas <- function(nets, file, ncol = 1, width = 6.5, dpi = 30
   dir.create(dirname(file), showWarnings = FALSE, recursive = TRUE)
   ggplot2::ggsave(file, p, width = width, height = 0.45 + (ph + 0.1) * nrow,
                   dpi = dpi, bg = "white", limitsize = FALSE)
+  invisible(p)
+}
+
+#------------------------------------------------------------------------#
+# plot_flux_network_wiring() / save_flux_network_wiring() ----
+#------------------------------------------------------------------------#
+# Introductory figure: how the model is wired. One panel with every pool and
+# every carbon flux of the model (no values), in the same layout and style as
+# the flux-network figures, plus a DASHED line from each animal group to the
+# flux its trait-mediated indirect effect acts on:
+#   detritivores    -> litter fragmentation (Litter -> POC)
+#   earthworms      -> aggregate breakdown (Aggregates -> POC and -> MAOC)
+#   root herbivores -> herbaceous root exudation (Herb roots -> LMWC)
+# Solid grey arrows: fluxes among soil and plant pools; orange: fluxes into
+# and out of the animals (feeding, faeces, carcasses). Sized for page width
+# (6.5 in), text ~6.5 pt. Needs no model output.
+.tmii_links <- data.frame(
+  animal = c("Detritivore", "Earthworm", "Earthworm", "RootHerb"),
+  from   = c("Litter", "A", "A", "C_root_herb"),
+  to     = c("P", "P", "M", "L"),
+  at     = c(0.62, 0.45, 0.35, 0.20),     # where along the target flux the line ends
+  curv   = c(0.18, -0.12, 0.15, 0.10),    # bend of the dashed line
+  label  = c("fragmentation", "aggregate\nbreakdown", "", "exudation"),
+  stringsAsFactors = FALSE)
+
+plot_flux_network_wiring <- function(width = 6.5, label_size = 2.3, node_size = 2.2,
+                                     hw = 1.45, hh = 0.5, stub_len = 1.1,
+                                     title = NULL,
+                                     subtitle = paste0("Solid arrows: carbon fluxes (orange: feeding, faeces and ",
+                                                       "carcasses of the animals).\nDashed: trait-mediated ",
+                                                       "indirect effects of the animals on soil processes.")) {
+  nodes <- .nodes_at(1)
+  lim   <- .flux_limits(hw, hh, stub_len)
+  scale <- min(1, width / 13) * 1.35
+  geo   <- .network_paths(hw, hh, 1)
+  animals <- nodes$pool[nodes$group == "animal"]
+  col_flux <- "#5a5a5a"; col_anim <- "#d9822b"; col_tmii <- "#a6501a"
+
+  # carbon fluxes between pools
+  paths <- do.call(rbind, lapply(seq_len(nrow(geo)), function(i) {
+    p <- geo$path[[i]]
+    data.frame(id = paste(geo$from[i], geo$to[i]), x = p$x, y = p$y,
+               col = if (geo$from[i] %in% animals || geo$to[i] %in% animals) col_anim else col_flux)
+  }))
+
+  # inputs and losses (stubs, words only)
+  stubs <- list(); stub_txt <- list()
+  for (j in seq_len(nrow(.flux_stubs))) {
+    s  <- .flux_stubs[j, ]; k <- match(s$pool, nodes$pool)
+    ex <- nodes$x[k] + s$dx * (hw + 0.12); ey <- nodes$y[k] + s$dy * (hh + 0.12)
+    fx <- ex + s$dx * stub_len;            fy <- ey + s$dy * stub_len
+    xs <- if (s$kind == "IN") c(fx, ex) else c(ex, fx)
+    ys <- if (s$kind == "IN") c(fy, ey) else c(ey, fy)
+    stubs[[j]] <- data.frame(id = paste("stub", j), x = xs, y = ys)
+    stub_txt[[j]] <- data.frame(
+      x = fx + s$dx * 0.15, y = fy + s$dy * 0.15,
+      label = c(IN = "NPP", CO2 = "CO₂", LEACH = "Leached")[[s$kind]],
+      hjust = if (s$dx > 0) 0 else if (s$dx < 0) 1 else 0.5,
+      vjust = if (s$dy > 0) 0 else if (s$dy < 0) 1 else 0.5)
+  }
+  stubs <- do.call(rbind, stubs); stub_txt <- do.call(rbind, stub_txt)
+
+  # dashed trait-mediated links: animal box -> a point on the affected flux
+  tm <- list(); tm_txt <- list()
+  for (j in seq_len(nrow(.tmii_links))) {
+    L  <- .tmii_links[j, ]
+    g  <- geo$path[[which(geo$from == L$from & geo$to == L$to)]]
+    m  <- max(1, round(L$at * length(g$x)))
+    tx <- g$x[m]; ty <- g$y[m]
+    k  <- match(L$animal, nodes$pool); x0 <- nodes$x[k]; y0 <- nodes$y[k]
+    dx <- tx - x0; dy <- ty - y0
+    cx <- (x0 + tx) / 2 - L$curv * dy; cy <- (y0 + ty) / 2 + L$curv * dx
+    t  <- seq(0, 1, length.out = 120)
+    px <- (1 - t)^2 * x0 + 2 * (1 - t) * t * cx + t^2 * tx
+    py <- (1 - t)^2 * y0 + 2 * (1 - t) * t * cy + t^2 * ty
+    out <- !(abs(px - x0) <= hw + 0.08 & abs(py - y0) <= hh + 0.08)
+    px <- px[out]; py <- py[out]
+    tm[[j]] <- data.frame(id = paste("tmii", j), x = px, y = py)
+    if (nzchar(L$label)) {
+      h <- ceiling(length(px) * 0.5)
+      tm_txt[[length(tm_txt) + 1]] <- data.frame(x = px[h], y = py[h], label = L$label)
+    }
+  }
+  tm <- do.call(rbind, tm); tm_txt <- do.call(rbind, tm_txt)
+  ends <- do.call(rbind, lapply(split(tm, tm$id), function(d) d[nrow(d), ]))
+
+  boxes <- nodes
+  boxes$fill <- .flux_node_fill[boxes$group]
+  boxes$label[boxes$pool == "RootHerb"] <- "Root\nherbivores"   # fits the box
+
+  ggplot2::ggplot() +
+    ggplot2::geom_path(data = paths, ggplot2::aes(x, y, group = id, colour = col),
+      linewidth = 0.55 * scale, lineend = "butt", linejoin = "mitre",
+      arrow = grid::arrow(length = grid::unit(0.16 * scale, "cm"), type = "closed")) +
+    ggplot2::geom_path(data = stubs, ggplot2::aes(x, y, group = id),
+      colour = col_flux, linewidth = 0.55 * scale,
+      arrow = grid::arrow(length = grid::unit(0.16 * scale, "cm"), type = "closed")) +
+    ggplot2::geom_path(data = tm, ggplot2::aes(x, y, group = id), colour = col_tmii,
+      linewidth = 0.6 * scale, linetype = "22") +
+    ggplot2::geom_point(data = ends, ggplot2::aes(x, y), colour = col_tmii,
+      fill = "white", shape = 21, size = 1.6 * scale, stroke = 0.7 * scale) +
+    ggplot2::geom_rect(data = boxes,
+      ggplot2::aes(xmin = x - hw, xmax = x + hw, ymin = y - hh, ymax = y + hh, fill = fill),
+      colour = "grey35", linewidth = 0.35 * max(scale, 0.6)) +
+    ggplot2::geom_text(data = boxes, ggplot2::aes(x, y, label = label),
+      size = node_size, colour = "black") +
+    ggplot2::geom_label(data = tm_txt, ggplot2::aes(x, y, label = label),
+      size = label_size * 0.9, colour = col_tmii, fontface = "italic", fill = "white",
+      label.size = 0, label.padding = grid::unit(0.05, "lines"), lineheight = 0.85) +
+    ggplot2::geom_text(data = stub_txt,
+      ggplot2::aes(x, y, label = label, hjust = hjust, vjust = vjust),
+      size = label_size, fontface = "bold", colour = col_flux) +
+    ggplot2::scale_colour_identity() + ggplot2::scale_fill_identity() +
+    ggplot2::coord_fixed(xlim = lim$x, ylim = lim$y, expand = FALSE, clip = "off") +
+    ggplot2::labs(title = title, subtitle = subtitle) +
+    ggplot2::theme_void(base_size = 12 * scale) +
+    ggplot2::theme(plot.background = ggplot2::element_rect(fill = "white", colour = NA),
+                   plot.subtitle = ggplot2::element_text(size = 11 * scale,
+                                                         margin = ggplot2::margin(0, 0, 6 * scale, 0)),
+                   plot.margin = ggplot2::margin(12 * scale, 12 * scale, 12 * scale, 12 * scale))
+}
+
+# save_flux_network_wiring(): write plot_flux_network_wiring() to a PNG;
+# `width` in inches (default 6.5 = page width), height from the layout.
+save_flux_network_wiring <- function(file, width = 6.5, dpi = 300,
+                                     hw = 1.45, hh = 0.5, stub_len = 1.1, ...) {
+  p   <- plot_flux_network_wiring(width = width, hw = hw, hh = hh, stub_len = stub_len, ...)
+  lim <- .flux_limits(hw, hh, stub_len)
+  ph  <- width * 0.94 * diff(lim$y) / diff(lim$x)
+  dir.create(dirname(file), showWarnings = FALSE, recursive = TRUE)
+  ggplot2::ggsave(file, p, width = width, height = ph + 0.55, dpi = dpi, bg = "white")
   invisible(p)
 }

@@ -17,8 +17,8 @@
 #                                      Results/animal_effect_summary.csv,
 #                                      Results/figures/flux_network_*.png
 #                                      (equilibrium animal effects at default
-#                                       parameters; flux networks per scenario +
-#                                       all-scenario change figure)
+#                                       parameters; flux networks per scenario,
+#                                       all-scenario change figure, model wiring)
 #       3 followup_analysis      -> Data/spinup/*.rds, Data/followup/*.rds,
 #                                      Results/figures/followup_*
 #                                      (SEASONAL spin-up of the no-animal soil to

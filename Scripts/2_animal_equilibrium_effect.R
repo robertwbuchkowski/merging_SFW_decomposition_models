@@ -20,6 +20,7 @@
 #     without animals, and the change
 #   Results/figures/flux_network_change_all_scenarios.png  the change panel of
 #     every scenario in one figure
+#   Results/figures/flux_network_wiring.png  how the model is wired (no values)
 # Run from the project root. Requires Results/fitted_animal_params.csv from
 # Scripts/1_fit_all_animals.R when use_fitted_params = TRUE.
 library(pacman); p_load(deSolve, rootSolve, tidyverse, yaml, readxl)
@@ -106,6 +107,11 @@ animal_eq_effect <- do.call("rbind", animal_eq_effect)
 # change in carbon fluxes (with - without animals) of every scenario in one
 # figure, one panel per scenario
 save_flux_network_deltas(flux_nets, "Results/figures/flux_network_change_all_scenarios.png")
+
+# introductory figure: how the model is wired (every flux, no values), with
+# dashed lines from each animal to the flux its trait-mediated indirect
+# effect acts on
+save_flux_network_wiring("Results/figures/flux_network_wiring.png")
 write_csv(animal_eq_effect, "Results/animal_eq_effect.csv")
 
 #------------------------------------------------------------------------#
