@@ -37,7 +37,7 @@ K_lb: 774.6
 # ---- Adsorption/desorption ----
 p1: 0.12
 p2: 0.216
-K_ld: 0.001
+K_ld: 1
 
 # ---- Aggregation ----
 k_pa: 0.018
