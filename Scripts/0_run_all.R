@@ -55,7 +55,7 @@
 #     ones (step 6, Sobol' on every parameter, ~5-6 CPU-hours per scenario
 #     at N = 1000; see its header).
 
-stopifnot(file.exists("R/setup.R"))        # guard: must be run from project root
+stopifnot(file.exists("R/setup.R"))         # guard: must be run from project root
 source("R/run_utils.R")                     # run_one(), debugonce_functions()
 
 debug_functions         <- FALSE  # TRUE = debugonce() on every function loaded by each script
